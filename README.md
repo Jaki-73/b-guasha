@@ -1,51 +1,50 @@
-# B's Guasha
+# B's Guasha — Website + Mobile App (v2)
 
-The website and booking app for **B's Guasha** — facial & body gua sha.
+Everything for **B's Guasha** in one folder: marketing website, mobile booking app with wallet (QPay top-up), progress photos with automatic eye-censoring, and an owner admin panel.
 
-## What's in this repo
+**Only requirement: [Node.js LTS](https://nodejs.org) (free). No emulator, no npm install, no build step.**
+
+## Run it
+
+Double-click **`start-server.bat`** (or run `node server.js`). Then:
+
+| What | URL | Login |
+|---|---|---|
+| Website | http://localhost:3000 | — |
+| Mobile app | http://localhost:3000/app | demo: `99000000` / `demo123`, or register |
+| Owner admin | http://localhost:3000/admin | PIN `1234` (change in `config.json`) |
+
+On your phone (same Wi-Fi): `http://<your-PC-IP>:3000/app` → "Add to Home Screen" installs it like a real app. Full steps: **docs/TESTING-GUIDE.md**.
+
+## What's inside
 
 ```
-.
-├── website/                  Marketing site (the public one-page site)
-│   └── index.html
-├── app/                      Booking + owner dashboard (no-server web app)
-│   ├── index.html
-│   └── README.md
-├── docs/                     Guides
-│   ├── INFO-TO-FILL-IN.md    Checklist of details to fill into the website
-│   └── HOSTING-GUIDE.md      Free hosting & domain options explained
-├── .github/workflows/
-│   └── deploy-website.yml     Auto-publishes website/ to GitHub Pages
-├── .gitignore
-└── README.md
+server.js              All backend logic (accounts, bookings, wallet, QPay, photos, admin)
+config.json            Salon name, phone, address, hours, prices policy, admin PIN, QPay keys
+start-server.bat       One-click start on Windows
+public/                Website (index.html, site.css, site.js)
+public/app/            Mobile app (PWA): booking, wallet, progress photos, profile
+public/admin/          Owner panel: bookings, clients, transactions, prices
+data/                  Created automatically — db.json + photos/ (this is your database; back it up!)
+docs/                  Guides (testing, publishing & costs, QPay, names & ideas)
+legacy/                The old v1 site & app, kept for reference
 ```
 
-The **website** and the **app** are independent — you can host, edit, or replace either one without touching the other.
+## Features
 
-## Quick start
+- **Both languages (Монгол / English) and dark & light mode** — website and app
+- **Accounts & wallet**: top up by QPay QR (demo mode now — no real money), +5% bonus over 100,000₮, pay bookings from balance or at the salon, full transaction history, refunds on cancellation (≥24h before)
+- **Booking**: live free-slot calendar, 21 days ahead, double-booking impossible
+- **Progress photos**: eyes are detected and covered automatically *before* saving (manual adjust possible); only the censored photo is stored
+- **Admin**: today's & upcoming bookings, mark done/no-show/cancel (auto-refund), client list, transactions, edit prices, one-click backup
 
-- **Preview the website:** open `website/index.html` in a browser.
-- **Use the app:** open `app/index.html` in a browser. Owner login passcode is `1234` (change it in Settings).
-- **Fill in your details:** follow `docs/INFO-TO-FILL-IN.md`.
+## Demo vs real payments
 
-## Host the website free on GitHub Pages
+Payments run in **demo mode** (`"paymentsDemo": true` in config.json): the QR is fake and a "Simulate payment" button appears. To accept real money you need a QPay merchant contract — see **docs/PAYMENTS-QPAY.md**.
 
-This repo already includes a workflow that publishes the `website/` folder automatically.
+## Guides
 
-1. Create a new repository on github.com (e.g. `bs-guasha`).
-2. In this folder, connect it and push:
-   ```bash
-   git remote add origin https://github.com/<your-username>/bs-guasha.git
-   git push -u origin main
-   ```
-3. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-4. Every push to `main` now redeploys. Your site appears at
-   `https://<your-username>.github.io/bs-guasha/`.
-
-To use a custom domain (e.g. `guashabyb.com`), buy it (~$10/yr from Cloudflare) and add it under **Settings → Pages → Custom domain**. Full details in `docs/HOSTING-GUIDE.md`.
-
-> The app is not published by this workflow (kept private by default). To put it online too, drag the `app` folder onto app.netlify.com/drop, or ask and I'll add it to the deploy.
-
-## Notes
-
-- App data is stored in the browser on each device — see `app/README.md` for the cloud-upgrade path.
+- **docs/TESTING-GUIDE.md** — test everything on this PC + your phone
+- **docs/PUBLISHING-AND-COSTS.md** — what to buy/pay, hosting, app stores, legal checklist
+- **docs/PAYMENTS-QPAY.md** — getting real QPay payments
+- **docs/NAMES-AND-IDEAS.md** — name/domain suggestions, future features

@@ -1,0 +1,27 @@
+{
+  "salonName": "B's Guasha",
+  "phoneDisplay": "+976 9911-2233",
+  "phoneTel": "+97699112233",
+  "addressEn": "Sukhbaatar district, Ulaanbaatar (exact address shared on booking)",
+  "addressMn": "Сүхбаатар дүүрэг, Улаанбаатар (хаягийг захиалга баталгаажсаны дараа илгээнэ)",
+  "facebook": "https://www.facebook.com/profile.php?id=61589496517687",
+  "instagram": "",
+  "hoursOpen": "10:00",
+  "hoursClose": "19:00",
+  "slotMinutes": 60,
+  "closedWeekdays": [],
+  "bookingDaysAhead": 21,
+  "cancelHours": 24,
+  "topupBonusThreshold": 100000,
+  "topupBonusPercent": 5,
+  "adminPin": "1234",
+  "paymentsDemo": true,
+  "qpay": {
+    "comment": "Fill these after signing a QPay merchant contract (see docs/PAYMENTS-QPAY.md), then set paymentsDemo to false.",
+    "baseUrl": "https://merchant-sandbox.qpay.mn",
+    "username": "",
+    "password": "",
+    "invoiceCode": "",
+    "callbackBaseUrl": ""
+  }
+}

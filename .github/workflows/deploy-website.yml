@@ -1,40 +1,20 @@
-name: Deploy website to GitHub Pages
+# DISABLED — v1 leftover.
+#
+# v1 was a static site deployable to GitHub Pages. v2 (current) runs a Node.js
+# backend (server.js) for accounts, bookings, wallet/QPay and photos, which
+# GitHub Pages cannot host. Deploy to a Node host instead — see
+# docs/HOSTING-GUIDE.md and docs/PUBLISHING-AND-COSTS.md.
+#
+# This workflow is kept only so the repository history stays intact. It only
+# runs if triggered manually, and then does nothing.
 
-# Publishes the contents of the website/ folder to GitHub Pages
-# on every push to main. The app/ folder is NOT published here.
+name: (disabled) v1 pages deploy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "website/**"
-      - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  noop:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload website folder
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./website
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - run: echo "v2 needs a Node.js host. See docs/HOSTING-GUIDE.md"
