@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B's Guasha — Booking &amp; Dashboard</title>
+<meta name="description" content="B's Guasha booking app and owner dashboard." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#0e0e0f; --ink-2:#1a1a1c; --cream:#f7f4ef; --cream-2:#efe9e0;
+    --gold:#c2a15a; --gold-soft:#d8c191; --grey:#8a8580; --line:#e3dccf;
+    --ok:#3b7d56; --ok-bg:#e7f1ea; --warn:#b07d2b; --warn-bg:#f7eed8;
+    --bad:#a3433a; --bad-bg:#f3e3e1; --info:#3a5a8a; --info-bg:#e6edf6;
+    --serif:'Cormorant Garamond',Georgia,serif; --sans:'Jost','Helvetica Neue',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--ink);background:var(--cream);line-height:1.6;font-weight:300}
+  h1,h2,h3,h4{font-family:var(--serif);font-weight:500;line-height:1.15}
+  a{color:inherit}
+  button{font-family:var(--sans);cursor:pointer}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+
+  /* top bar */
+  .top{background:var(--ink);color:#fff;position:sticky;top:0;z-index:20}
+  .top .wrap{display:flex;align-items:center;justify-content:space-between;padding:16px 20px}
+  .brand{font-family:var(--serif);font-size:24px}
+  .brand span{color:var(--gold)}
+  .top-link{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#cfc9bf;border:1px solid rgba(216,193,145,.4);padding:7px 14px;background:none;transition:.2s}
+  .top-link:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+
+  /* buttons */
+  .btn{display:inline-block;text-transform:uppercase;letter-spacing:1.5px;font-size:12px;padding:12px 22px;border:1px solid var(--gold);color:var(--ink);background:transparent;transition:.2s}
+  .btn:hover{background:var(--gold);color:#fff}
+  .btn.gold{background:var(--gold);color:#fff}
+  .btn.gold:hover{filter:brightness(1.06)}
+  .btn.ghost{border-color:var(--line);color:#6c685f}
+  .btn.ghost:hover{background:#efeae1;color:var(--ink)}
+  .btn.sm{padding:7px 13px;font-size:11px}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+  .btn.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .btn.dark:hover{background:var(--ink-2)}
+
+  .panel{background:#fff;border:1px solid var(--line);padding:28px;margin:24px 0}
+  .center{text-align:center}
+  .muted{color:var(--grey)}
+  .overline{text-transform:uppercase;letter-spacing:3px;font-size:11px;color:var(--gold);margin-bottom:8px}
+
+  /* stepper */
+  .steps{display:flex;gap:8px;justify-content:center;margin:26px 0 8px;flex-wrap:wrap}
+  .steps .s{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:#b3ada3;display:flex;align-items:center;gap:8px}
+  .steps .s b{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-weight:400}
+  .steps .s.on{color:var(--ink)}
+  .steps .s.on b{background:var(--gold);color:#fff;border-color:var(--gold)}
+  .steps .s.done b{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  /* service cards */
+  .svc-group{margin:26px 0 8px;font-size:20px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .card{border:1px solid var(--line);background:#fff;padding:20px;text-align:left;transition:.2s;display:flex;flex-direction:column;gap:6px}
+  .card:hover{border-color:var(--gold);transform:translateY(-3px);box-shadow:0 12px 26px rgba(60,50,30,.08)}
+  .card.sel{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold) inset}
+  .card h4{font-size:20px}
+  .card .meta{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold)}
+  .card .price{font-family:var(--serif);font-size:24px;margin-top:6px}
+
+  /* slots */
+  .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-top:14px}
+  .slot{border:1px solid var(--line);background:#fff;padding:12px 8px;font-size:14px;transition:.15s}
+  .slot:hover:not([disabled]){border-color:var(--gold)}
+  .slot.sel{background:var(--gold);color:#fff;border-color:var(--gold)}
+  .slot[disabled]{background:#f2efe9;color:#bdb7ad;text-decoration:line-through;cursor:not-allowed}
+
+  /* forms */
+  label.fld{display:block;margin:14px 0 6px;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:#6c685f}
+  input,select,textarea{width:100%;padding:12px 14px;border:1px solid var(--line);background:#fff;font-family:var(--sans);font-size:15px;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+  textarea{min-height:84px;resize:vertical}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .summary{background:var(--cream-2);border:1px solid var(--line);padding:16px 18px;margin-top:8px}
+  .summary div{display:flex;justify-content:space-between;padding:3px 0;font-size:14px}
+  .summary .tot{border-top:1px solid var(--line);margin-top:6px;padding-top:8px;font-family:var(--serif);font-size:20px}
+
+  .success{text-align:center;padding:20px}
+  .success .tick{width:64px;height:64px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 14px}
+
+  /* admin */
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .tab{padding:12px 16px;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#8a857c;background:none;border:none;border-bottom:2px solid transparent}
+  .tab.on{color:var(--ink);border-bottom-color:var(--gold)}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:8px}
+  .stat{background:#fff;border:1px solid var(--line);padding:16px}
+  .stat .n{font-family:var(--serif);font-size:30px}
+  .stat .l{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--grey)}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+  .chip{font-size:12px;letter-spacing:1px;text-transform:uppercase;padding:7px 13px;border:1px solid var(--line);background:#fff;color:#6c685f}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .appt{background:#fff;border:1px solid var(--line);padding:16px 18px;margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;justify-content:space-between}
+  .appt .when{font-family:var(--serif);font-size:20px;min-width:150px}
+  .appt .when small{display:block;font-family:var(--sans);font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold)}
+  .appt .who{flex:1;min-width:180px;font-size:14px}
+  .appt .who b{font-weight:500}
+  .appt .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .badge{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;padding:4px 9px;border-radius:2px}
+  .b-pending{background:var(--warn-bg);color:var(--warn)}
+  .b-confirmed{background:var(--info-bg);color:var(--info)}
+  .b-completed{background:var(--ok-bg);color:var(--ok)}
+  .b-cancelled{background:var(--bad-bg);color:var(--bad)}
+  table.tbl{width:100%;border-collapse:collapse;font-size:14px}
+  table.tbl th,table.tbl td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line)}
+  table.tbl th{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--grey);font-weight:400}
+  .svc-edit{display:grid;grid-template-columns:1.4fr .8fr .6fr .7fr auto;gap:8px;align-items:center;margin-bottom:8px}
+  .svc-edit input{padding:9px 10px;font-size:14px}
+  .note{background:var(--warn-bg);border:1px solid #e7d3a5;color:#7a5a18;padding:12px 14px;font-size:13px;margin:14px 0}
+  .empty{text-align:center;color:var(--grey);padding:40px 10px;font-style:italic;font-family:var(--serif);font-size:20px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;font-size:13px;letter-spacing:.5px;z-index:50;opacity:0;transition:.3s;pointer-events:none}
+  .toast.show{opacity:1}
+  footer{text-align:center;color:var(--grey);font-size:12px;padding:30px 20px}
+  @media(max-width:560px){.row,.svc-edit{grid-template-columns:1fr}.appt .when{min-width:0}}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap">
+  <div class="brand" id="brand">B's <span>Guasha</span></div>
+  <button class="top-link" id="modeBtn" onclick="toggleMode()">Owner login</button>
+</div></div>
+
+<div id="app" class="wrap"></div>
+<div class="toast" id="toast"></div>
+<footer>B's Guasha · Booking &amp; Dashboard · Data is saved on this device.</footer>
+
+<script>
+/* ---------------- data ---------------- */
+var STORAGE_KEY='bsguasha:v1';
+var DEFAULT_DB={
+  settings:{businessName:"B's Guasha",passcode:"1234",openTime:"09:00",closeTime:"18:00",slotMinutes:60,days:[1,2,3,4,5,6]},
+  services:[
+    {id:'s1',group:'Facial',name:'Signature Facial Gua Sha',duration:60,price:110},
+    {id:'s2',group:'Facial',name:'Express Glow',duration:30,price:65},
+    {id:'s3',group:'Facial',name:'Deluxe Lift & Sculpt',duration:75,price:145},
+    {id:'s4',group:'Body',name:'Back, Neck & Shoulder Release',duration:45,price:80},
+    {id:'s5',group:'Body',name:'Therapeutic Body Gua Sha',duration:60,price:110},
+    {id:'s6',group:'Body',name:'Full Body Renewal',duration:90,price:165},
+    {id:'s7',group:'Add-ons',name:'Gua Sha Add-On',duration:15,price:25}
+  ],
+  bookings:[]
+};
+function clone(o){return JSON.parse(JSON.stringify(o));}
+function load(){
+  try{var r=localStorage.getItem(STORAGE_KEY);if(r){var d=JSON.parse(r);
+    return {settings:Object.assign({},DEFAULT_DB.settings,d.settings||{}),
+            services:Array.isArray(d.services)?d.services:clone(DEFAULT_DB.services),
+            bookings:Array.isArray(d.bookings)?d.bookings:[]};}}catch(e){}
+  return clone(DEFAULT_DB);
+}
+var DB=load();
+function save(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(DB));}catch(e){}}
+var state={view:'book',step:1,draft:{},admin:false,tab:'appointments',filter:'upcoming'};
+
+/* ---------------- helpers ---------------- */
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function money(n){var v=Number(n);return isFinite(v)&&n!==''&&n!=null?'$'+Math.round(v):'$—';}
+function to12(t){if(!t)return '';var p=t.split(':');var h=+p[0],m=p[1];var ap=h<12?'AM':'PM';var h12=h%12;if(h12===0)h12=12;return h12+':'+m+' '+ap;}
+function todayStr(){var d=new Date();return d.toISOString().slice(0,10);}
+function prettyDate(s){if(!s)return '';var d=new Date(s+'T00:00:00');return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});}
+function svcById(id){for(var i=0;i<DB.services.length;i++){if(DB.services[i].id===id)return DB.services[i];}return null;}
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(function(){t.classList.remove('show');},1900);}
+
+function slotsFor(dateStr){
+  var s=DB.settings;var out=[];
+  var op=s.openTime.split(':'),cl=s.closeTime.split(':');
+  var start=(+op[0])*60+(+op[1]),end=(+cl[0])*60+(+cl[1]),step=Math.max(15,+s.slotMinutes||60);
+  var taken={};DB.bookings.forEach(function(b){if(b.date===dateStr&&b.status!=='cancelled')taken[b.time]=true;});
+  for(var m=start;m+step<=end;m+=step){
+    var hh=String(Math.floor(m/60)).padStart(2,'0'),mm=String(m%60).padStart(2,'0');var t=hh+':'+mm;
+    out.push({time:t,label:to12(t),taken:!!taken[t]});
+  }
+  return out;
+}
+
+/* ---------------- render root ---------------- */
+function render(){
+  DB.settings=DB.settings||DEFAULT_DB.settings;
+  document.getElementById('brand').innerHTML=esc(DB.settings.businessName).replace(/Guasha/i,'<span>Guasha</span>')||"B's <span>Guasha</span>";
+  document.getElementById('modeBtn').textContent=state.view==='admin'?'View booking page':'Owner login';
+  var el=document.getElementById('app');
+  if(state.view==='admin'){el.innerHTML=state.admin?adminView():loginView();}
+  else{el.innerHTML=bookView();}
+  window.scrollTo(0,0);
+}
+function toggleMode(){
+  if(state.view==='admin'){state.view='book';state.step=1;state.draft={};}
+  else{state.view='admin';}
+  render();
+}
+
+/* ---------------- booking ---------------- */
+function bookView(){
+  if(state.step===4)return successView();
+  var st=state.step;
+  var head='<div class="center" style="margin-top:30px"><div class="overline">Book an appointment</div>'+
+    '<h2 style="font-size:34px">Reserve your gua sha session</h2></div>'+
+    '<div class="steps">'+stepDot(1,'Service',st)+stepDot(2,'Date &amp; time',st)+stepDot(3,'Your details',st)+'</div>';
+  if(st===1)return head+stepService();
+  if(st===2)return head+stepWhen();
+  if(st===3)return head+stepDetails();
+  return head;
+}
+function stepDot(n,label,cur){var cls=n<cur?'s done':(n===cur?'s on':'s');return '<span class="'+cls+'"><b>'+(n<cur?'✓':n)+'</b>'+label+'</span>';}
+
+function stepService(){
+  var groups={};DB.services.forEach(function(s){(groups[s.group]=groups[s.group]||[]).push(s);});
+  var html='<div class="panel">';
+  Object.keys(groups).forEach(function(g){
+    html+='<h3 class="svc-group">'+esc(g)+'</h3><div class="grid">';
+    groups[g].forEach(function(s){
+      var sel=state.draft.serviceId===s.id?' sel':'';
+      html+='<button class="card'+sel+'" onclick="pickService(\''+s.id+'\')">'+
+        '<div class="meta">'+(s.duration?esc(s.duration)+' min':'')+'</div>'+
+        '<h4>'+esc(s.name)+'</h4>'+
+        '<div class="price">'+money(s.price)+'</div></button>';
+    });
+    html+='</div>';
+  });
+  html+='</div>';
+  return html;
+}
+function pickService(id){state.draft.serviceId=id;state.step=2;render();}
+
+function stepWhen(){
+  var d=state.draft;var date=d.date||'';
+  var html='<div class="panel">'+
+    '<label class="fld">Choose a date</label>'+
+    '<input type="date" id="dateInput" min="'+todayStr()+'" value="'+esc(date)+'" onchange="setDate(this.value)" />';
+  if(date){
+    var slots=slotsFor(date);
+    if(!slots.length){html+='<p class="muted" style="margin-top:14px">No times available — check the opening hours in Settings.</p>';}
+    else{
+      html+='<label class="fld">Choose a time</label><div class="slots">';
+      slots.forEach(function(s){
+        var sel=d.time===s.time?' sel':'';
+        html+='<button class="slot'+sel+'" '+(s.taken?'disabled':'onclick="setTime(\''+s.time+'\')"')+'>'+s.label+'</button>';
+      });
+      html+='</div>';
+    }
+  }else{html+='<p class="muted" style="margin-top:12px">Pick a date to see available times.</p>';}
+  html+='<div style="margin-top:22px;display:flex;justify-content:space-between">'+
+    '<button class="btn ghost" onclick="goStep(1)">Back</button>'+
+    '<button class="btn gold" '+(d.date&&d.time?'':'disabled')+' onclick="goStep(3)">Continue</button></div>';
+  html+='</div>';
+  return html;
+}
+function setDate(v){state.draft.date=v;state.draft.time='';render();}
+function setTime(t){state.draft.time=t;render();}
+function goStep(n){state.step=n;render();}
+
+function stepDetails(){
+  var d=state.draft;var s=svcById(d.serviceId);
+  return '<div class="panel">'+
+    '<div class="row">'+
+      '<div><label class="fld">Full name *</label><input id="f_name" value="'+esc(d.name||'')+'" placeholder="Jane Doe" /></div>'+
+      '<div><label class="fld">Phone *</label><input id="f_phone" value="'+esc(d.phone||'')+'" placeholder="(555) 123-4567" /></div>'+
+    '</div>'+
+    '<label class="fld">Email</label><input id="f_email" value="'+esc(d.email||'')+'" placeholder="jane@email.com" />'+
+    '<label class="fld">Notes (optional)</label><textarea id="f_notes" placeholder="Anything I should know — areas of concern, first visit, etc.">'+esc(d.notes||'')+'</textarea>'+
+    '<div class="summary" style="margin-top:18px">'+
+      '<div><span>Service</span><b>'+esc(s?s.name:'')+'</b></div>'+
+      '<div><span>When</span><b>'+prettyDate(d.date)+' · '+to12(d.time)+'</b></div>'+
+      '<div class="tot"><span>Total</span><span>'+money(s?s.price:'')+'</span></div>'+
+    '</div>'+
+    '<div style="margin-top:20px;display:flex;justify-content:space-between">'+
+      '<button class="btn ghost" onclick="goStep(2)">Back</button>'+
+      '<button class="btn gold" onclick="confirmBooking()">Confirm booking</button></div>'+
+  '</div>';
+}
+function confirmBooking(){
+  var d=state.draft;
+  d.name=(document.getElementById('f_name').value||'').trim();
+  d.phone=(document.getElementById('f_phone').value||'').trim();
+  d.email=(document.getElementById('f_email').value||'').trim();
+  d.notes=(document.getElementById('f_notes').value||'').trim();
+  if(!d.name||!d.phone){toast('Please add your name and phone.');return;}
+  var s=svcById(d.serviceId);
+  DB.bookings.push({id:uid(),serviceId:d.serviceId,serviceName:s?s.name:'',price:s?s.price:0,
+    date:d.date,time:d.time,name:d.name,phone:d.phone,email:d.email,notes:d.notes,
+    status:'pending',createdAt:Date.now()});
+  save();
+  state.last=clone(d);state.last.serviceName=s?s.name:'';state.last.price=s?s.price:0;
+  state.step=4;render();
+}
+function successView(){
+  var d=state.last||{};
+  return '<div class="panel success">'+
+    '<div class="tick">✓</div>'+
+    '<h2 style="font-size:30px">Booking requested</h2>'+
+    '<p class="muted" style="margin:8px 0 18px">Thank you, '+esc(d.name||'')+'. Your request has been received and is pending confirmation.</p>'+
+    '<div class="summary" style="max-width:380px;margin:0 auto;text-align:left">'+
+      '<div><span>Service</span><b>'+esc(d.serviceName||'')+'</b></div>'+
+      '<div><span>When</span><b>'+prettyDate(d.date)+' · '+to12(d.time)+'</b></div>'+
+      '<div class="tot"><span>Total</span><span>'+money(d.price)+'</span></div>'+
+    '</div>'+
+    '<div style="margin-top:22px"><button class="btn dark" onclick="resetBooking()">Book another</button></div>'+
+  '</div>';
+}
+function resetBooking(){state.step=1;state.draft={};render();}
+
+/* ---------------- admin login ---------------- */
+function loginView(){
+  return '<div class="panel" style="max-width:380px;margin:48px auto;text-align:center">'+
+    '<div class="overline">Owner area</div>'+
+    '<h2 style="font-size:28px;margin-bottom:6px">Enter passcode</h2>'+
+    '<p class="muted" style="font-size:13px;margin-bottom:16px">Default is 1234 — change it in Settings.</p>'+
+    '<input id="pass" type="password" placeholder="Passcode" onkeydown="if(event.key===\'Enter\')doLogin()" style="text-align:center;letter-spacing:4px" />'+
+    '<div style="margin-top:16px"><button class="btn gold" onclick="doLogin()">Enter</button></div>'+
+  '</div>';
+}
+function doLogin(){
+  var v=(document.getElementById('pass').value||'').trim();
+  if(v===String(DB.settings.passcode)){state.admin=true;render();}
+  else{toast('Incorrect passcode.');}
+}
+
+/* ---------------- admin dashboard ---------------- */
+function adminView(){
+  var t=state.tab;
+  var tabs=[['appointments','Appointments'],['clients','Clients'],['services','Services'],['settings','Settings']];
+  var html='<div style="margin-top:24px"><div class="tabs">';
+  tabs.forEach(function(x){html+='<button class="tab'+(t===x[0]?' on':'')+'" onclick="setTab(\''+x[0]+'\')">'+x[1]+'</button>';});
+  html+='</div>';
+  if(t==='appointments')html+=adminAppointments();
+  else if(t==='clients')html+=adminClients();
+  else if(t==='services')html+=adminServices();
+  else html+=adminSettings();
+  html+='</div>';
+  return html;
+}
+function setTab(t){state.tab=t;render();}
+
+function adminAppointments(){
+  var all=DB.bookings.slice();
+  var today=todayStr();
+  var upcoming=all.filter(function(b){return b.date>=today&&(b.status==='pending'||b.status==='confirmed');});
+  var pending=all.filter(function(b){return b.status==='pending';});
+  var stats='<div class="stat-grid">'+
+    stat(upcoming.length,'Upcoming')+stat(pending.length,'Pending')+
+    stat(all.filter(function(b){return b.status==='completed';}).length,'Completed')+
+    stat(all.length,'Total')+'</div>';
+  var f=state.filter;
+  var list=all.filter(function(b){
+    if(f==='upcoming')return b.date>=today&&(b.status==='pending'||b.status==='confirmed');
+    if(f==='all')return true;return b.status===f;
+  });
+  list.sort(function(a,b){var k1=(a.date||'')+(a.time||''),k2=(b.date||'')+(b.time||'');return f==='all'?(k2<k1?-1:1):(k1<k2?-1:1);});
+  var chips='<div class="filters">'+
+    ['upcoming','pending','confirmed','completed','cancelled','all'].map(function(x){
+      return '<button class="chip'+(f===x?' on':'')+'" onclick="setFilter(\''+x+'\')">'+x+'</button>';}).join('')+'</div>';
+  var rows='';
+  if(!list.length)rows='<div class="empty">No appointments here yet.</div>';
+  list.forEach(function(b){
+    var acts='';
+    if(b.status==='pending')acts+='<button class="btn sm gold" onclick="setStatus(\''+b.id+'\',\'confirmed\')">Confirm</button>';
+    if(b.status==='confirmed')acts+='<button class="btn sm gold" onclick="setStatus(\''+b.id+'\',\'completed\')">Mark done</button>';
+    if(b.status!=='cancelled'&&b.status!=='completed')acts+='<button class="btn sm ghost" onclick="setStatus(\''+b.id+'\',\'cancelled\')">Cancel</button>';
+    acts+='<button class="btn sm ghost" onclick="delBooking(\''+b.id+'\')">Delete</button>';
+    rows+='<div class="appt">'+
+      '<div class="when">'+to12(b.time)+'<small>'+prettyDate(b.date)+'</small></div>'+
+      '<div class="who"><b>'+esc(b.name)+'</b> · <span class="badge b-'+b.status+'">'+b.status+'</span><br>'+
+        esc(b.serviceName)+' · '+money(b.price)+'<br>'+
+        '<a href="tel:'+esc(b.phone)+'">'+esc(b.phone)+'</a>'+(b.email?' · <a href="mailto:'+esc(b.email)+'">'+esc(b.email)+'</a>':'')+
+        (b.notes?'<br><span class="muted">“'+esc(b.notes)+'”</span>':'')+'</div>'+
+      '<div class="acts">'+acts+'</div>'+
+    '</div>';
+  });
+  return stats+chips+rows;
+}
+function stat(n,l){return '<div class="stat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';}
+function setFilter(f){state.filter=f;render();}
+function setStatus(id,s){DB.bookings.forEach(function(b){if(b.id===id)b.status=s;});save();render();toast('Updated.');}
+function delBooking(id){if(!confirm('Delete this appointment permanently?'))return;DB.bookings=DB.bookings.filter(function(b){return b.id!==id;});save();render();toast('Deleted.');}
+
+function adminClients(){
+  var map={};
+  DB.bookings.forEach(function(b){
+    var key=(b.phone||b.name||b.id).toLowerCase();
+    if(!map[key])map[key]={name:b.name,phone:b.phone,email:b.email,visits:0,last:'',spend:0};
+    var c=map[key];c.visits++;if(b.status!=='cancelled')c.spend+=Number(b.price)||0;
+    if(!c.last||b.date>c.last)c.last=b.date;if(b.email&&!c.email)c.email=b.email;
+  });
+  var clients=Object.keys(map).map(function(k){return map[k];});
+  clients.sort(function(a,b){return (b.last||'')<(a.last||'')?-1:1;});
+  if(!clients.length)return '<div class="empty">No clients yet — they appear here after the first booking.</div>';
+  var html='<table class="tbl"><tr><th>Name</th><th>Phone</th><th>Email</th><th>Visits</th><th>Last visit</th><th>Value</th></tr>';
+  clients.forEach(function(c){
+    html+='<tr><td><b style="font-weight:500">'+esc(c.name)+'</b></td><td>'+esc(c.phone||'')+'</td><td>'+esc(c.email||'')+'</td>'+
+      '<td>'+c.visits+'</td><td>'+(c.last?prettyDate(c.last):'')+'</td><td>'+money(c.spend)+'</td></tr>';
+  });
+  html+='</table>';
+  return html;
+}
+
+function adminServices(){
+  var html='<p class="muted" style="font-size:13px;margin-bottom:14px">Edit your menu. These services appear on the booking page. Changes save automatically.</p>';
+  html+='<div class="svc-edit" style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#8a857c"><span>Name</span><span>Group</span><span>Min</span><span>Price $</span><span></span></div>';
+  DB.services.forEach(function(s){
+    html+='<div class="svc-edit">'+
+      '<input value="'+esc(s.name)+'" onchange="editSvc(\''+s.id+'\',\'name\',this.value)" />'+
+      '<input value="'+esc(s.group)+'" onchange="editSvc(\''+s.id+'\',\'group\',this.value)" />'+
+      '<input type="number" value="'+esc(s.duration)+'" onchange="editSvc(\''+s.id+'\',\'duration\',this.value)" />'+
+      '<input type="number" value="'+esc(s.price)+'" onchange="editSvc(\''+s.id+'\',\'price\',this.value)" />'+
+      '<button class="btn sm ghost" onclick="delSvc(\''+s.id+'\')">✕</button>'+
+    '</div>';
+  });
+  html+='<div style="margin-top:14px"><button class="btn dark" onclick="addSvc()">+ Add service</button></div>';
+  return html;
+}
+function editSvc(id,k,v){DB.services.forEach(function(s){if(s.id===id){s[k]=(k==='price'||k==='duration')?(v===''?'':Number(v)):v;}});save();}
+function delSvc(id){if(!confirm('Remove this service?'))return;DB.services=DB.services.filter(function(s){return s.id!==id;});save();render();}
+function addSvc(){DB.services.push({id:uid(),group:'Facial',name:'New service',duration:60,price:0});save();render();}
+
+function adminSettings(){
+  var s=DB.settings;
+  return '<div class="panel">'+
+    '<h3 style="font-size:22px;margin-bottom:6px">Business</h3>'+
+    '<label class="fld">Business name</label><input id="set_name" value="'+esc(s.businessName)+'" />'+
+    '<div class="row">'+
+      '<div><label class="fld">Open time</label><input id="set_open" type="time" value="'+esc(s.openTime)+'" /></div>'+
+      '<div><label class="fld">Close time</label><input id="set_close" type="time" value="'+esc(s.closeTime)+'" /></div>'+
+    '</div>'+
+    '<label class="fld">Appointment length (minutes between slots)</label><input id="set_slot" type="number" value="'+esc(s.slotMinutes)+'" />'+
+    '<label class="fld">Owner passcode</label><input id="set_pass" value="'+esc(s.passcode)+'" />'+
+    '<div class="note">⚠ This passcode only hides the dashboard on this device — it is not bank-level security. Don’t store sensitive data here. See the README about upgrading to real accounts.</div>'+
+    '<div style="margin-top:8px"><button class="btn gold" onclick="saveSettings()">Save settings</button></div>'+
+    '<hr style="border:none;border-top:1px solid var(--line);margin:24px 0">'+
+    '<h3 style="font-size:22px;margin-bottom:6px">Your data</h3>'+
+    '<p class="muted" style="font-size:13px;margin-bottom:12px">Bookings live in this browser only. Export a backup, or import it on another device.</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn ghost" onclick="exportData()">Export backup (.json)</button>'+
+      '<button class="btn ghost" onclick="document.getElementById(\'imp\').click()">Import backup</button>'+
+      '<input id="imp" type="file" accept="application/json" style="display:none" onchange="importData(this)" />'+
+      '<button class="btn ghost" onclick="wipe()">Clear all data</button>'+
+    '</div>'+
+  '</div>';
+}
+function saveSettings(){
+  var s=DB.settings;
+  s.businessName=(document.getElementById('set_name').value||"B's Guasha").trim();
+  s.openTime=document.getElementById('set_open').value||'09:00';
+  s.closeTime=document.getElementById('set_close').value||'18:00';
+  s.slotMinutes=Number(document.getElementById('set_slot').value)||60;
+  s.passcode=(document.getElementById('set_pass').value||'1234').trim();
+  save();render();toast('Settings saved.');
+}
+function exportData(){
+  var blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='bsguasha-backup-'+todayStr()+'.json';a.click();
+}
+function importData(inp){
+  var f=inp.files[0];if(!f)return;var rd=new FileReader();
+  rd.onload=function(){try{var d=JSON.parse(rd.result);DB={settings:Object.assign({},DEFAULT_DB.settings,d.settings||{}),services:Array.isArray(d.services)?d.services:DB.services,bookings:Array.isArray(d.bookings)?d.bookings:DB.bookings};save();render();toast('Backup imported.');}catch(e){toast('That file could not be read.');}};
+  rd.readAsText(f);
+}
+function wipe(){if(!confirm('Delete ALL bookings and reset services? This cannot be undone.'))return;DB=clone(DEFAULT_DB);save();render();toast('All data cleared.');}
+
+render();
+</script>
+</body>
+</html>

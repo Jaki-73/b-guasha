@@ -1,0 +1,17 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+.vscode/
+.idea/
+
+# Node (only if you later add a build step)
+node_modules/
+dist/
+.env
+.env.*
+npm-debug.log*
+
+# Local backups exported from the app
+*-backup-*.json

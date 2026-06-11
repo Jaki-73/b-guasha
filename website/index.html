@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- ============================================================
+     B'S GUASHA — one-page website (template)
+     HOW TO FILL THIS IN:
+     Search this file for [SQUARE BRACKETS] and replace each one
+     with your real info. A full checklist is in
+     "INFO-TO-FILL-IN.md". Colors are set in :root below.
+     ============================================================ -->
+
+<title>B's Guasha | Facial &amp; Body Gua Sha [City]</title>
+<meta name="description" content="B's Guasha — facial and body gua sha treatments in [City]. Sculpt, release and renew with an ancient healing ritual. Book by phone or message." />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet" />
+
+<style>
+  :root{
+    /* ---- BRAND COLORS (change these to re-skin the whole site) ---- */
+    --ink:#0e0e0f;          /* near-black */
+    --ink-soft:#1a1a1c;
+    --cream:#f7f4ef;        /* off-white */
+    --cream-2:#efe9e0;
+    --gold:#c2a15a;         /* accent gold */
+    --gold-soft:#d8c191;
+    --grey:#8a8580;
+    --line:rgba(194,161,90,.35);
+    --serif:'Cormorant Garamond', Georgia, serif;
+    --sans:'Jost', 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:var(--cream);
+    line-height:1.7;
+    font-weight:300;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,h4{font-family:var(--serif);font-weight:500;line-height:1.15;letter-spacing:.3px}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%;display:block}
+  section{padding:96px 24px}
+  .wrap{max-width:1140px;margin:0 auto}
+  .center{text-align:center}
+
+  .overline{
+    font-family:var(--sans);
+    text-transform:uppercase;
+    letter-spacing:4px;
+    font-size:12px;
+    color:var(--gold);
+    margin-bottom:18px;
+    font-weight:400;
+  }
+  .lead{font-size:18px;color:#54514c;max-width:620px;margin:0 auto}
+  .dark .lead{color:#c7c2ba}
+
+  .btn{
+    display:inline-block;
+    font-family:var(--sans);
+    text-transform:uppercase;
+    letter-spacing:2.5px;
+    font-size:12.5px;
+    padding:15px 34px;
+    border:1px solid var(--gold);
+    color:var(--ink);
+    background:transparent;
+    transition:.3s;
+    cursor:pointer;
+  }
+  .btn:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+  .btn.gold{background:var(--gold);color:#fff}
+  .btn.gold:hover{background:transparent;color:var(--gold)}
+  .btn.light{border-color:rgba(255,255,255,.5);color:#fff}
+  .btn.light:hover{background:#fff;color:var(--ink);border-color:#fff}
+
+  .divider{width:64px;height:1px;background:var(--gold);margin:22px auto}
+
+  /* ---------- NAV ---------- */
+  header{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    background:rgba(14,14,15,.0);
+    transition:.35s;
+  }
+  header.scrolled{background:rgba(14,14,15,.96);box-shadow:0 1px 0 rgba(255,255,255,.06)}
+  .nav{display:flex;align-items:center;justify-content:space-between;max-width:1140px;margin:0 auto;padding:20px 24px}
+  .brand{font-family:var(--serif);font-size:26px;color:#fff;letter-spacing:1px}
+  .brand span{color:var(--gold)}
+  .nav-links{display:flex;gap:30px;align-items:center}
+  .nav-links a{
+    color:#f2efe9;font-size:13px;text-transform:uppercase;letter-spacing:1.6px;
+    font-weight:300;opacity:.85;transition:.25s;
+  }
+  .nav-links a:hover{opacity:1;color:var(--gold-soft)}
+  .nav-cta{border:1px solid var(--gold);padding:10px 20px;color:#fff !important;opacity:1 !important}
+  .nav-cta:hover{background:var(--gold)}
+  .burger{display:none;flex-direction:column;gap:5px;background:none;border:0;cursor:pointer;padding:6px}
+  .burger span{width:26px;height:2px;background:#fff;display:block;transition:.3s}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    min-height:100vh;
+    display:flex;align-items:center;justify-content:center;
+    text-align:center;color:#fff;position:relative;
+    background:
+      linear-gradient(rgba(10,10,11,.62),rgba(10,10,11,.72)),
+      radial-gradient(circle at 30% 20%, #2a2722, #0e0e0f 70%);
+    padding:120px 24px;
+    overflow:hidden;
+  }
+  /* To use a real photo, replace the gradient line above with:
+     url('images/hero.jpg') center/cover no-repeat; */
+  .hero .overline{color:var(--gold-soft)}
+  .hero h1{font-size:clamp(44px,8vw,86px);font-weight:500;margin:6px 0 18px}
+  .hero h1 em{font-style:italic;color:var(--gold-soft)}
+  .hero p{font-size:18px;color:#e7e3db;max-width:560px;margin:0 auto 34px;font-weight:300}
+  .hero-actions{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+  .scroll-cue{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);color:#cbbf9f;font-size:11px;letter-spacing:3px;text-transform:uppercase;opacity:.8}
+
+  /* ---------- SECTION HEADINGS ---------- */
+  .sec-head{text-align:center;margin-bottom:60px}
+  .sec-head h2{font-size:clamp(32px,5vw,48px)}
+
+  /* ---------- SERVICES ---------- */
+  .services{background:var(--cream)}
+  .svc-group-title{display:flex;align-items:center;gap:18px;margin:0 0 28px}
+  .svc-group-title h3{font-size:26px;white-space:nowrap;color:var(--ink)}
+  .svc-group-title:before,.svc-group-title:after{content:"";height:1px;background:var(--line);flex:1}
+  .svc-group-title:before{display:none}
+  .svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-bottom:64px}
+  .svc-card{
+    background:#fff;border:1px solid #e7e0d5;padding:34px 28px;transition:.3s;position:relative;
+  }
+  .svc-card:hover{transform:translateY(-6px);box-shadow:0 18px 40px rgba(60,50,30,.10);border-color:var(--gold)}
+  .svc-card h4{font-size:23px;margin-bottom:6px}
+  .svc-meta{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+  .svc-card p{font-size:15px;color:#6c685f}
+  .svc-price{font-family:var(--serif);font-size:30px;color:var(--ink);margin-top:18px}
+  .svc-price small{font-size:14px;color:var(--grey)}
+
+  /* ---------- BENEFITS ---------- */
+  .benefits{background:var(--ink);color:var(--cream)}
+  .benefits .sec-head h2{color:#fff}
+  .ben-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .ben{
+    border:1px solid rgba(216,193,145,.22);padding:30px 22px;text-align:center;transition:.3s;
+  }
+  .ben:hover{background:rgba(216,193,145,.06);border-color:var(--gold)}
+  .ben .ico{font-size:26px;margin-bottom:14px}
+  .ben h4{font-size:20px;color:var(--gold-soft);margin-bottom:8px}
+  .ben p{font-size:14px;color:#b8b3aa}
+
+  /* ---------- ABOUT ---------- */
+  .about{background:var(--cream-2)}
+  .about-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:center}
+  .about-photo{
+    aspect-ratio:4/5;background:linear-gradient(135deg,#cdbfa6,#9a8f7c);
+    display:flex;align-items:center;justify-content:center;color:#fff;
+    font-family:var(--serif);font-size:18px;text-align:center;position:relative;
+  }
+  .about-photo span{opacity:.85;padding:20px}
+  .about h2{font-size:clamp(30px,4.5vw,44px);margin-bottom:8px}
+  .about .sig{font-family:var(--serif);font-style:italic;font-size:24px;color:var(--gold);margin-top:22px}
+  .about p+p{margin-top:16px}
+
+  /* ---------- PROCESS ---------- */
+  .process{background:var(--cream)}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+  .step{text-align:center;padding:14px}
+  .step .num{font-family:var(--serif);font-size:40px;color:var(--gold);line-height:1}
+  .step h4{font-size:21px;margin:12px 0 8px}
+  .step p{font-size:14.5px;color:#6c685f}
+
+  /* ---------- TESTIMONIALS ---------- */
+  .reviews{background:var(--ink-soft);color:var(--cream)}
+  .reviews .sec-head h2{color:#fff}
+  .rev-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .rev{border:1px solid rgba(216,193,145,.2);padding:32px 26px}
+  .stars{color:var(--gold);letter-spacing:3px;margin-bottom:14px}
+  .rev p{font-family:var(--serif);font-style:italic;font-size:19px;color:#ece8e0;margin-bottom:16px}
+  .rev .who{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--gold-soft)}
+
+  /* ---------- FAQ ---------- */
+  .faq{background:var(--cream)}
+  .faq-list{max-width:820px;margin:0 auto}
+  details{border-bottom:1px solid #e1d9cc;padding:22px 4px}
+  details summary{
+    font-family:var(--serif);font-size:22px;cursor:pointer;list-style:none;
+    display:flex;justify-content:space-between;align-items:center;gap:20px;
+  }
+  details summary::-webkit-details-marker{display:none}
+  details summary:after{content:"+";color:var(--gold);font-size:26px;transition:.3s}
+  details[open] summary:after{transform:rotate(45deg)}
+  details p{margin-top:14px;color:#6c685f;font-size:15.5px}
+
+  /* ---------- CONTACT ---------- */
+  .contact{background:var(--ink);color:var(--cream)}
+  .contact .sec-head h2{color:#fff}
+  .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px}
+  .contact-info h3{color:var(--gold-soft);font-size:24px;margin-bottom:18px}
+  .ci-row{display:flex;gap:14px;align-items:flex-start;margin-bottom:18px}
+  .ci-row .ico{color:var(--gold);width:24px;font-size:18px;flex:none;text-align:center}
+  .ci-row a,.ci-row span{color:#ddd8cf;font-size:15.5px}
+  .ci-row a:hover{color:var(--gold-soft)}
+  .ci-row strong{display:block;color:#fff;font-weight:400;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:2px}
+  .contact-cta{
+    border:1px solid rgba(216,193,145,.3);padding:40px 34px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:18px;
+    background:rgba(216,193,145,.04);
+  }
+  .contact-cta h3{font-family:var(--serif);font-size:30px;color:#fff}
+  .contact-cta p{color:#c7c2ba;font-size:15px}
+  .contact-cta .btn{align-self:center}
+
+  /* ---------- FOOTER ---------- */
+  footer{background:#090909;color:#9b958c;padding:50px 24px 30px;text-align:center}
+  .foot-brand{font-family:var(--serif);font-size:24px;color:#fff;margin-bottom:14px}
+  .foot-brand span{color:var(--gold)}
+  .foot-links{display:flex;gap:22px;justify-content:center;flex-wrap:wrap;margin:18px 0}
+  .foot-links a{font-size:12px;letter-spacing:1.6px;text-transform:uppercase;color:#bdb7ad}
+  .foot-links a:hover{color:var(--gold)}
+  .foot-social{margin:16px 0}
+  .foot-social a{margin:0 9px;color:#cbc5ba;font-size:13px;letter-spacing:1px}
+  .foot-social a:hover{color:var(--gold)}
+  .copy{font-size:12px;color:#6c675f;margin-top:18px}
+
+  /* ---------- RESPONSIVE ---------- */
+  @media(max-width:900px){
+    .svc-grid,.ben-grid,.steps,.rev-grid{grid-template-columns:repeat(2,1fr)}
+    .about-grid,.contact-grid{grid-template-columns:1fr;gap:32px}
+    .about-photo{aspect-ratio:16/10}
+  }
+  @media(max-width:640px){
+    section{padding:72px 20px}
+    .nav-links{
+      position:fixed;top:0;right:0;height:100vh;width:74%;max-width:320px;
+      background:rgba(14,14,15,.98);flex-direction:column;justify-content:center;
+      gap:30px;transform:translateX(100%);transition:.35s;padding:40px;
+    }
+    .nav-links.open{transform:translateX(0)}
+    .burger{display:flex;z-index:60}
+    .svc-grid,.ben-grid,.steps,.rev-grid{grid-template-columns:1fr}
+    .hero h1{font-size:46px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAVIGATION ============ -->
+<header id="topbar">
+  <nav class="nav">
+    <a href="#home" class="brand">B's <span>Guasha</span></a>
+    <div class="nav-links" id="menu">
+      <a href="#services">Services</a>
+      <a href="#benefits">Benefits</a>
+      <a href="#about">About</a>
+      <a href="#reviews">Reviews</a>
+      <a href="#faq">FAQ</a>
+      <a href="#contact" class="nav-cta">Book Now</a>
+    </div>
+    <button class="burger" id="burger" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+  </nav>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero" id="home">
+  <div class="wrap">
+    <div class="overline">Facial &amp; Body Gua Sha &middot; [City, State]</div>
+    <h1>The ancient art of<br><em>sculpt, release &amp; renew</em></h1>
+    <p>Traditional gua sha treatments that lift and contour the face, release deep tension in the body, and restore your natural glow.</p>
+    <div class="hero-actions">
+      <a href="#contact" class="btn light">Book a Session</a>
+      <a href="#services" class="btn light">View Treatments</a>
+    </div>
+  </div>
+  <div class="scroll-cue">Scroll ↓</div>
+</section>
+
+<!-- ============ SERVICES ============ -->
+<section class="services" id="services">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="overline">The Menu</div>
+      <h2>Treatments &amp; Pricing</h2>
+      <div class="divider"></div>
+      <p class="lead">Every session is tailored to you. Prices below — replace with your own rates.</p>
+    </div>
+
+    <!-- FACIAL GUA SHA -->
+    <div class="svc-group-title"><h3>Facial Gua Sha</h3></div>
+    <div class="svc-grid">
+      <div class="svc-card">
+        <h4>Signature Facial Gua Sha</h4>
+        <div class="svc-meta">[60 min]</div>
+        <p>A full face, neck and décolleté ritual to lift, sculpt and drain. Leaves skin lifted, de-puffed and luminous.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+      <div class="svc-card">
+        <h4>Express Glow</h4>
+        <div class="svc-meta">[30 min]</div>
+        <p>A quick sculpting and de-puffing reset for the face — perfect before an event or on a lunch break.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+      <div class="svc-card">
+        <h4>Deluxe Lift &amp; Sculpt</h4>
+        <div class="svc-meta">[75 min]</div>
+        <p>The signature facial plus [add-on — e.g. LED therapy, custom mask] for deeper contouring and renewal.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+    </div>
+
+    <!-- BODY GUA SHA -->
+    <div class="svc-group-title"><h3>Body Gua Sha</h3></div>
+    <div class="svc-grid">
+      <div class="svc-card">
+        <h4>Back, Neck &amp; Shoulder Release</h4>
+        <div class="svc-meta">[45 min]</div>
+        <p>Targeted scraping to break up tension and knots, ease stiffness and restore mobility where you hold stress most.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+      <div class="svc-card">
+        <h4>Therapeutic Body Gua Sha</h4>
+        <div class="svc-meta">[60 min]</div>
+        <p>Full-body treatment to boost circulation, relieve muscle pain and inflammation, and support your natural recovery.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+      <div class="svc-card">
+        <h4>Full Body Renewal</h4>
+        <div class="svc-meta">[90 min]</div>
+        <p>Our most complete session — face and body combined for total release, drainage and deep relaxation.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+    </div>
+
+    <!-- ADD-ONS -->
+    <div class="svc-group-title"><h3>Add-Ons &amp; Packages</h3></div>
+    <div class="svc-grid">
+      <div class="svc-card">
+        <h4>Gua Sha Add-On</h4>
+        <div class="svc-meta">[15 min]</div>
+        <p>Add a gua sha finish to [any service / massage]. A perfect enhancement to any treatment.</p>
+        <div class="svc-price">$[00]</div>
+      </div>
+      <div class="svc-card">
+        <h4>Package of 5</h4>
+        <div class="svc-meta">Best Value</div>
+        <p>Five sessions of your chosen treatment at a reduced rate — because gua sha works best as a ritual.</p>
+        <div class="svc-price">$[000] <small>/ 5 sessions</small></div>
+      </div>
+      <div class="svc-card">
+        <h4>Gift Card</h4>
+        <div class="svc-meta">Any Amount</div>
+        <p>Give the gift of glow and renewal. Available for any treatment or value — [ask for details].</p>
+        <div class="svc-price">$[—]</div>
+      </div>
+    </div>
+
+    <div class="center" style="margin-top:18px">
+      <a href="#contact" class="btn gold">Book Your Treatment</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BENEFITS ============ -->
+<section class="benefits" id="benefits">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="overline">Why Gua Sha</div>
+      <h2>The Benefits</h2>
+      <div class="divider"></div>
+      <p class="lead">An age-old technique with results you can see and feel — for the face and the whole body.</p>
+    </div>
+    <div class="ben-grid">
+      <div class="ben"><div class="ico">✦</div><h4>Lifts &amp; Sculpts</h4><p>Defines cheekbones and jawline and tones facial contours.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>De-Puffs</h4><p>Drains fluid to reduce puffiness and soften dark circles.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>Boosts Circulation</h4><p>Stimulates blood flow for a brighter, healthier glow.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>Releases Tension</h4><p>Melts knots and tightness in the neck, back and shoulders.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>Lymphatic Drainage</h4><p>Helps the body clear toxins and reduce inflammation.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>Eases Pain</h4><p>Relieves muscle aches, stiffness and chronic tension.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>Smooths Skin</h4><p>Softens fine lines and improves overall skin texture.</p></div>
+      <div class="ben"><div class="ico">✦</div><h4>Calms the Mind</h4><p>A grounding ritual that soothes the nervous system.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ABOUT ============ -->
+<section class="about" id="about">
+  <div class="wrap about-grid">
+    <div class="about-photo">
+      <span>[ Add a photo of B / your studio here ]</span>
+    </div>
+    <div>
+      <div class="overline">Meet Your Therapist</div>
+      <h2>Hi, I'm [B / Full Name]</h2>
+      <div class="divider" style="margin:18px 0"></div>
+      <p>[Write 2–3 sentences about yourself: how you discovered gua sha, your training and certifications, and your philosophy of care. Make it warm and personal — this is what builds trust.]</p>
+      <p>[Example: "I'm a certified [gua sha / massage] therapist with [X] years of experience. I blend traditional Chinese technique with a gentle, modern touch to help my clients feel renewed inside and out."]</p>
+      <p>[Mention anything that sets you apart — natural products, a calm home studio, a focus on results, etc.]</p>
+      <div class="sig">— B</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROCESS ============ -->
+<section class="process" id="process">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="overline">What to Expect</div>
+      <h2>Your Visit, Step by Step</h2>
+      <div class="divider"></div>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="num">01</div><h4>Consult</h4><p>We talk through your goals, skin, and any areas of tension or concern.</p></div>
+      <div class="step"><div class="num">02</div><h4>Prepare</h4><p>Cleanse and warm the skin with [oil / serum] to glide the gua sha tool.</p></div>
+      <div class="step"><div class="num">03</div><h4>The Ritual</h4><p>Slow, intentional gua sha strokes to sculpt, drain and release.</p></div>
+      <div class="step"><div class="num">04</div><h4>Aftercare</h4><p>You leave glowing, with simple tips to extend your results at home.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TESTIMONIALS ============ -->
+<section class="reviews" id="reviews">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="overline">Kind Words</div>
+      <h2>What Clients Say</h2>
+      <div class="divider"></div>
+      <p class="lead">[Replace these with real reviews from your clients once you have them.]</p>
+    </div>
+    <div class="rev-grid">
+      <div class="rev">
+        <div class="stars">★★★★★</div>
+        <p>"[Add a real client review here. A sentence or two about how they looked and felt afterward works beautifully.]"</p>
+        <div class="who">— [Client name / initial]</div>
+      </div>
+      <div class="rev">
+        <div class="stars">★★★★★</div>
+        <p>"[Add a second review here. Mentioning a specific result — less puffiness, no more neck pain — is very persuasive.]"</p>
+        <div class="who">— [Client name / initial]</div>
+      </div>
+      <div class="rev">
+        <div class="stars">★★★★★</div>
+        <p>"[Add a third review here. Reviews about the relaxing experience and your care build trust.]"</p>
+        <div class="who">— [Client name / initial]</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="faq" id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="overline">Good to Know</div>
+      <h2>Frequently Asked</h2>
+      <div class="divider"></div>
+    </div>
+    <div class="faq-list">
+      <details open>
+        <summary>What exactly is gua sha?</summary>
+        <p>Gua sha is a traditional East Asian healing technique that uses a smooth-edged tool to gently scrape the skin. On the face it lifts and de-puffs; on the body it releases tension and boosts circulation. [Edit to match how you describe it.]</p>
+      </details>
+      <details>
+        <summary>Does it hurt? Will I bruise?</summary>
+        <p>Facial gua sha is gentle and relaxing with no marks. Body gua sha uses firmer pressure and may leave temporary redness (called "sha") that fades within a few days — this is normal and part of the healing process. [Adjust to your technique.]</p>
+      </details>
+      <details>
+        <summary>How often should I come?</summary>
+        <p>[Your recommendation — e.g. "For best results I suggest a session every 1–2 weeks to start, then monthly maintenance."]</p>
+      </details>
+      <details>
+        <summary>How should I prepare, and what about aftercare?</summary>
+        <p>[Your guidance — e.g. "Come with clean skin and stay hydrated. Afterward, drink plenty of water and avoid intense heat or sun for 24 hours."]</p>
+      </details>
+      <details>
+        <summary>Where are you located?</summary>
+        <p>[Your location details — e.g. "I work from a private studio in [neighborhood, City]. The exact address is shared when you book."]</p>
+      </details>
+      <details>
+        <summary>How do I book and pay?</summary>
+        <p>Booking is by phone or message — just reach out using the details below. [Add your accepted payment methods, deposit and cancellation policy here.]</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTACT ============ -->
+<section class="contact" id="contact">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="overline">Get in Touch</div>
+      <h2>Book Your Session</h2>
+      <div class="divider"></div>
+    </div>
+    <div class="contact-grid">
+      <div class="contact-info">
+        <h3>Reach B's Guasha</h3>
+        <!-- Replace the phone numbers, email and address below. Keep the tel:/sms: links matching. -->
+        <div class="ci-row">
+          <div class="ico">✆</div>
+          <div><strong>Call</strong><a href="tel:+10000000000">[your phone number]</a></div>
+        </div>
+        <div class="ci-row">
+          <div class="ico">✉</div>
+          <div><strong>Text / SMS</strong><a href="sms:+10000000000">[your phone number]</a></div>
+        </div>
+        <div class="ci-row">
+          <div class="ico">◎</div>
+          <div><strong>WhatsApp</strong><a href="https://wa.me/10000000000" target="_blank" rel="noopener">[your WhatsApp number]</a></div>
+        </div>
+        <div class="ci-row">
+          <div class="ico">@</div>
+          <div><strong>Email</strong><a href="mailto:hello@example.com">[your email]</a></div>
+        </div>
+        <div class="ci-row">
+          <div class="ico">⌖</div>
+          <div><strong>Studio</strong><span>[your address or "By appointment in City — address shared on booking"]</span></div>
+        </div>
+        <div class="ci-row">
+          <div class="ico">☾</div>
+          <div><strong>Hours</strong><span>[Mon–Fri 9–6 · Sat 10–4 · Sun closed]</span></div>
+        </div>
+        <div class="ci-row">
+          <div class="ico">⌘</div>
+          <div><strong>Instagram</strong><a href="https://instagram.com/" target="_blank" rel="noopener">[@yourhandle]</a></div>
+        </div>
+      </div>
+
+      <div class="contact-cta">
+        <h3>Ready to glow?</h3>
+        <p>Sessions are by appointment. Call or message to find a time that works — I'll take care of the rest.</p>
+        <a href="tel:+10000000000" class="btn gold">Call to Book</a>
+        <a href="https://wa.me/10000000000" target="_blank" rel="noopener" class="btn light">Message on WhatsApp</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="foot-brand">B's <span>Guasha</span></div>
+  <div>Facial &amp; Body Gua Sha · [City, State]</div>
+  <div class="foot-links">
+    <a href="#services">Services</a>
+    <a href="#benefits">Benefits</a>
+    <a href="#about">About</a>
+    <a href="#faq">FAQ</a>
+    <a href="#contact">Contact</a>
+  </div>
+  <div class="foot-social">
+    <a href="https://instagram.com/" target="_blank" rel="noopener">Instagram</a>
+    <a href="https://wa.me/10000000000" target="_blank" rel="noopener">WhatsApp</a>
+    <a href="tel:+10000000000">Call</a>
+  </div>
+  <div class="copy">© <span id="yr"></span> B's Guasha. All rights reserved. · Site template ready to customize.</div>
+</footer>
+
+<script>
+  // shrink/darken nav on scroll
+  var bar=document.getElementById('topbar');
+  window.addEventListener('scroll',function(){
+    if(window.scrollY>40){bar.classList.add('scrolled')}else{bar.classList.remove('scrolled')}
+  });
+  // mobile menu
+  var burger=document.getElementById('burger'),menu=document.getElementById('menu');
+  burger.addEventListener('click',function(){menu.classList.toggle('open')});
+  menu.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){menu.classList.remove('open')})});
+  // current year
+  document.getElementById('yr').textContent=new Date().getFullYear();
+</script>
+</body>
+</html>
