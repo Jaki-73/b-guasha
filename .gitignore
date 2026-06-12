@@ -18,3 +18,4 @@ npm-debug.log*
 
 # User data — do not commit (contains customer data & password hashes)
 data/
+data/

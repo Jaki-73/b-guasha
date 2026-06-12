@@ -21,4 +21,11 @@
   "adminPin": "1234",
   "paymentsDemo": true,
   "qpay": {
-    "c
+    "comment": "Fill these after signing a QPay merchant contract (see docs/PAYMENTS-QPAY.md), then set paymentsDemo to false.",
+    "baseUrl": "https://merchant-sandbox.qpay.mn",
+    "username": "",
+    "password": "",
+    "invoiceCode": "",
+    "callbackBaseUrl": ""
+  }
+}
