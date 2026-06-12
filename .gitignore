@@ -15,3 +15,6 @@ npm-debug.log*
 
 # Local backups exported from the app
 *-backup-*.json
+
+# User data — do not commit (contains customer data & password hashes)
+data/

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>B's Guasha — Гуаша гоо сайхны студи · Улаанбаатар</title>
-<meta name="description" content="B's Guasha — нүүр ба биеийн гуаша эмчилгээ, Улаанбаатар. Цаг захиалга, QPay цэнэглэлт бүхий апп.">
+<title>B's Gua Sha — Гуаша гоо сайхны студи · Улаанбаатар</title>
+<meta name="description" content="B's Gua Sha — нүүр ба биеийн гуаша эмчилгээ, Улаанбаатар. Гоо сайхан, Эрүүл арьс, Итгэлтэй чи. Цаг захиалга, багц, бэлгийн карт бүхий апп.">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,12 +15,14 @@
 
 <header class="site-header">
   <a class="logo" href="/">
-    <img src="/assets/favicon.svg" alt="" width="34" height="34">
-    <span>B's Guasha</span>
+    <img src="/assets/favicon.svg" alt="" width="36" height="36">
+    <span>B's Gua Sha</span>
   </a>
   <nav class="site-nav" id="siteNav">
     <a href="#services" data-i18n="nav.services">Үйлчилгээ</a>
     <a href="#about" data-i18n="nav.about">Гуаша гэж юу вэ?</a>
+    <a href="#products" data-i18n="nav.products">Бүтээгдэхүүн</a>
+    <a href="#reviews" data-i18n="nav.reviews">Сэтгэгдэл</a>
     <a href="#app" data-i18n="nav.app">Апп</a>
     <a href="#contact" data-i18n="nav.contact">Холбоо барих</a>
   </nav>
@@ -37,27 +39,22 @@
 <!-- ============ HERO ============ -->
 <section class="hero">
   <div class="hero-inner">
-    <p class="hero-eyebrow" data-i18n="hero.eyebrow">Нүүр ба биеийн гуаша · Улаанбаатар</p>
+    <p class="hero-eyebrow" data-i18n="hero.eyebrow">Гоо сайхан, Эрүүл арьс, Итгэлтэй чи</p>
     <h1 data-i18n="hero.title">Байгалийн аргаар<br>залуу, гэрэлтсэн арьс</h1>
+    <div class="hero-rating" id="heroRating" hidden><span class="st">★★★★★</span><span id="heroRatingTxt"></span></div>
     <p class="hero-sub" data-i18n="hero.sub">Уламжлалт гуаша эмчилгээ — нүүрний хаван бууруулж, арьсыг чангалж, цусны эргэлтийг сэргээнэ. Аппаар цагаа захиалж, QPay-ээр төлбөрөө хийгээрэй.</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="/app" data-i18n="hero.book">Цаг захиалах</a>
       <a class="btn btn-ghost" href="#services" data-i18n="hero.services">Үйлчилгээ үзэх</a>
     </div>
     <div class="hero-badges">
-      <span data-i18n="hero.b1">🌿 100% гар аргаар</span>
+      <span data-i18n="hero.b1">🌿 100% органик арчилгаа</span>
       <span data-i18n="hero.b2">💎 Жинхэнэ хаш чулуу</span>
       <span data-i18n="hero.b3">📱 Аппаар захиалга</span>
     </div>
   </div>
   <div class="hero-art" aria-hidden="true">
-    <svg viewBox="0 0 320 320">
-      <ellipse cx="160" cy="170" rx="120" ry="125" fill="var(--jade-soft)"/>
-      <path d="M80 210c40 25 120 25 160-30-30-45-130-50-160 30z" fill="var(--jade)" opacity=".85"/>
-      <path d="M100 196c30 16 90 14 120-22-24-30-96-34-120 22z" fill="var(--blush)" opacity=".9"/>
-      <circle cx="228" cy="96" r="14" fill="var(--gold)" opacity=".8"/>
-      <circle cx="74" cy="84" r="7" fill="var(--gold)" opacity=".5"/>
-    </svg>
+    <img src="/assets/logo.svg" alt="B's Gua Sha">
   </div>
 </section>
 
@@ -76,30 +73,38 @@
 <!-- ============ SERVICES ============ -->
 <section class="section section-alt" id="services">
   <h2 class="section-title" data-i18n="svc.title">Үйлчилгээ ба үнэ</h2>
-  <p class="section-sub" data-i18n="svc.sub">Бүх үйлчилгээг аппаар захиалж, үлдэгдлээсээ эсвэл салон дээр төлж болно.</p>
+  <p class="section-sub" data-i18n="svc.sub">Бүх үйлчилгээг аппаар захиалж, үлдэгдлээсээ, багцаасаа эсвэл салон дээр төлж болно.</p>
   <div id="servicesWrap"><!-- rendered by site.js --></div>
+  <div id="bundlesWrap" class="bundle-strip"><!-- rendered by site.js --></div>
   <p class="center"><a class="btn btn-primary" href="/app" data-i18n="svc.book">Цаг захиалах</a></p>
 </section>
 
+<!-- ============ PRODUCTS & TOOLS (education) ============ -->
+<section class="section" id="products">
+  <h2 class="section-title" data-i18n="prod.title">Бид юу хэрэглэдэг вэ?</h2>
+  <p class="section-sub" data-i18n="prod.sub">Эмчилгээнд ашигладаг чулуу, бүтээгдэхүүн, төхөөрөмжүүд — болон тэдгээр нь арьсанд тань юу өгдөг тухай.</p>
+  <div id="eduWrap"><!-- rendered by site.js --></div>
+</section>
+
 <!-- ============ APP PROMO ============ -->
-<section class="section" id="app">
+<section class="section section-alt" id="app">
   <div class="app-promo">
     <div class="phone-mock" aria-hidden="true">
       <div class="phone-screen">
-        <div class="pm-row pm-head"><span>B's Guasha</span><span>☾</span></div>
+        <div class="pm-row pm-head"><span>B's Gua Sha</span><span>☾</span></div>
         <div class="pm-balance"><small data-i18n="app.mock_balance">Үлдэгдэл</small><b>50,000₮</b></div>
         <div class="pm-row pm-card">📅 <span data-i18n="app.mock_book">Цаг захиалах</span></div>
-        <div class="pm-row pm-card">💳 <span data-i18n="app.mock_topup">QPay цэнэглэлт</span></div>
-        <div class="pm-row pm-card">📷 <span data-i18n="app.mock_photo">Явцын зураг</span></div>
+        <div class="pm-row pm-card">🎁 <span data-i18n="app.mock_gift">Бэлгийн карт ба багц</span></div>
+        <div class="pm-row pm-card">💬 <span data-i18n="app.mock_chat">Салонтой чатлах</span></div>
       </div>
     </div>
     <div class="app-promo-text">
       <h2 class="section-title left" data-i18n="app.title">Таны гоо сайхны апп</h2>
       <ul class="feature-list">
-        <li><b data-i18n="app.f1t">24/7 цаг захиалга</b><span data-i18n="app.f1d">Чөлөөт цагуудыг шууд харж, өөрт тохирохыг сонгоно.</span></li>
-        <li><b data-i18n="app.f2t">Хэтэвч ба QPay</b><span data-i18n="app.f2d">QR кодоор цэнэглээд урамшуулал аваарай — 100,000₮-с дээш цэнэглэлтэд +5% бонус.</span></li>
-        <li><b data-i18n="app.f3t">Явцын зураг — нууцлалтай</b><span data-i18n="app.f3d">Эмчилгээний үр дүнгээ зургаар хөтлөх бөгөөд нүдийг тань автоматаар халхалж хадгална.</span></li>
-        <li><b data-i18n="app.f4t">Монгол / English · Хар, цайвар горим</b><span data-i18n="app.f4d">Өөрийн хэл, харагдах байдлаа сонгоорой.</span></li>
+        <li><b data-i18n="app.f1t">24/7 цаг захиалга</b><span data-i18n="app.f1d">Дуртай ажилтнаа сонгоод чөлөөт цагийг шууд харна.</span></li>
+        <li><b data-i18n="app.f2t">Хэтэвч, багц, бэлгийн карт</b><span data-i18n="app.f2d">QPay-ээр цэнэглэж, багц аваад хэмнэ. Найздаа бэлгийн карт илгээ.</span></li>
+        <li><b data-i18n="app.f3t">Чат ба сэтгэгдэл</b><span data-i18n="app.f3d">Салонтой шууд чатлаж, үйлчилгээгээ үнэлээрэй.</span></li>
+        <li><b data-i18n="app.f4t">Явцын зураг — нууцлалтай</b><span data-i18n="app.f4d">Үр дүнгээ зургаар хөтлөх бөгөөд нүдийг тань автоматаар халхалж хадгална.</span></li>
       </ul>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/app" data-i18n="app.open">Апп нээх</a>
@@ -110,50 +115,49 @@
 </section>
 
 <!-- ============ STEPS ============ -->
-<section class="section section-alt">
+<section class="section">
   <h2 class="section-title" data-i18n="steps.title">Хэрхэн ажилладаг вэ?</h2>
   <div class="cards-3 steps">
-    <div class="card"><div class="step-num">1</div><h3 data-i18n="steps.s1t">Захиалга</h3><p data-i18n="steps.s1d">Аппаар үйлчилгээ, өдөр, цагаа сонгоно.</p></div>
+    <div class="card"><div class="step-num">1</div><h3 data-i18n="steps.s1t">Захиалга</h3><p data-i18n="steps.s1d">Аппаар үйлчилгээ, ажилтан, өдөр цагаа сонгоно.</p></div>
     <div class="card"><div class="step-num">2</div><h3 data-i18n="steps.s2t">Эмчилгээ</h3><p data-i18n="steps.s2d">Салон дээр ирж, тайван орчинд гуаша эмчилгээгээ авна.</p></div>
-    <div class="card"><div class="step-num">3</div><h3 data-i18n="steps.s3t">Үр дүн</h3><p data-i18n="steps.s3d">Явцын зургаараа өөрчлөлтөө хянаж, дараагийн цагаа товлоно.</p></div>
+    <div class="card"><div class="step-num">3</div><h3 data-i18n="steps.s3t">Үр дүн</h3><p data-i18n="steps.s3d">Үнэлгээгээ өгч, явцын зургаараа өөрчлөлтөө хянана.</p></div>
   </div>
 </section>
 
 <!-- ============ REVIEWS ============ -->
-<section class="section">
-  <h2 class="section-title" data-i18n="rev.title">Сэтгэгдэл</h2>
-  <div class="cards-3">
-    <div class="card review"><p data-i18n="rev.r1">«3 удаагийн дараа нүүрний хаван илт багасч, эрүүний тойм тодорсон. Ажлын дараа очиход хамгийн сайхан амралт.»</p><span>— Номин</span></div>
-    <div class="card review"><p data-i18n="rev.r2">«Мөр хүзүүний чангаралт арилаад унтлага сайжирсан. Аппаар захиалга хийхэд маш амар.»</p><span>— Анужин</span></div>
-    <div class="card review"><p data-i18n="rev.r3">«Арьс минь гэрэлтэж, будалтгүйгээр гарах болсон. Явцын зургаа харьцуулахад өөрчлөлт нь харагддаг нь мотивац өгдөг.»</p><span>— Сүврэг</span></div>
-  </div>
-  <p class="hint center" data-i18n="rev.note">* Жишээ сэтгэгдэл — өөрийн үйлчлүүлэгчдийн бодит сэтгэгдлээр солиорой.</p>
+<section class="section section-alt" id="reviews">
+  <h2 class="section-title" data-i18n="rev.title">Үйлчлүүлэгчдийн сэтгэгдэл</h2>
+  <p class="section-sub" id="revSub" data-i18n="rev.sub">Аппаар үйлчилгээ авсан хүмүүсийн бодит үнэлгээ.</p>
+  <div class="cards-3" id="reviewsWrap"><!-- rendered by site.js --></div>
 </section>
 
 <!-- ============ FAQ ============ -->
-<section class="section section-alt" id="faq">
+<section class="section" id="faq">
   <h2 class="section-title" data-i18n="faq.title">Түгээмэл асуулт</h2>
   <div class="faq">
-    <details><summary data-i18n="faq.q1">Хэр олон удаа хийлгэх вэ?</summary><p data-i18n="faq.a1">Эхний сард 7 хоногт 1–2 удаа, дараа нь сард 1–2 удаа хийлгэхэд үр дүн тогтвортой байдаг. 5 удаагийн курс хамгийн их үр дүнтэй.</p></details>
+    <details><summary data-i18n="faq.q1">Хэр олон удаа хийлгэх вэ?</summary><p data-i18n="faq.a1">Эхний сард 7 хоногт 1–2 удаа, дараа нь сард 1–2 удаа хийлгэхэд үр дүн тогтвортой байдаг. 5 удаагийн багц хамгийн их үр дүнтэй.</p></details>
     <details><summary data-i18n="faq.q2">Өвддөг үү?</summary><p data-i18n="faq.a2">Үгүй. Нүүрний гуаша зөөлөн, тайвшруулах мэдрэмж төрүүлдэг. Биеийн гуаша булчингийн зангиралттай хэсэгт бага зэрэг эмзэг байж болно.</p></details>
-    <details><summary data-i18n="faq.q3">Төлбөрөө яаж төлөх вэ?</summary><p data-i18n="faq.a3">Аппын хэтэвчээ QPay QR-ээр цэнэглэж захиалгадаа ашиглах, эсвэл салон дээр бэлнээр/картаар төлж болно.</p></details>
-    <details><summary data-i18n="faq.q4">Цагаа цуцалж болох уу?</summary><p data-i18n="faq.a4">Болно — цагаасаа 24 цагийн өмнө аппаараа цуцалбал төлбөр хэтэвчинд бүрэн буцаан орно.</p></details>
+    <details><summary data-i18n="faq.q3">Төлбөрөө яаж төлөх вэ?</summary><p data-i18n="faq.a3">Аппын хэтэвчээ QPay QR-ээр цэнэглэж төлөх, багц авах, бэлгийн карт ашиглах, эсвэл салон дээр бэлнээр/картаар төлж болно.</p></details>
+    <details><summary data-i18n="faq.q4">Цагаа цуцалж болох уу?</summary><p data-i18n="faq.a4">Болно — цагаасаа 24 цагийн өмнө аппаараа цуцалбал төлбөр хэтэвчинд (багцын эрх багцад) бүрэн буцаан орно.</p></details>
+    <details><summary data-i18n="faq.q5">Бэлгийн карт яаж ажилладаг вэ?</summary><p data-i18n="faq.a5">Аппаасаа бэлгийн карт худалдан аваад кодыг нь хайртай хүндээ илгээнэ. Тэр хүн аппын "Код идэвхжүүлэх" хэсэгт оруулахад мөнгө хэтэвчинд нь шууд орно.</p></details>
   </div>
 </section>
 
 <!-- ============ CONTACT ============ -->
-<section class="section" id="contact">
+<section class="section section-alt" id="contact">
   <h2 class="section-title" data-i18n="contact.title">Холбоо барих</h2>
   <div class="contact-grid">
     <div class="card">
       <h3 data-i18n="contact.addr_t">📍 Хаяг</h3>
-      <p id="contactAddr">Сүхбаатар дүүрэг, Улаанбаатар</p>
+      <p id="contactAddr">Баянгол дүүрэг, Нарны хороолол — Хас Мөнх төвийн 2 давхарт</p>
       <h3 data-i18n="contact.hours_t">🕙 Ажиллах цаг</h3>
       <p id="contactHours">10:00 – 19:00</p>
     </div>
     <div class="card">
       <h3 data-i18n="contact.call_t">📞 Утас</h3>
-      <p><a id="contactPhone" href="tel:+97699112233">+976 9911-2233</a></p>
+      <p><a id="contactPhone" href="tel:+97691113958">+976 9111-3958</a></p>
+      <h3>✉️ Имэйл</h3>
+      <p><a id="contactEmail" href="mailto:bolormaa.b.b@gmail.com">bolormaa.b.b@gmail.com</a></p>
       <h3 data-i18n="contact.social_t">💬 Сошиал</h3>
       <p><a id="contactFb" href="#" target="_blank" rel="noopener">Facebook ↗</a></p>
     </div>
@@ -168,8 +172,8 @@
 </main>
 
 <footer class="site-footer">
-  <span>© <span id="year"></span> B's Guasha</span>
-  <span data-i18n="footer.tag">Гоо сайхан · Тэнцвэр · Гэрэлтэлт</span>
+  <span>© <span id="year"></span> B's Gua Sha</span>
+  <span data-i18n="footer.tag">Гоо сайхан, Эрүүл арьс, Итгэлтэй чи</span>
   <a href="/admin" class="admin-link" data-i18n="footer.admin">Эзэмшигчийн хэсэг</a>
 </footer>
 

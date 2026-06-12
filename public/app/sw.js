@@ -1,5 +1,5 @@
-/* B's Guasha PWA service worker — network-first, cache fallback for offline shell */
-const CACHE = 'bg-app-v1';
+/* B's Gua Sha PWA service worker — network-first, cache fallback for offline shell */
+const CACHE = 'bg-app-v3';
 
 self.addEventListener('install', (e) => self.skipWaiting());
 

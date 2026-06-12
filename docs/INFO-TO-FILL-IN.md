@@ -1,31 +1,34 @@
-# Information to Fill In (v2)
+# Before going live — replace these
 
-Replace my placeholders with your real details. Three places to edit:
+## ✅ Already filled from your Facebook page
 
-## 1. `config.json` — business facts (1 minute)
+These were taken from facebook.com/profile.php?id=61589496517687 and are already in `config.json`:
 
-| Field | Currently | Change to |
-|---|---|---|
-| `phoneDisplay` / `phoneTel` | +976 9911-2233 (fake) | your real number |
-| `addressEn` / `addressMn` | Sukhbaatar district placeholder | your real address |
-| `facebook` | your FB page ✓ (already set) | — |
-| `instagram` | empty | your handle URL (optional) |
-| `hoursOpen` / `hoursClose` | 10:00–19:00 | your hours |
-| `closedWeekdays` | `[]` (open every day) | e.g. `[0]` = closed Sundays (0=Sun … 6=Sat) |
-| `cancelHours` | 24 | your cancellation policy |
-| `topupBonusThreshold` / `Percent` | 100,000₮ → +5% | your promo (or 0 to disable) |
-| `adminPin` | **1234 — change this!** | your secret PIN |
+- **Phone:** +976 9111-3958
+- **Email:** bolormaa.b.b@gmail.com
+- **Address:** Баянгол дүүрэг, 26-р хороо, Нарны хороолол, Энгельсийн гудамж — Хас Мөнх төвийн 2 давхарт, Улаанбаатар 16020
+- **Slogan:** Гоо сайхан, Эрүүл арьс, Итгэлтэй чи / Naturally, Healthy and Beautiful
 
-Restart the server after editing (close the black window, run start-server.bat again).
+Double-check they're correct (especially the English address spelling).
 
-## 2. Admin panel — services & prices (live, no restart)
+## 🔴 Must change before real customers use it
 
-http://localhost:3000/admin → **Үйлчилгээ / Үнэ** tab: edit prices, untick services you don't offer. Current prices are my realistic estimates for UB — fix them.
+1. **Admin PIN** — `config.json` → `"adminPin": "1234"` → your own 4-8 digits.
+2. **Owner staff account** — seeded as **Болормаа / 91113958 / owner123**. Change the password: Админ → Ажилтан → ✎ Болормаа → "Шинэ нууц үг". If the owner's name/phone differ, edit them there too.
+3. **Example staff "Туяа (жишээ ажилтан)" (88000001/staff123)** — replace with your real second therapist (✎ → change name/phone/password) or switch her off (✎ → untick "Идэвхтэй").
+4. **Demo customer "Сараа (Demo)"** — harmless for testing; delete the `data` folder once before launch for a clean start (this also removes test bookings).
+5. **Service prices & names** — current ones are sensible placeholders. Админ → Үйлчилгээ: edit names/prices/durations, add or hide services.
+6. **Bundle** — seeded as "Нүүрний гуаша — 5 удаагийн багц, 250,000₮, 90 хоног" valid for the three facial services. Adjust price/sessions/validity/services: Админ → Багц · Код.
+7. **Promo code WELCOME10** (10,000₮ × 100 хүн) — keep, edit or switch off: Админ → Багц · Код.
+8. **Working hours** — currently 10:00–19:00 all week (your FB says "Always open"). Set real hours: Админ → Тохиргоо + each therapist's weekly hours in Ажилтан.
+9. **Education items ("Бид юу хэрэглэдэг вэ")** — default descriptions of stones/toner/clay mask/LED etc. Review and adjust to the products you actually use: Админ → (currently via the website section; items are editable through the API — easiest is to tell me what to change). Mention your real product brands if you like.
+10. **Sample reviews** (Номин, Анужин, Сүврэг) — visible on the website now so it doesn't look empty. Once real reviews come in, hide/delete them: Админ → Сэтгэгдэл (they're marked "жишээ").
 
-## 3. Website texts — `public/index.html` + `public/site.js`
+## 🟡 When you're ready for real money
 
-- Reviews: 3 sample reviews are marked "Жишээ сэтгэгдэл" — replace with real client words (both files contain the texts: `index.html` shows Mongolian, `site.js` has both languages).
-- Your story / "What is gua sha" texts — adjust freely or send me your wording and I'll put it in.
-- Photos: send me studio photos and I'll add a gallery + hero image.
+- QPay merchant contract → fill `config.json` → `qpay` → set `"paymentsDemo": false` (see docs/PAYMENTS-QPAY.md).
 
-When you have your real Facebook page content, photos, prices and policies — just tell me everything in one message and I'll update all files for you.
+## 🟢 Optional
+
+- Instagram link → `config.json` → `"instagram"`.
+- A real photo of the salon/team for the website hero (currently the logo).

@@ -1,50 +1,33 @@
-# Names, Domains & Future Ideas
+# Ideas & roadmap
 
-## App / brand name
+## Done in v3 ✅
 
-Your Facebook brand **"B's Guasha"** is already good — short, personal, memorable. Keep it as the app name. Options if you ever want a twist:
+Staff & roles · owner calendar with blocks and walk-ins · staff weekly schedules + days off · reviews with owner approval (live on the website) · bundles (5 sessions / 250k style) · gift cards with shareable codes · promo codes · customer↔salon chat · private per-staff client notes · client history (visits, spent, preferences) · skin profile + favourite therapist · education section (tools, toner, clay mask, machines…) · monthly report · in-admin settings · gold brand theme from the logo.
 
-| Name | Feel |
-|---|---|
-| **B's Guasha** ✅ recommended | matches Facebook, personal |
-| BGuasha | shorter, techy, good as domain |
-| Guasha by B | spa-elegant |
-| B Glow | modern, easy for both languages |
+## Next — high value, realistic
 
-In Mongolian contexts write it as **B's Guasha** (брэнд нэр) — no need to translate.
+1. **SMS reminders** — "Маргааш 14:00 цагт таныг хүлээж байна". Cuts no-shows a lot. Needs an SMS provider (CallPro, Mobicom gateway, ~20-50₮/SMS). The booking data is already there; I can add sending when you pick a provider.
+2. **Loyalty stamps** — every 10th visit −20% (or a free express). Visits are already counted per client; this is a small addition.
+3. **Birthday promo** — birthdays are already collected; auto-create a personal promo code in their birthday month + show a banner in the app.
+4. **Referral codes** — "Найзаа урь": each customer gets a personal code; both sides get wallet credit when the friend's first visit completes. The promo-code system can be extended for this.
+5. **Push notifications (PWA)** — "Таны цаг баталгаажлаа", chat replies, promos. Free, works on Android well; iOS needs the app installed to home screen.
+6. **Booking deposit** — require e.g. 20% from the wallet to confirm peak-hour slots; reduces no-shows. The wallet already supports it.
 
-## Domain names (check availability before deciding)
+## Later / nice to have
 
-| Domain | Note |
-|---|---|
-| **bguasha.mn** ✅ first choice | short, local, professional |
-| bsguasha.mn | closest to the brand |
-| bguasha.com | cheaper, international |
-| bglow.mn | if you rebrand toward "glow" |
-| guasha.mn | generic — great if free, likely taken/pricier |
+- **Online shop** — sell gua sha stones, rollers, oils, serums with QPay + delivery. The education section already describes the products; a shop is the natural next step since other gua sha practitioners may also buy tools.
+- **Waitlist** — when a day is full, "мэдэгдэл аваарай" → first to respond gets a cancelled slot.
+- **Recurring bookings** — "2 долоо хоног тутамд, Лхагва 15:00" auto-booking for course clients.
+- **Before/after public gallery** — with explicit customer consent per photo (the censored-photo system is a good base).
+- **Staff commission report** — % per completed service per staff member, monthly payout view.
+- **Excel export** — clients/bookings/transactions as .xlsx for accounting.
+- **E-barimt** — needed anyway when QPay goes live commercially.
+- **Inventory** — track product stock (oils, masks) with low-stock warnings.
+- **Customer tags & bulk messages** — "VIP", "course client" tags; send a chat/promo to a segment.
+- **Google Maps embed** on the contact section (needs nothing but the pin link).
+- **Multi-branch** — if a second location opens: branch picker, per-branch staff and calendars.
+- **Instagram feed** on the website once the account is active.
 
-- `.mn` domains: buy at **https://domain.mn** (the official registry, run by Datacom) — ~$40–60/yr.
-- `.com`: Cloudflare or Namecheap — ~$10–13/yr.
-- Tip: buy both `bguasha.mn` and `bguasha.com` (~$55–70/yr total) so nobody squats the other one.
+## Name & domain (unchanged from before)
 
-## Feature ideas for later (in rough order of value)
-
-1. **SMS or Messenger booking reminders** (24h before) — fewer no-shows. Needs an SMS gateway contract (Mobicom/Unitel/Skytel) or FB Messenger API.
-2. **Loyalty**: every 10th session free / stamp card in the app — the wallet system makes this easy.
-3. **Referral bonus**: give 10,000₮ wallet credit when a friend registers with your code.
-4. **Course tracking**: the 5-session package shows "3/5 used" in the app.
-5. **Before/after slider** on progress photos (drag to compare) + optional sharing image generator (censored only).
-6. **Multiple staff**: separate calendars per master once you hire.
-7. **Gift cards**: buy a wallet credit voucher for a friend — QPay pays for it.
-8. **Push notifications** (free via the PWA / Firebase when wrapped for stores).
-9. **Instagram feed section** on the website.
-10. **Google Business Profile + Maps embed** — free local discovery.
-
-## Things only you can fill in (tell me and I'll update)
-
-1. Real **address** (and a Google Maps link), **phone number**, **working hours**, days off
-2. Real **prices** (current ones are my realistic guesses — editable live in Admin → Үйлчилгээ)
-3. Your **story/intro** for the website + studio **photos**
-4. Real **client reviews** (the current ones are marked as samples)
-5. **Cancellation policy** — currently: free cancel ≥24h before, refund to wallet
-6. Top-up **bonus** — currently +5% over 100,000₮ (changeable in config.json)
+The brand "B's Gua Sha" works well. Domain ideas: **bguasha.mn** (~50-80k₮/yr at domain.mn), bgua.sha alternatives are gimmicky — keep it simple. Facebook page name and the app already match.
