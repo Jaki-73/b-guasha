@@ -183,9 +183,15 @@
     if (b) setView(b.getAttribute('data-view'));
   });
 
+  /* wallet is a feature the owner switches on/off in the admin panel */
+  function walletOn() { return !!(state.config && state.config.featureWallet); }
+
   function render() {
     if (!state.user) { $tabbar.hidden = true; return vAuth(); }
     $tabbar.hidden = false;
+    var wTab = $tabbar.querySelector('[data-view="wallet"]');
+    if (wTab) wTab.hidden = !walletOn();
+    if (!walletOn() && state.view === 'wallet') state.view = 'home';
     ({ home: vHome, book: vBook, wallet: vWallet, progress: vProgress, profile: vProfile, chat: vChat, edu: vEdu }[state.view] || vHome)();
   }
 
@@ -305,13 +311,13 @@
       '<p class="muted">' + t('home.hello') + '</p>' +
       '<h2 class="view-title" style="margin-bottom:14px">' + esc(u.name) + '</h2>' +
       (rateBk ? '<div class="rate-banner"><p>' + t('home.rate_banner') + '</p><button class="btn btn-sm btn-primary" id="rateNow">' + t('home.rate_btn') + '</button></div>' : '') +
-      '<div class="balance-card"><small>' + t('home.balance') + '</small>' +
-      '<div class="balance-amount">' + money(u.balance) + '</div>' +
-      '<button class="btn btn-sm" id="goTopup">+ ' + t('home.topup') + '</button></div>' +
+      (walletOn() ? '<div class="balance-card"><small>' + t('home.balance') + '</small>' +
+        '<div class="balance-amount">' + money(u.balance) + '</div>' +
+        '<button class="btn btn-sm" id="goTopup">+ ' + t('home.topup') + '</button></div>' : '') +
       '<div class="qa-grid">' +
       '<button class="qa" data-qa="book"><span class="ico">📅</span><span>' + t('home.q_book') + '</span></button>' +
       '<button class="qa" data-qa="chat"><span class="ico">💬</span>' + (state.unreadChat ? '<span class="badge">' + state.unreadChat + '</span>' : '') + '<span>' + t('home.q_chat') + '</span></button>' +
-      '<button class="qa" data-qa="gift"><span class="ico">🎁</span><span>' + t('home.q_gift') + '</span></button>' +
+      (walletOn() ? '<button class="qa" data-qa="gift"><span class="ico">🎁</span><span>' + t('home.q_gift') + '</span></button>' : '') +
       '<button class="qa" data-qa="edu"><span class="ico">💎</span><span>' + t('home.q_edu') + '</span></button>' +
       '</div>' +
       '<div class="section-head"><h3>' + t('home.next') + '</h3></div>' + nextHtml +
@@ -326,7 +332,7 @@
       '</div>';
 
     bindAppbar();
-    document.getElementById('goTopup').onclick = function () { setView('wallet'); };
+    var gt = document.getElementById('goTopup'); if (gt) gt.onclick = function () { setView('wallet'); };
     var gb = document.getElementById('goBook'); if (gb) gb.onclick = function () { setView('book'); };
     var gb2 = document.getElementById('goBook2'); if (gb2) gb2.onclick = function () { setView('book'); };
     var rn = document.getElementById('rateNow'); if (rn) rn.onclick = function () { openReview(rateBk); };
@@ -480,7 +486,7 @@
       document.getElementById('bkNext').onclick = function () {
         if (!bk.time) return;
         var pkg = usableBundleClient(s.id);
-        bk.payWith = pkg ? 'package' : (state.user.balance >= s.price ? 'balance' : 'salon');
+        bk.payWith = !walletOn() ? 'salon' : (pkg ? 'package' : (state.user.balance >= s.price ? 'balance' : 'salon'));
         bk.step = 4;
         render();
       };
@@ -497,12 +503,12 @@
       '<div class="summary-row"><span class="muted">' + t('book.staff') + '</span><span>' + esc(staffLabel) + '</span></div>' +
       '<div class="summary-row total"><span>' + t('book.total') + '</span><span>' + money(s.price) + '</span></div></div>' +
       '<h3 style="margin:14px 0 10px;font-size:1.05rem">' + t('book.pay_how') + '</h3>' +
-      (pkg ? '<div class="pay-opt' + (bk.payWith === 'package' ? ' active' : '') + '" data-pay="package">' +
+      (walletOn() && pkg ? '<div class="pay-opt' + (bk.payWith === 'package' ? ' active' : '') + '" data-pay="package">' +
         '<span class="radio"></span><div><div class="ttl">🎁 ' + t('book.pay_package') + '</div>' +
         '<div class="sub">' + esc(state.lang === 'mn' ? pkg.nameMn : pkg.nameEn) + ' · ' + pkg.remaining + ' ' + t('book.pkg_left') + '</div></div></div>' : '') +
-      '<div class="pay-opt' + (bk.payWith === 'balance' ? ' active' : '') + (canBalance ? '' : ' disabled') + '" data-pay="balance">' +
-      '<span class="radio"></span><div><div class="ttl">' + t('book.pay_balance') + '</div>' +
-      '<div class="sub">' + t('wallet.balance') + ': ' + money(state.user.balance) + (canBalance ? '' : ' — ' + t('book.balance_short')) + '</div></div></div>' +
+      (walletOn() ? '<div class="pay-opt' + (bk.payWith === 'balance' ? ' active' : '') + (canBalance ? '' : ' disabled') + '" data-pay="balance">' +
+        '<span class="radio"></span><div><div class="ttl">' + t('book.pay_balance') + '</div>' +
+        '<div class="sub">' + t('wallet.balance') + ': ' + money(state.user.balance) + (canBalance ? '' : ' — ' + t('book.balance_short')) + '</div></div></div>' : '') +
       '<div class="pay-opt' + (bk.payWith === 'salon' ? ' active' : '') + '" data-pay="salon">' +
       '<span class="radio"></span><div><div class="ttl">' + t('book.pay_salon') + '</div></div></div>' +
       '<button class="btn btn-primary btn-block mt" id="bkConfirm">' + t('book.confirm_btn') + '</button>';
@@ -995,29 +1001,8 @@
 
   /* ---------- censor editor ---------- */
   function loadToCanvas(file) {
-    return new Promise(function (resolve, reject) {
-      var make = function (bmpOrImg, w, h) {
-        var MAX = 1280;
-        var scale = Math.min(1, MAX / Math.max(w, h));
-        var c = document.createElement('canvas');
-        c.width = Math.round(w * scale);
-        c.height = Math.round(h * scale);
-        c.getContext('2d').drawImage(bmpOrImg, 0, 0, c.width, c.height);
-        resolve(c);
-      };
-      if (window.createImageBitmap) {
-        createImageBitmap(file, { imageOrientation: 'from-image' })
-          .then(function (bmp) { make(bmp, bmp.width, bmp.height); })
-          .catch(function () { fallback(); });
-      } else { fallback(); }
-      function fallback() {
-        var url = URL.createObjectURL(file);
-        var img = new Image();
-        img.onload = function () { make(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(url); };
-        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('bad_image')); };
-        img.src = url;
-      }
-    });
+    /* shared with every other upload path — see /assets/imgtools.js */
+    return window.ImgTools.loadToCanvas(file, window.ImgTools.MAX_PX);
   }
 
   function defaultBar(W, H) {
@@ -1156,7 +1141,7 @@
         btn.disabled = true;
         btn.textContent = t('prog.saving');
         draw(false);
-        var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        var dataUrl = window.ImgTools.toDataUrl(canvas);
         api('/api/photos', { method: 'POST', body: { image: dataUrl, note: m.querySelector('#phNote').value.trim() } })
           .then(function (p) {
             state.editor = null;

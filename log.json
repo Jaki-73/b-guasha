@@ -1,0 +1,54 @@
+{
+  "project": "b-guasha",
+  "description": "Changelog of code changes, newest last. One entry per logical change; a single commit may carry more than one when the same files are touched. Kept alongside git history so the record is readable without git.",
+  "entries": [
+    {
+      "id": 1,
+      "date": "2026-09-21",
+      "author": "Claude (Cowork session)",
+      "summary": "Wallet, bundles, gift cards and promo codes became one owner-controlled switch, off by default",
+      "why": "The salon is taking orders by phone for now. Customers should be able to browse and book without any money moving inside the app, but the feature has to come back intact later without rebuilding it.",
+      "changes": [
+        "Added a featureWallet flag that follows the existing config pattern: config.json provides the default, the owner's choice is stored in data/db.json and overrides it.",
+        "Added an on/off control in Админ → ⚙️ Тохиргоо → Нэмэлт боломж, visible to the owner only. Staff accounts get 403.",
+        "Closed the wallet endpoints server-side when the flag is off rather than only hiding the interface. Top-up, redeem, bundle purchase and gift card purchase return 403 feature_disabled; list endpoints return an empty array so an old cached app degrades quietly.",
+        "Admin-side gating runs after authentication, so an unauthenticated request still gets 401 rather than an empty list.",
+        "Bookings fall back to pay-at-salon when the flag is off, even if the client asks to pay from a balance.",
+        "Hid the wallet tab, balance displays, top-up and gift shortcuts in the customer app, and the balance stat, wallet adjustment and bundles section in the admin client profile.",
+        "Website copy switches to wallet-free wording via _nw i18n variants, and wallet-only sections carry data-wallet so they stay hidden."
+      ],
+      "data_impact": "None. Balances, bundles and gift cards stay in data/db.json when the flag is off and reappear when it is switched back on.",
+      "files": ["server.js", "config.json", "public/app/app.js", "public/admin/admin.js", "public/site.js", "public/index.html", "README.md"],
+      "verified": [
+        "Wallet off: booking requesting payWith=balance recorded as salon, balance untouched",
+        "Wallet off: POST /api/topup and /api/redeem return 403, GET /api/transactions returns []",
+        "Wallet off: unauthenticated /api/admin/promos returns 401, owner POST returns 403",
+        "Wallet on: top-up returns 200, bundles load, balance payment deducts correctly",
+        "Toggled off again: stored balance survived, setting persisted to data/db.json"
+      ]
+    },
+    {
+      "id": 2,
+      "date": "2026-09-21",
+      "author": "Claude (Cowork session)",
+      "summary": "Image uploads are downscaled in the browser and the size ceiling is enforced on the server",
+      "why": "Disk on the host is the one resource billed by the gigabyte. Progress photos were already resized before upload, but the server trusted the client and accepted up to 8 MB per image. Product photos are coming, and a catalogue uploaded straight from a phone camera would cost roughly twenty times what a web-sized one does.",
+      "changes": [
+        "Added public/assets/imgtools.js, a shared client-side helper: File to canvas at a 1280px longest side, EXIF rotation honoured, then JPEG encoding with quality stepped down until the result fits a 600KB budget.",
+        "The progress-photo path now delegates to that helper instead of carrying its own copy of the resize logic, so every future upload path gets the same treatment.",
+        "Loaded the helper on both the app and the admin page, ready for product photos.",
+        "Added imageDims() to server.js: reads width and height straight out of PNG, JPEG and WebP headers with no image library, keeping the project dependency-free.",
+        "Added checkImage(), now used by POST /api/photos: rejects anything under 100 bytes, over 2 MB, or with a longest side over 2000px, returning 413 image_too_large.",
+        "Added err.image_too_large and err.feature_disabled strings in Mongolian and English."
+      ],
+      "data_impact": "None. Existing stored photos are untouched; the limits apply to new uploads only.",
+      "files": ["public/assets/imgtools.js", "public/app/app.js", "public/app/index.html", "public/admin/index.html", "public/app/i18n.js", "server.js"],
+      "verified": [
+        "JPEG 800x600 accepted (200), JPEG 2400x1200 rejected (413)",
+        "PNG 100x100 accepted (200), PNG 1999x1999 accepted at the boundary (200), PNG 3000x200 rejected (413)",
+        "2.2 MB payload rejected (413)",
+        "/assets/imgtools.js served, and referenced by both /app and /admin"
+      ]
+    }
+  ]
+}

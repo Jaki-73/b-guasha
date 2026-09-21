@@ -54,6 +54,24 @@ docs/                  Guides (testing, publishing & costs, QPay, ideas, info to
 legacy/                The old v1 site & app, kept for reference
 ```
 
+## Turning the wallet on and off
+
+The whole money-in-app side — wallet balance, QPay top-up, bundles (багц), gift cards
+and promo codes — is a single switch the owner controls in **Админ → ⚙️ Тохиргоо →
+Нэмэлт боломж**. It ships **off**.
+
+- **Off** (default): customers browse services and book a time; payment is arranged by
+  phone or at the salon. The wallet tab, gift cards and bundles disappear from the app,
+  the website stops advertising them, and the "Багц · Код" admin tab is hidden. The
+  matching API endpoints are closed server-side too, not just hidden in the interface.
+- **On**: everything from v3 comes back exactly as before.
+
+Switching it off **deletes nothing** — balances, bundles and gift cards stay in
+`data/db.json` and reappear the moment it is switched back on. The choice is stored in
+the database, so it survives restarts and overrides `featureWallet` in `config.json`.
+
+Only the owner (super admin) sees this setting; staff accounts get 403.
+
 ## Demo vs real payments
 
 Payments run in **demo mode** (`"paymentsDemo": true` in config.json): the QR is fake and a "Simulate payment" button appears. To accept real money you need a QPay merchant contract — see **docs/PAYMENTS-QPAY.md**. Bundles and gift cards are paid from the wallet balance.

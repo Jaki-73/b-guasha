@@ -17,6 +17,7 @@
   var servicesCache = null;
   var staffCache = null;
   var chatThreads = null, chatOpen = null, chatPoll = null;
+  var featureWallet = false; /* mirrored from /api/config, owner toggles it in Тохиргоо */
 
   function todayStr() {
     var d = new Date();
@@ -109,6 +110,8 @@
       ['users', '👤 Үйлчлүүлэгч'],
       ['chat', '💬 Чат']
     ];
+    tabs = tabs.filter(function (x) { return x[0] !== 'offers' || featureWallet; });
+    if (!tabs.some(function (x) { return x[0] === tab; })) tab = 'cal';
     root.innerHTML =
       '<div class="row" style="gap:12px;flex-wrap:wrap"><h2 style="font-family:\'Playfair Display\',serif">B\'s Gua Sha — Удирдлага</h2>' +
       '<span class="pill">' + (isOwner ? '👑 Эзэмшигч' : '👤 Ажилтан') + (meName ? ' · ' + esc(meName) : '') + '</span>' +
@@ -472,7 +475,7 @@
         '<div class="stat-grid" style="margin:10px 0">' +
         '<div class="stat"><b>' + d.stats.visits + '</b><span>Ирсэн</span></div>' +
         '<div class="stat"><b>' + money(d.stats.spent) + '</b><span>Нийт зарцуулсан</span></div>' +
-        '<div class="stat"><b>' + money(u.balance) + '</b><span>Үлдэгдэл</span></div>' +
+        (featureWallet ? '<div class="stat"><b>' + money(u.balance) + '</b><span>Үлдэгдэл</span></div>' : '') +
         '<div class="stat"><b>' + d.stats.noshow + '</b><span>Ирээгүй</span></div></div>' +
 
         '<div class="card" style="padding:12px">' +
@@ -482,7 +485,7 @@
         '<div class="list-row"><span class="lbl">Хүсэлт</span><span class="small">' + esc(u.prefNote || '—') + '</span></div>' +
         '<div class="list-row"><span class="lbl">Дуртай ажилтан</span><span>' + esc(d.preferredStaffName || '—') + '</span></div></div>' +
 
-        (role === 'owner' ? '<div class="row" style="margin:10px 0"><input id="adjAmount" class="cell-input" style="max-width:130px" inputmode="numeric" placeholder="± дүн ₮">' +
+        (role === 'owner' && featureWallet ? '<div class="row" style="margin:10px 0"><input id="adjAmount" class="cell-input" style="max-width:130px" inputmode="numeric" placeholder="± дүн ₮">' +
           '<input id="adjNote" class="cell-input" placeholder="Тайлбар (ж: бэлэн мөнгөөр цэнэглэв)">' +
           '<button class="mini-btn" id="adjBtn">Хэтэвч засах</button></div>' : '') +
 
@@ -491,7 +494,7 @@
         '<div class="row"><input id="newNote" class="cell-input" maxlength="500" placeholder="ж: хүчтэй массаж таалагддаг, нуруу эмзэг…">' +
         '<button class="mini-btn" id="addNote">+ Нэмэх</button></div>' +
 
-        '<h3 style="font-size:1rem;margin:14px 0 6px">🎁 Багцууд</h3>' + pkgHtml +
+        (featureWallet ? '<h3 style="font-size:1rem;margin:14px 0 6px">🎁 Багцууд</h3>' + pkgHtml : '') +
 
         '<h3 style="font-size:1rem;margin:14px 0 6px">📅 Үйлчилгээний түүх</h3>' +
         (d.bookings.length ? '<div style="max-height:300px;overflow-y:auto"><table><tr><th>Огноо</th><th>Үйлчилгээ</th><th>Төлбөр</th><th>Төлөв</th></tr>' + bksHtml + '</table></div>' : '<p class="muted small">Захиалга алга.</p>') +
@@ -1150,8 +1153,15 @@
         '<div class="chipline" id="cdList"></div>' +
         '<div class="row mt"><div class="field grow"><label>Хэдэн хоногийн өмнө захиалга авах</label><input type="number" id="stAhead" class="cell-input" min="3" max="90" value="' + s.bookingDaysAhead + '"></div>' +
         '<div class="field grow"><label>Цуцлах боломж (цагийн өмнө)</label><input type="number" id="stCancel" class="cell-input" min="0" max="96" value="' + s.cancelHours + '"></div></div>' +
-        '<div class="row"><div class="field grow"><label>Бонус босго (₮)</label><input type="number" id="stBth" class="cell-input" step="10000" min="0" value="' + s.topupBonusThreshold + '"></div>' +
+        '<div class="row" id="bonusRow"' + (s.featureWallet ? '' : ' hidden') + '><div class="field grow"><label>Бонус босго (₮)</label><input type="number" id="stBth" class="cell-input" step="10000" min="0" value="' + s.topupBonusThreshold + '"></div>' +
         '<div class="field grow"><label>Бонус хувь (%)</label><input type="number" id="stBpc" class="cell-input" min="0" max="50" value="' + s.topupBonusPercent + '"></div></div>' +
+        '<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">' +
+        '<label class="small" style="font-weight:600;color:var(--muted)">Нэмэлт боломж</label>' +
+        '<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:8px 0 2px;cursor:pointer">' +
+        '<input type="checkbox" id="stWallet"' + (s.featureWallet ? ' checked' : '') + ' style="margin-top:3px">' +
+        '<span><b>Хэтэвч — цэнэглэлт, багц, бэлгийн карт, урамшууллын код</b><br>' +
+        '<span class="muted">Унтраавал үйлчлүүлэгч зөвхөн цаг захиална, төлбөрийг утсаар эсвэл салон дээр авна. ' +
+        'Одоо байгаа үлдэгдэл устахгүй — дахин асаахад бүгд буцаж ирнэ.</span></span></label>' +
         '<button class="btn btn-primary mt" id="stSave">Хадгалах</button>' +
         '<p class="muted small" style="margin-top:12px">📍 Хаяг, утас, имэйл, PIN, QPay тохиргоог <b>config.json</b> файлд солино (апп ажиллаж байгаа фолдер дотор бий).</p>' +
         '</div>';
@@ -1167,6 +1177,10 @@
         });
       }
       renderCd();
+      document.getElementById('stWallet').onchange = function () {
+        var br = document.getElementById('bonusRow');
+        if (br) br.hidden = !this.checked;
+      };
       document.getElementById('cdAdd').onclick = function () {
         var v = document.getElementById('cdDate').value;
         if (v && closedDates.indexOf(v) < 0) { closedDates.push(v); closedDates.sort(); renderCd(); }
@@ -1185,13 +1199,23 @@
             bookingDaysAhead: Number(document.getElementById('stAhead').value),
             cancelHours: Number(document.getElementById('stCancel').value),
             topupBonusThreshold: Number(document.getElementById('stBth').value),
-            topupBonusPercent: Number(document.getElementById('stBpc').value)
+            topupBonusPercent: Number(document.getElementById('stBpc').value),
+            featureWallet: document.getElementById('stWallet').checked
           }
-        }).then(function () { toast('Хадгалагдлаа ✓ — шинэ хуваарь шууд үйлчилнэ', 'ok'); })
+        }).then(function () {
+          var wasOn = featureWallet;
+          featureWallet = document.getElementById('stWallet').checked;
+          toast('Хадгалагдлаа ✓ — шинэ тохиргоо шууд үйлчилнэ', 'ok');
+          if (wasOn !== featureWallet) render();
+        })
           .catch(function () { toast('Алдаа — утгуудаа шалгана уу', 'err'); });
       };
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
 
-  render();
+  fetch('/api/config')
+    .then(function (r) { return r.json(); })
+    .then(function (c) { featureWallet = c && c.featureWallet === true; })
+    .catch(function () {})
+    .then(function () { render(); });
 })();

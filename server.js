@@ -48,6 +48,7 @@ const DEFAULT_CONFIG = {
   topupBonusPercent: 5,
   adminPin: '1234',
   paymentsDemo: true,
+  featureWallet: false,
   qpay: { baseUrl: 'https://merchant-sandbox.qpay.mn', username: '', password: '', invoiceCode: '', callbackBaseUrl: '' }
 };
 let config = { ...DEFAULT_CONFIG };
@@ -59,6 +60,58 @@ try {
 
 /* effective config = config.json + owner-edited settings stored in the db */
 function cfg() { return db && db.settings ? { ...config, ...db.settings } : config; }
+
+/* feature flags — the owner (super admin) toggles these in Admin → Тохиргоо.
+   Wallet off = no balance, top-up, bundles, gift cards or promo codes anywhere.
+   Nothing is deleted: existing balances stay in the db and come back when re-enabled. */
+function walletOn() { return cfg().featureWallet === true; }
+
+/* ---------------- image guards ----------------
+   The browser downscales before uploading (public/assets/imgtools.js), but the
+   server must not trust that: an oversized image here costs real disk on the
+   host, which is the one resource that is paid for by the gigabyte. */
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;  /* per stored image */
+const MAX_IMAGE_PX = 2000;                /* longest side */
+
+/* Width/height straight out of the file header — no image library needed. */
+function imageDims(buf, ext) {
+  try {
+    if (ext === 'png') {
+      if (buf.length < 24) return null;
+      return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+    }
+    if (ext === 'webp') {
+      if (buf.length < 30 || buf.toString('ascii', 8, 12) !== 'WEBP') return null;
+      const fmt = buf.toString('ascii', 12, 16);
+      if (fmt === 'VP8X') return { w: (buf.readUIntLE(24, 3) & 0xffffff) + 1, h: (buf.readUIntLE(27, 3) & 0xffffff) + 1 };
+      if (fmt === 'VP8 ') return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+      if (fmt === 'VP8L') { const b = buf.readUInt32LE(21); return { w: (b & 0x3fff) + 1, h: ((b >> 14) & 0x3fff) + 1 }; }
+      return null;
+    }
+    /* jpeg — walk the segment chain to the start-of-frame marker */
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) { i++; continue; }
+      const marker = buf[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+      }
+      const len = buf.readUInt16BE(i + 2);
+      if (len < 2) return null;
+      i += 2 + len;
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+/* Shared by every image upload route. Returns an error code, or null if ok. */
+function checkImage(buf, ext) {
+  if (buf.length < 100) return 'bad_image';
+  if (buf.length > MAX_IMAGE_BYTES) return 'image_too_large';
+  const d = imageDims(buf, ext);
+  if (d && Math.max(d.w, d.h) > MAX_IMAGE_PX) return 'image_too_large';
+  return null;
+}
 
 /* ---------------- tiny JSON database ---------------- */
 let db = null;
@@ -483,6 +536,16 @@ async function handleApi(req, res, pathname, q) {
   const c = cfg();
   let m;
 
+  /* ---------- wallet feature gate ----------
+     When the owner turns the wallet off, every money-in-app endpoint is closed
+     server-side. List endpoints answer with an empty array so an old cached app
+     degrades quietly instead of showing errors. */
+  if (!walletOn()) {
+    const WALLET_LISTS = ['GET /api/bundles', 'GET /api/my/bundles', 'GET /api/giftcards/mine', 'GET /api/transactions'];
+    if (WALLET_LISTS.includes(route)) return json(res, 200, []);
+    if (/^\/api\/(topup|bundles|giftcards|redeem)(\/|$)/.test(pathname)) return fail(res, 403, 'feature_disabled');
+  }
+
   /* ===================== public ===================== */
   if (route === 'GET /api/health') return json(res, 200, { ok: true, time: nowIso(), demo: c.paymentsDemo, version: 3 });
 
@@ -495,7 +558,8 @@ async function handleApi(req, res, pathname, q) {
       hoursOpen: c.hoursOpen, hoursClose: c.hoursClose,
       slotMinutes: c.slotMinutes, bookingDaysAhead: c.bookingDaysAhead,
       cancelHours: c.cancelHours, paymentsDemo: c.paymentsDemo,
-      topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent
+      topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent,
+      featureWallet: c.featureWallet === true
     });
   }
 
@@ -643,7 +707,7 @@ async function handleApi(req, res, pathname, q) {
       if (!slotFreeFor(staffUser, b.date, b.time, svc.minutes)) return fail(res, 409, 'slot_taken');
     }
 
-    const payWith = ['balance', 'salon', 'package'].includes(b.payWith) ? b.payWith : 'salon';
+    const payWith = walletOn() && ['balance', 'salon', 'package'].includes(b.payWith) ? b.payWith : 'salon';
     let userBundleId = null;
     if (payWith === 'package') {
       const ub = usableBundleFor(user.id, svc.id);
@@ -894,8 +958,10 @@ async function handleApi(req, res, pathname, q) {
     const mm = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
     if (!mm) return fail(res, 400, 'bad_image');
     const buf = Buffer.from(mm[2], 'base64');
-    if (buf.length < 100 || buf.length > 8 * 1024 * 1024) return fail(res, 400, 'bad_image');
-    const photo = { id: uid('ph'), userId: user.id, ext: mm[1] === 'png' ? 'png' : (mm[1] === 'webp' ? 'webp' : 'jpg'), note: String(b.note || '').slice(0, 200), createdAt: nowIso() };
+    const ext = mm[1] === 'png' ? 'png' : (mm[1] === 'webp' ? 'webp' : 'jpg');
+    const imgErr = checkImage(buf, ext);
+    if (imgErr) return fail(res, imgErr === 'image_too_large' ? 413 : 400, imgErr);
+    const photo = { id: uid('ph'), userId: user.id, ext: ext, note: String(b.note || '').slice(0, 200), createdAt: nowIso() };
     fs.writeFileSync(path.join(PHOTOS_DIR, photo.id + '.' + photo.ext), buf);
     db.photos.push(photo);
     saveDb();
@@ -964,6 +1030,15 @@ async function handleApi(req, res, pathname, q) {
     if (!sess) return fail(res, 401, 'unauthorized');
     const isOwner = sess.role === 'owner';
     const ownerOnly = () => fail(res, 403, 'owner_only');
+
+    /* same wallet gate for the admin side — after auth, so an unauthenticated
+       request still gets 401 rather than an empty list */
+    if (!walletOn()) {
+      const ADMIN_WALLET_LISTS = ['GET /api/admin/bundles', 'GET /api/admin/giftcards', 'GET /api/admin/promos', 'GET /api/admin/transactions'];
+      if (ADMIN_WALLET_LISTS.includes(route)) return json(res, 200, []);
+      if (/^\/api\/admin\/(bundles|giftcards|promos|transactions)(\/|$)/.test(pathname)) return fail(res, 403, 'feature_disabled');
+      if (/^\/api\/admin\/users\/[\w-]+\/adjust$/.test(pathname)) return fail(res, 403, 'feature_disabled');
+    }
 
     /* ----- overview ----- */
     if (route === 'GET /api/admin/overview') {
@@ -1521,7 +1596,8 @@ async function handleApi(req, res, pathname, q) {
         hoursOpen: c.hoursOpen, hoursClose: c.hoursClose, slotMinutes: c.slotMinutes,
         closedWeekdays: c.closedWeekdays, closedDates: c.closedDates || [],
         bookingDaysAhead: c.bookingDaysAhead, cancelHours: c.cancelHours,
-        topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent
+        topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent,
+        featureWallet: c.featureWallet === true
       });
     }
     if (route === 'POST /api/admin/settings') {
@@ -1539,6 +1615,7 @@ async function handleApi(req, res, pathname, q) {
       if (b.cancelHours !== undefined) { const v = Math.round(Number(b.cancelHours)); if (!Number.isFinite(v) || v < 0 || v > 96) return fail(res, 400, 'bad_request'); s.cancelHours = v; }
       if (b.topupBonusThreshold !== undefined) { const v = Math.round(Number(b.topupBonusThreshold)); if (!Number.isFinite(v) || v < 0) return fail(res, 400, 'bad_request'); s.topupBonusThreshold = v; }
       if (b.topupBonusPercent !== undefined) { const v = Math.round(Number(b.topupBonusPercent)); if (!Number.isFinite(v) || v < 0 || v > 50) return fail(res, 400, 'bad_request'); s.topupBonusPercent = v; }
+      if (b.featureWallet !== undefined) s.featureWallet = b.featureWallet === true;
       saveDb();
       return json(res, 200, { ok: true });
     }

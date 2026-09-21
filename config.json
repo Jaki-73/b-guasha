@@ -20,6 +20,8 @@
   "topupBonusPercent": 5,
   "adminPin": "1234",
   "paymentsDemo": true,
+  "_featureWallet": "Wallet / top-up / bundles / gift cards / promo codes. The owner turns this on and off in Admin -> Tohirgoo; that choice is stored in data/db.json and overrides the value below.",
+  "featureWallet": false,
   "qpay": {
     "comment": "Fill these after signing a QPay merchant contract (see docs/PAYMENTS-QPAY.md), then set paymentsDemo to false.",
     "baseUrl": "https://merchant-sandbox.qpay.mn",

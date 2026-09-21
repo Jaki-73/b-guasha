@@ -20,6 +20,7 @@
       'about.c4t': 'Гүн амралт', 'about.c4d': 'Стресс тайлж, толгойн өвдөлт, булчингийн чангаралтыг намдаана.',
       'svc.title': 'Үйлчилгээ ба үнэ',
       'svc.sub': 'Бүх үйлчилгээг аппаар захиалж, үлдэгдлээсээ, багцаасаа эсвэл салон дээр төлж болно.',
+      'svc.sub_nw': 'Үйлчилгээгээ аппаар эсвэл утсаар захиалж, төлбөрөө салон дээр төлнө.',
       'svc.book': 'Цаг захиалах', 'svc.min': 'мин',
       'svc.g_facial': 'Нүүрний гуаша', 'svc.g_body': 'Биеийн гуаша', 'svc.g_other': 'Бусад',
       'svc.bundle_sessions': 'удаагийн багц', 'svc.bundle_valid': 'хоног хүчинтэй', 'svc.bundle_hint': 'Багцыг аппаас худалдан авна',
@@ -45,7 +46,9 @@
       'faq.q1': 'Хэр олон удаа хийлгэх вэ?', 'faq.a1': 'Эхний сард 7 хоногт 1–2 удаа, дараа нь сард 1–2 удаа хийлгэхэд үр дүн тогтвортой байдаг. 5 удаагийн багц хамгийн их үр дүнтэй.',
       'faq.q2': 'Өвддөг үү?', 'faq.a2': 'Үгүй. Нүүрний гуаша зөөлөн, тайвшруулах мэдрэмж төрүүлдэг. Биеийн гуаша булчингийн зангиралттай хэсэгт бага зэрэг эмзэг байж болно.',
       'faq.q3': 'Төлбөрөө яаж төлөх вэ?', 'faq.a3': 'Аппын хэтэвчээ QPay QR-ээр цэнэглэж төлөх, багц авах, бэлгийн карт ашиглах, эсвэл салон дээр бэлнээр/картаар төлж болно.',
+      'faq.a3_nw': 'Салон дээр бэлнээр эсвэл картаар төлнө. Захиалгаа утсаар баталгаажуулна.',
       'faq.q4': 'Цагаа цуцалж болох уу?', 'faq.a4': 'Болно — цагаасаа 24 цагийн өмнө аппаараа цуцалбал төлбөр хэтэвчинд (багцын эрх багцад) бүрэн буцаан орно.',
+      'faq.a4_nw': 'Болно — цагаасаа 24 цагийн өмнө аппаараа эсвэл утсаар цуцална уу.',
       'faq.q5': 'Бэлгийн карт яаж ажилладаг вэ?', 'faq.a5': 'Аппаасаа бэлгийн карт худалдан аваад кодыг нь хайртай хүндээ илгээнэ. Тэр хүн аппын "Код идэвхжүүлэх" хэсэгт оруулахад мөнгө хэтэвчинд нь шууд орно.',
       'contact.title': 'Холбоо барих',
       'contact.addr_t': '📍 Хаяг', 'contact.hours_t': '🕙 Ажиллах цаг', 'contact.call_t': '📞 Утас', 'contact.social_t': '💬 Сошиал',
@@ -69,6 +72,7 @@
       'about.c4t': 'Deep relaxation', 'about.c4d': 'Relieves stress, headaches and muscle tension.',
       'svc.title': 'Services & prices',
       'svc.sub': 'Book any service in the app and pay from your balance, your bundle, or at the salon.',
+      'svc.sub_nw': 'Book any service in the app or by phone, and pay at the salon.',
       'svc.book': 'Book now', 'svc.min': 'min',
       'svc.g_facial': 'Facial gua sha', 'svc.g_body': 'Body gua sha', 'svc.g_other': 'Other',
       'svc.bundle_sessions': 'session bundle', 'svc.bundle_valid': 'days valid', 'svc.bundle_hint': 'Buy bundles in the app',
@@ -94,7 +98,9 @@
       'faq.q1': 'How often should I come?', 'faq.a1': '1–2 times a week for the first month, then 1–2 times a month for maintenance. A 5-session bundle gives the best results.',
       'faq.q2': 'Does it hurt?', 'faq.a2': 'No. Facial gua sha feels gentle and relaxing. Body gua sha can feel slightly tender over tight muscles.',
       'faq.q3': 'How can I pay?', 'faq.a3': 'Top up your in-app wallet with QPay, buy a bundle, redeem a gift card, or pay by cash/card at the salon.',
+      'faq.a3_nw': 'Pay by cash or card at the salon. Orders are confirmed over the phone.',
       'faq.q4': 'Can I cancel a booking?', 'faq.a4': 'Yes — cancel in the app at least 24 hours before your time and the payment (or bundle session) is fully returned.',
+      'faq.a4_nw': 'Yes — cancel in the app or by phone at least 24 hours before your appointment.',
       'faq.q5': 'How do gift cards work?', 'faq.a5': 'Buy a gift card in the app and send the code to someone special. They enter it under "Redeem a code" and the money lands in their wallet.',
       'contact.title': 'Contact',
       'contact.addr_t': '📍 Address', 'contact.hours_t': '🕙 Opening hours', 'contact.call_t': '📞 Phone', 'contact.social_t': '💬 Social',
@@ -107,6 +113,7 @@
   var lang = localStorage.getItem('bg_lang') || 'mn';
   var theme = localStorage.getItem('bg_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   var services = null, bundles = null, edu = null, reviewsData = null;
+  var featureWallet = false; /* from /api/config — the owner toggles it in the admin panel */
 
   function t(key) { return (DICT[lang] && DICT[lang][key]) || (DICT.mn[key] || key); }
   function money(n) { return (n || 0).toLocaleString('en-US') + '₮'; }
@@ -121,8 +128,12 @@
     document.documentElement.lang = lang;
     document.title = t('title');
     document.querySelectorAll('[data-i18n]').forEach(function (el) {
-      el.innerHTML = t(el.getAttribute('data-i18n'));
+      var k = el.getAttribute('data-i18n');
+      /* a "_nw" variant is the wording used when the wallet is switched off */
+      if (!featureWallet && DICT[lang] && DICT[lang][k + '_nw'] !== undefined) k += '_nw';
+      el.innerHTML = t(k);
     });
+    document.querySelectorAll('[data-wallet]').forEach(function (el) { el.hidden = !featureWallet; });
     var lb = document.getElementById('langBtn');
     if (lb) lb.textContent = lang === 'mn' ? 'EN' : 'МН';
     renderServices();
@@ -247,6 +258,8 @@
       var fb = document.getElementById('contactFb');
       if (fb && c.facebook) fb.href = c.facebook;
       window.__cfg = c;
+      featureWallet = c.featureWallet === true;
+      applyLang();
     }).catch(function () {});
   }
   function updateAddr() {
