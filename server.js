@@ -771,7 +771,17 @@ async function handleApi(req, res, pathname, q) {
     if (!name || name.length > 60) return fail(res, 400, 'bad_name');
     if (!PHONE_RE.test(phone)) return fail(res, 400, 'bad_phone');
     if (password.length < 6) return fail(res, 400, 'bad_password');
-    if (db.users.some((u) => u.phone === phone)) return fail(res, 409, 'phone_taken');
+    /* staff may have created this customer at the counter (no password yet) —
+       registering with that phone turns the record into a login and keeps its history */
+    const pre = db.users.find((u) => u.phone === phone);
+    if (pre && pre.role === 'customer' && pre.noLogin && !pre.disabled) {
+      setPassword(pre, password);
+      delete pre.noLogin;
+      const token = newSession(db.sessions, { userId: pre.id });
+      saveDb();
+      return json(res, 200, { token, user: publicUser(pre) });
+    }
+    if (pre) return fail(res, 409, 'phone_taken');
     const user = makeUser(name, phone, password);
     db.users.push(user);
     const token = newSession(db.sessions, { userId: user.id });
@@ -1338,13 +1348,16 @@ async function handleApi(req, res, pathname, q) {
         if (overlaps(staffBusy(su.id, b.date), s0, s0 + svc.minutes)) return fail(res, 409, 'slot_taken');
       }
       const phone = String(b.phone || '').trim();
-      const existing = phone ? db.users.find((u) => u.phone === phone) : null;
+      const existing = b.customerId
+        ? db.users.find((u) => u.id === b.customerId && u.role === 'customer')
+        : (phone ? db.users.find((u) => u.phone === phone) : null);
+      if (b.customerId && !existing) return fail(res, 404, 'not_found');
       const booking = {
         id: uid('bk'), userId: existing ? existing.id : null,
         walkName: existing ? '' : String(b.name || phone || 'Walk-in').trim().slice(0, 60),
         walkPhone: existing ? '' : phone,
         serviceId: svc.id, staffId: su.id, date: b.date, time: b.time, minutes: svc.minutes,
-        status: b.date < today ? 'done' : 'confirmed', paid: 'salon', amount: svc.price,
+        status: b.date < today || (b.done === true && b.date === today) ? 'done' : 'confirmed', paid: 'salon', amount: svc.price,
         createdBy: 'admin', createdAt: nowIso()
       };
       db.bookings.push(booking);
@@ -1388,18 +1401,91 @@ async function handleApi(req, res, pathname, q) {
     if (route === 'GET /api/admin/users') {
       const qry = (q.get('q') || '').toLowerCase().trim();
       let list = db.users.filter((u) => u.role === 'customer');
-      if (qry) list = list.filter((u) => u.name.toLowerCase().includes(qry) || u.phone.includes(qry));
-      return json(res, 200, list.map((u) => {
+      if (qry) list = list.filter((u) => u.name.toLowerCase().includes(qry) || u.phone.includes(qry) || (u.staffDesc || '').toLowerCase().includes(qry));
+      let out = list.map((u) => {
         const myBks = db.bookings.filter((b) => b.userId === u.id);
         const doneBks = myBks.filter((b) => b.status === 'done');
+        const plans = planStatus(u);
+        const due = plans.filter((pl) => pl.state !== 'booked').sort((a, b) => a.nextDue.localeCompare(b.nextDue))[0];
         return {
           ...publicUser(u),
+          desc: u.staffDesc || '', noLogin: !!u.noLogin,
+          nextDue: due ? due.nextDue : '', dueState: due ? due.state : '', dueService: due ? due.serviceName : '',
           bookings: myBks.length,
           visits: doneBks.length,
           lastVisit: (doneBks.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))[0] || {}).date || '',
           nextBooking: (myBks.filter((b) => b.status === 'confirmed' && b.date >= localDateStr(new Date())).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] || {}).date || ''
         };
-      }));
+      });
+      if (q.get('due') === '1') out = out.filter((u) => u.dueState === 'due' || u.dueState === 'overdue').sort((a, b) => a.nextDue.localeCompare(b.nextDue));
+      return json(res, 200, out);
+    }
+
+    /* ----- customer records (staff, owner, super admin) -----
+       Staff create customers at the counter or by phone; no password is needed.
+       The customer can later register in the app with the same phone and gets
+       this record, with its history, as their account. */
+    if (route === 'POST /api/admin/customers') {
+      const b = await readJson(req);
+      const name = String(b.name || '').trim();
+      const phone = String(b.phone || '').trim();
+      if (!name || name.length > 60) return fail(res, 400, 'bad_name');
+      if (!PHONE_RE.test(phone)) return fail(res, 400, 'bad_phone');
+      if (db.users.some((u) => u.phone === phone)) return fail(res, 409, 'phone_taken');
+      const u = makeUser(name, phone, crypto.randomBytes(18).toString('hex'));
+      u.noLogin = true;
+      u.createdBy = sess.userId || 'admin';
+      u.staffDesc = String(b.desc || '').trim().slice(0, 1000);
+      for (const k of ['skinType', 'allergies', 'birthday']) if (typeof b[k] === 'string') u[k] = b[k].trim().slice(0, k === 'allergies' ? 200 : 40);
+      if (u.birthday && !DATE_RE.test(u.birthday)) u.birthday = '';
+      db.users.push(u);
+      saveDb();
+      return json(res, 200, { ok: true, id: u.id });
+    }
+    m = pathname.match(/^\/api\/admin\/customers\/([\w-]+)$/);
+    if (m && method === 'POST') {
+      const u = db.users.find((x) => x.id === m[1] && x.role === 'customer');
+      if (!u) return fail(res, 404, 'not_found');
+      const b = await readJson(req);
+      if (typeof b.name === 'string') { const nm = b.name.trim(); if (!nm || nm.length > 60) return fail(res, 400, 'bad_name'); u.name = nm; }
+      if (b.phone !== undefined) {
+        const ph = String(b.phone).trim();
+        if (!PHONE_RE.test(ph)) return fail(res, 400, 'bad_phone');
+        if (db.users.some((x) => x.phone === ph && x.id !== u.id)) return fail(res, 409, 'phone_taken');
+        u.phone = ph;
+      }
+      if (typeof b.desc === 'string') u.staffDesc = b.desc.trim().slice(0, 1000);
+      for (const k of ['skinType', 'allergies']) if (typeof b[k] === 'string') u[k] = b[k].trim().slice(0, k === 'allergies' ? 200 : 40);
+      if (typeof b.birthday === 'string') u.birthday = DATE_RE.test(b.birthday) ? b.birthday : '';
+      saveDb();
+      return json(res, 200, { ok: true });
+    }
+    /* repeat-service plans: "this customer should come for X every N days" */
+    m = pathname.match(/^\/api\/admin\/customers\/([\w-]+)\/plans$/);
+    if (m && method === 'POST') {
+      const u = db.users.find((x) => x.id === m[1] && x.role === 'customer');
+      if (!u) return fail(res, 404, 'not_found');
+      const b = await readJson(req);
+      const svc = db.services.find((x) => x.id === b.serviceId);
+      if (!svc) return fail(res, 400, 'bad_service');
+      const every = Math.round(Number(b.everyDays));
+      if (!Number.isFinite(every) || every < 1 || every > 365) return fail(res, 400, 'bad_interval');
+      const start = DATE_RE.test(b.startDate || '') ? b.startDate : localDateStr(new Date());
+      if (!u.plans) u.plans = [];
+      if (u.plans.length >= 10) return fail(res, 400, 'too_many');
+      u.plans.push({ id: uid('pl'), serviceId: svc.id, everyDays: every, startDate: start, note: String(b.note || '').trim().slice(0, 200), createdBy: sess.userId || null, createdAt: nowIso() });
+      saveDb();
+      return json(res, 200, { ok: true });
+    }
+    m = pathname.match(/^\/api\/admin\/customers\/([\w-]+)\/plans\/([\w-]+)$/);
+    if (m && method === 'DELETE') {
+      const u = db.users.find((x) => x.id === m[1] && x.role === 'customer');
+      if (!u || !u.plans) return fail(res, 404, 'not_found');
+      const before = u.plans.length;
+      u.plans = u.plans.filter((pl) => pl.id !== m[2]);
+      if (u.plans.length === before) return fail(res, 404, 'not_found');
+      saveDb();
+      return json(res, 200, { ok: true });
     }
 
     m = pathname.match(/^\/api\/admin\/users\/([\w-]+)$/);
@@ -1416,13 +1502,18 @@ async function handleApi(req, res, pathname, q) {
       const reviews = db.reviews.filter((r) => r.userId === u.id).map((r) => ({ id: r.id, rating: r.rating, text: r.text, approved: r.approved, createdAt: r.createdAt }));
       const myNotes = db.notes.filter((n) => n.customerId === u.id && n.staffUserId === sess.userId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      /* notes other staff chose to share with the team */
+      const sharedNotes = db.notes.filter((n) => n.customerId === u.id && n.shared && n.staffUserId !== sess.userId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((n) => ({ ...n, author: firstName((db.users.find((x) => x.id === n.staffUserId) || {}).name) || '?' }));
       const preferred = u.preferredStaffId ? staffById(u.preferredStaffId) : null;
       return json(res, 200, {
         user: publicUser(u),
         preferredStaffName: preferred ? preferred.name : '',
         stats: { visits: done.length, spent, total: bks.length, noshow: bks.filter((b) => b.status === 'noshow').length },
         bookings: bks.slice(0, 60),
-        packages, reviews, myNotes
+        packages, reviews, myNotes, sharedNotes,
+        desc: u.staffDesc || '', noLogin: !!u.noLogin, plans: planStatus(u)
       });
     }
 
@@ -1441,7 +1532,7 @@ async function handleApi(req, res, pathname, q) {
       return json(res, 200, { ok: true, balance: u.balance });
     }
 
-    /* ----- private notes (visible ONLY to their author) ----- */
+    /* ----- client notes: private to their author unless marked shared ----- */
     if (route === 'POST /api/admin/notes') {
       const b = await readJson(req);
       const cu = db.users.find((x) => x.id === b.customerId);
@@ -1449,7 +1540,7 @@ async function handleApi(req, res, pathname, q) {
       if (!sess.userId) return fail(res, 403, 'forbidden');
       const text = String(b.text || '').trim().slice(0, 500);
       if (!text) return fail(res, 400, 'bad_request');
-      const note = { id: uid('nt'), staffUserId: sess.userId, customerId: cu.id, text, createdAt: nowIso(), updatedAt: nowIso() };
+      const note = { id: uid('nt'), staffUserId: sess.userId, customerId: cu.id, text, shared: b.shared === true, createdAt: nowIso(), updatedAt: nowIso() };
       db.notes.push(note);
       saveDb();
       return json(res, 200, note);
@@ -1468,6 +1559,7 @@ async function handleApi(req, res, pathname, q) {
       const text = String(b.text || '').trim().slice(0, 500);
       if (!text) return fail(res, 400, 'bad_request');
       db.notes[idx].text = text;
+      if (b.shared !== undefined) db.notes[idx].shared = b.shared === true;
       db.notes[idx].updatedAt = nowIso();
       saveDb();
       return json(res, 200, db.notes[idx]);
@@ -1959,6 +2051,25 @@ function bookingOut(b) {
     createdAt: b.createdAt, reviewId: b.reviewId || null, service: svc
   };
 }
+/* Next due date for each repeat-service plan: last finished visit of that service
+   (or the plan start) + everyDays. "booked" when a future booking already exists. */
+function planStatus(u) {
+  const today = localDateStr(new Date());
+  const soon = localDateStr(new Date(Date.now() + 3 * 86400000));
+  return (u.plans || []).map((pl) => {
+    const svc = db.services.find((x) => x.id === pl.serviceId);
+    const mine = db.bookings.filter((b) => b.userId === u.id && b.serviceId === pl.serviceId);
+    const last = mine.filter((b) => b.status === 'done').map((b) => b.date).sort().pop() || '';
+    const base = last && last > pl.startDate ? last : pl.startDate;
+    const d = new Date(base + 'T12:00:00');
+    d.setDate(d.getDate() + pl.everyDays);
+    const nextDue = localDateStr(d);
+    const booked = mine.some((b) => b.status === 'confirmed' && b.date >= today);
+    const state = booked ? 'booked' : (nextDue < today ? 'overdue' : (nextDue <= soon ? 'due' : 'ok'));
+    return { ...pl, serviceName: svc ? svc.nameMn : '?', lastVisit: last, nextDue, state };
+  });
+}
+
 function adminBookingOut(b) {
   const out = bookingOut(b);
   const u = b.userId ? db.users.find((x) => x.id === b.userId) : null;

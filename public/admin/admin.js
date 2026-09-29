@@ -428,19 +428,38 @@
   }
 
   /* ================= clients ================= */
+  /* Everyone on the admin side (staff too) can create a customer record by phone,
+     describe them, plan repeat services and record visits. */
+  var usersDueOnly = false;
+  var DUE_LABEL = { overdue: '⏰ хоцорсон', due: '🔔 ойртсон', booked: '📅 захиалсан', ok: '' };
+  function dueChip(state, date) {
+    if (!state || state === 'ok') return date ? '<span class="muted small">' + esc(date) + '</span>' : '—';
+    var cls = state === 'overdue' ? 'cancelled' : (state === 'due' ? 'noshow' : 'confirmed');
+    return '<span class="chip ' + cls + '">' + DUE_LABEL[state] + '</span><br><span class="muted small">' + esc(date) + '</span>';
+  }
   function loadUsers(q) {
-    api('/api/admin/users' + (q ? '?q=' + encodeURIComponent(q) : '')).then(function (list) {
+    var qs = [];
+    if (q) qs.push('q=' + encodeURIComponent(q));
+    if (usersDueOnly) qs.push('due=1');
+    api('/api/admin/users' + (qs.length ? '?' + qs.join('&') : '')).then(function (list) {
       var c = document.getElementById('content');
       c.innerHTML =
-        '<div class="row" style="margin-bottom:10px"><input id="userQ" class="cell-input" style="max-width:280px" placeholder="🔍 Нэр эсвэл утсаар хайх…" value="' + esc(q || '') + '"></div>' +
-        '<div class="card"><table><tr><th>Нэр</th><th>Утас</th><th>Үлдэгдэл</th><th>Ирсэн</th><th>Сүүлд</th><th>Дараагийн</th><th></th></tr>' +
+        '<div class="row" style="margin-bottom:10px;flex-wrap:wrap">' +
+        '<input id="userQ" class="cell-input" style="max-width:280px" placeholder="🔍 Нэр, утас эсвэл тайлбараар хайх…" value="' + esc(q || '') + '">' +
+        '<label class="small" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="dueOnly"' + (usersDueOnly ? ' checked' : '') + '> ⏰ Давтан үйлчилгээ ойртсон / хоцорсон</label>' +
+        '<div class="spacer" style="flex:1"></div>' +
+        '<button class="btn btn-primary btn-sm" id="addCust">＋ Шинэ үйлчлүүлэгч</button></div>' +
+        '<div class="card"><table><tr><th>Нэр</th><th>Утас</th>' + (featureWallet ? '<th>Үлдэгдэл</th>' : '') + '<th>Ирсэн</th><th>Сүүлд</th><th>Дараагийн</th><th>Давтан</th><th></th></tr>' +
         list.map(function (u) {
-          return '<tr><td><b>' + esc(u.name) + '</b>' + (u.isDemo ? ' <span class="muted small">(demo)</span>' : '') + '</td>' +
+          return '<tr><td><b>' + esc(u.name) + '</b>' + (u.isDemo ? ' <span class="muted small">(demo)</span>' : '') +
+            (u.noLogin ? ' <span class="pill" title="Апп-д бүртгүүлээгүй — ажилтан үүсгэсэн">апп-гүй</span>' : '') +
+            (u.desc ? '<br><span class="muted small">' + esc(u.desc.slice(0, 70)) + (u.desc.length > 70 ? '…' : '') + '</span>' : '') + '</td>' +
             '<td><a href="tel:' + esc(u.phone) + '">' + esc(u.phone) + '</a></td>' +
-            '<td>' + money(u.balance) + '</td><td>' + u.visits + '</td>' +
+            (featureWallet ? '<td>' + money(u.balance) + '</td>' : '') + '<td>' + u.visits + '</td>' +
             '<td>' + esc(u.lastVisit || '—') + '</td><td>' + esc(u.nextBooking || '—') + '</td>' +
-            '<td><button class="mini-btn" data-prof="' + esc(u.id) + '">Түүх →</button></td></tr>';
-        }).join('') + '</table>' + (list.length ? '' : '<p class="muted" style="padding:10px">Олдсонгүй.</p>') + '</div>';
+            '<td>' + (u.nextDue ? dueChip(u.dueState, u.nextDue) + '<br><span class="muted small">' + esc(u.dueService) + '</span>' : '—') + '</td>' +
+            '<td><button class="mini-btn" data-prof="' + esc(u.id) + '">Карт →</button></td></tr>';
+        }).join('') + '</table>' + (list.length ? '' : '<p class="muted" style="padding:10px">' + (usersDueOnly ? 'Одоогоор хугацаа болсон давтан үйлчилгээ алга.' : 'Олдсонгүй.') + '</p>') + '</div>';
       var inp = document.getElementById('userQ');
       var tmr = null;
       inp.oninput = function () {
@@ -449,10 +468,131 @@
       };
       inp.focus();
       if (q) inp.setSelectionRange(q.length, q.length);
+      document.getElementById('dueOnly').onchange = function (e) { usersDueOnly = e.target.checked; loadUsers(inp.value.trim()); };
+      document.getElementById('addCust').onclick = function () { openCustomerForm(null, inp.value.trim()); };
       c.querySelectorAll('[data-prof]').forEach(function (b) {
         b.onclick = function () { openClientProfile(b.getAttribute('data-prof')); };
       });
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+
+  function customerError(e) {
+    var map = { phone_taken: 'Энэ дугаар бүртгэлтэй байна — хайлтаар олоорой', bad_phone: 'Утас 8 оронтой байх ёстой', bad_name: 'Нэрээ оруулна уу' };
+    toast((e && map[e.error]) || 'Алдаа гарлаа', 'err');
+  }
+  /* new customer (u = null) or edit basic info */
+  function openCustomerForm(u, prefill) {
+    var x = u || { name: '', phone: /^\d+$/.test(prefill || '') ? prefill : '', desc: '', skinType: '', allergies: '', birthday: '' };
+    if (!u && prefill && !/^\d+$/.test(prefill)) x.name = prefill;
+    var m = openModal(
+      '<h3>' + (u ? '✎ Мэдээлэл засах' : '＋ Шинэ үйлчлүүлэгч') + '</h3>' +
+      '<div class="row"><div class="field grow"><label>Нэр</label><input id="cfName" maxlength="60" value="' + esc(x.name) + '"></div>' +
+      '<div class="field grow"><label>Утас</label><input id="cfPhone" inputmode="numeric" maxlength="8" value="' + esc(x.phone) + '"></div></div>' +
+      '<div class="field"><label>Тайлбар (бүх ажилтанд харагдана)</label><textarea id="cfDesc" rows="3" maxlength="1000" placeholder="ж: сард 2 удаа нүүрний гуаша хийлгэдэг, мөр нь чангардаг, орой ирэх дуртай">' + esc(x.desc || '') + '</textarea></div>' +
+      '<div class="row"><div class="field grow"><label>Арьсны төрөл</label><input id="cfSkin" maxlength="40" value="' + esc(x.skinType || '') + '"></div>' +
+      '<div class="field grow"><label>Төрсөн өдөр</label><input id="cfBday" type="date" value="' + esc(x.birthday || '') + '"></div></div>' +
+      '<div class="field"><label>Харшил</label><input id="cfAllergy" maxlength="200" value="' + esc(x.allergies || '') + '"></div>' +
+      (u ? '' : '<p class="muted small">Нууц үг хэрэггүй. Үйлчлүүлэгч хожим апп-д энэ дугаараараа бүртгүүлбэл энэ карт, түүх нь түүний бүртгэл болно.</p>') +
+      '<div class="modal-actions"><button class="btn btn-ghost" id="cfCancel">Болих</button>' +
+      '<button class="btn btn-primary" id="cfSave">' + (u ? 'Хадгалах' : 'Үүсгэх') + '</button></div>'
+    );
+    m.querySelector('#cfCancel').onclick = function () { closeModal(); if (u) openClientProfile(u.id); };
+    m.querySelector('#cfSave').onclick = function () {
+      var body = {
+        name: m.querySelector('#cfName').value, phone: m.querySelector('#cfPhone').value.trim(),
+        desc: m.querySelector('#cfDesc').value, skinType: m.querySelector('#cfSkin').value,
+        birthday: m.querySelector('#cfBday').value, allergies: m.querySelector('#cfAllergy').value
+      };
+      api('/api/admin/customers' + (u ? '/' + u.id : ''), { method: 'POST', body: body })
+        .then(function (d) {
+          closeModal(); toast(u ? 'Хадгалагдлаа ✓' : 'Үйлчлүүлэгч нэмэгдлээ ✓', 'ok');
+          if (tab === 'users') loadUsers();
+          openClientProfile(u ? u.id : d.id);
+        })
+        .catch(customerError);
+    };
+  }
+
+  /* record a visit (past/today → done) or book the next one (future → confirmed) */
+  function openRecordVisit(u, presetServiceId) {
+    var date = todayStr();
+    ensureServices().then(function (svcs) {
+      var svcOpts = svcs.filter(function (s) { return s.active; }).map(function (s) {
+        return '<option value="' + esc(s.id) + '"' + (s.id === presetServiceId ? ' selected' : '') + '>' + esc(s.nameMn) + ' · ' + s.minutes + 'мин · ' + money(s.price) + '</option>';
+      }).join('');
+      var m = openModal(
+        '<h3>✅ Үйлчилгээ бүртгэх — ' + esc(u.name) + '</h3>' +
+        '<p class="muted small">Өнгөрсөн эсвэл өнөөдрийн огноо → "болсон" гэж бүртгэнэ. Ирэх огноо → шинэ захиалга болно.</p>' +
+        '<div class="field"><label>Үйлчилгээ</label><select id="rvSvc">' + svcOpts + '</select></div>' +
+        '<div class="row"><div class="field grow"><label>Огноо</label><input id="rvDate" type="date" value="' + date + '"></div>' +
+        '<div class="field grow"><label>Цаг</label><select id="rvTime"></select></div>' +
+        '<div class="field grow"><label>Ажилтан</label><select id="rvStaff"></select></div></div>' +
+        '<div class="field"><label>Тэмдэглэл (заавал биш — багтай хуваалцана)</label><input id="rvNote" maxlength="500" placeholder="ж: хүзүүнд анхаарсан, дараа удаа LED нэмэх"></div>' +
+        '<div class="modal-actions"><button class="btn btn-ghost" id="rvCancel">Болих</button>' +
+        '<button class="btn btn-primary" id="rvOk">Бүртгэх</button></div>'
+      );
+      function fillSlots() {
+        var d = m.querySelector('#rvDate').value;
+        api('/api/admin/calendar?date=' + d).then(function (cal) {
+          var nowHm = new Date().toTimeString().slice(0, 5);
+          var slots = cal.slots || [];
+          /* default to the latest slot already started today, else the first one */
+          var pick = d === todayStr() ? (slots.filter(function (t) { return t <= nowHm; }).pop() || slots[0]) : slots[0];
+          m.querySelector('#rvTime').innerHTML = slots.map(function (t) { return '<option' + (t === pick ? ' selected' : '') + '>' + t + '</option>'; }).join('');
+          var cur = m.querySelector('#rvStaff').value || meStaffId;
+          m.querySelector('#rvStaff').innerHTML = cal.staff.map(function (s) {
+            return '<option value="' + esc(s.id) + '"' + (s.id === cur ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+          }).join('');
+        }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+      }
+      fillSlots();
+      m.querySelector('#rvDate').onchange = fillSlots;
+      m.querySelector('#rvCancel').onclick = function () { closeModal(); openClientProfile(u.id); };
+      m.querySelector('#rvOk').onclick = function () {
+        var btn = this;
+        var d = m.querySelector('#rvDate').value;
+        var note = m.querySelector('#rvNote').value.trim();
+        btn.disabled = true;
+        api('/api/admin/walkin', {
+          method: 'POST',
+          body: { customerId: u.id, serviceId: m.querySelector('#rvSvc').value, date: d, time: m.querySelector('#rvTime').value, staffId: m.querySelector('#rvStaff').value, done: d <= todayStr() }
+        }).then(function () {
+          return note ? api('/api/admin/notes', { method: 'POST', body: { customerId: u.id, text: note, shared: true } }) : null;
+        }).then(function () {
+          closeModal(); toast(d <= todayStr() ? 'Үйлчилгээ бүртгэгдлээ ✓' : 'Захиалга нэмэгдлээ ✓', 'ok'); openClientProfile(u.id);
+        }).catch(function (e) {
+          var map = { slot_taken: 'Энэ цаг давхцаж байна', date_out_of_range: 'Огноо хэт хол байна (60 хоногоос хуучин эсвэл захиалгын хугацаанаас хойш)', bad_staff: 'Ажилтан сонгоно уу', bad_time: 'Цаг сонгоно уу' };
+          toast((e && map[e.error]) || 'Алдаа гарлаа', 'err'); btn.disabled = false;
+        });
+      };
+    });
+  }
+
+  function openAddPlan(u) {
+    ensureServices().then(function (svcs) {
+      var m = openModal(
+        '<h3>🔁 Давтан үйлчилгээ — ' + esc(u.name) + '</h3>' +
+        '<p class="muted small">Хугацаа ойртоход үйлчлүүлэгчийн жагсаалтад "⏰" тэмдэгтэй гарна — залгаж цаг товлоорой.</p>' +
+        '<div class="field"><label>Үйлчилгээ</label><select id="plSvc">' + svcs.filter(function (s) { return s.active; }).map(function (s) {
+          return '<option value="' + esc(s.id) + '">' + esc(s.nameMn) + '</option>';
+        }).join('') + '</select></div>' +
+        '<div class="row"><div class="field grow"><label>Хэдэн хоног тутам</label><select id="plEvery">' +
+        [[7, '7 хоног тутам'], [14, '2 долоо хоног тутам'], [21, '3 долоо хоног тутам'], [30, 'Сар тутам'], [60, '2 сар тутам'], [90, '3 сар тутам']].map(function (o) {
+          return '<option value="' + o[0] + '"' + (o[0] === 14 ? ' selected' : '') + '>' + o[1] + '</option>';
+        }).join('') + '</select></div>' +
+        '<div class="field grow"><label>Эхлэх огноо</label><input id="plStart" type="date" value="' + todayStr() + '"></div></div>' +
+        '<div class="field"><label>Тэмдэглэл (заавал биш)</label><input id="plNote" maxlength="200" placeholder="ж: 10 удаагийн курс"></div>' +
+        '<div class="modal-actions"><button class="btn btn-ghost" id="plCancel">Болих</button><button class="btn btn-primary" id="plOk">Нэмэх</button></div>'
+      );
+      m.querySelector('#plCancel').onclick = function () { closeModal(); openClientProfile(u.id); };
+      m.querySelector('#plOk').onclick = function () {
+        api('/api/admin/customers/' + u.id + '/plans', { method: 'POST', body: {
+          serviceId: m.querySelector('#plSvc').value, everyDays: Number(m.querySelector('#plEvery').value),
+          startDate: m.querySelector('#plStart').value, note: m.querySelector('#plNote').value
+        } }).then(function () { closeModal(); toast('Нэмэгдлээ ✓', 'ok'); openClientProfile(u.id); })
+          .catch(function () { toast('Алдаа гарлаа', 'err'); });
+      };
+    });
   }
 
   function openClientProfile(userId) {
@@ -471,14 +611,34 @@
       var notesHtml = d.myNotes.map(function (n) {
         return '<div class="card" style="padding:10px;margin-bottom:8px" data-note="' + esc(n.id) + '">' +
           '<div class="small">' + esc(n.text) + '</div>' +
-          '<div class="row" style="margin-top:6px"><span class="muted" style="font-size:0.72rem">' + fmtShort(n.createdAt) + '</span>' +
+          '<div class="row" style="margin-top:6px"><span class="muted" style="font-size:0.72rem">' + fmtShort(n.createdAt) + ' · ' + (n.shared ? '👥 багтай хуваалцсан' : '🔒 зөвхөн би') + '</span>' +
           '<span class="spacer" style="flex:1"></span>' +
           '<button class="mini-btn" data-editnote="' + esc(n.id) + '">✎</button>' +
           '<button class="mini-btn" data-delnote="' + esc(n.id) + '">🗑</button></div></div>';
       }).join('');
 
+      var sharedHtml = (d.sharedNotes || []).map(function (n) {
+        return '<div class="card" style="padding:10px;margin-bottom:8px"><div class="small">' + esc(n.text) + '</div>' +
+          '<div class="muted" style="font-size:0.72rem;margin-top:6px">👥 ' + esc(n.author) + ' · ' + fmtShort(n.createdAt) + '</div></div>';
+      }).join('');
+      var plansHtml = (d.plans || []).map(function (p) {
+        return '<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">' +
+          '<div class="grow"><b class="small">' + esc(p.serviceName) + '</b> <span class="muted small">· ' + p.everyDays + ' хоног тутам' + (p.note ? ' · ' + esc(p.note) : '') + '</span><br>' +
+          '<span class="muted small">Сүүлд: ' + esc(p.lastVisit || '—') + ' · Дараагийн: <b>' + esc(p.nextDue) + '</b></span></div>' +
+          (p.state !== 'ok' ? '<span class="chip ' + (p.state === 'overdue' ? 'cancelled' : (p.state === 'due' ? 'noshow' : 'confirmed')) + '">' + DUE_LABEL[p.state] + '</span>' : '') +
+          (p.state !== 'booked' ? '<button class="mini-btn" data-plbook="' + esc(p.serviceId) + '">📅 Цаг товлох</button>' : '') +
+          '<button class="mini-btn" data-pldel="' + esc(p.id) + '">🗑</button></div>';
+      }).join('') || '<p class="muted small">Давтан үйлчилгээ тохируулаагүй.</p>';
+
       var m = openModal(
-        '<h3>' + esc(u.name) + ' <span class="muted small">' + esc(u.phone) + '</span></h3>' +
+        '<h3>' + esc(u.name) + ' <span class="muted small">' + esc(u.phone) + '</span>' + (d.noLogin ? ' <span class="pill">апп-гүй</span>' : '') + '</h3>' +
+        '<div class="row" style="flex-wrap:wrap;margin:8px 0">' +
+        '<button class="btn btn-primary btn-sm" id="cpVisit">✅ Үйлчилгээ бүртгэх</button>' +
+        '<button class="btn btn-ghost btn-sm" id="cpPlan">🔁 Давтан үйлчилгээ</button>' +
+        '<button class="btn btn-ghost btn-sm" id="cpEdit">✎ Мэдээлэл засах</button>' +
+        '<a class="btn btn-ghost btn-sm" href="tel:' + esc(u.phone) + '">📞 Залгах</a></div>' +
+        '<div class="card" style="padding:12px;background:var(--brand-soft)"><b class="small">📋 Тайлбар</b> <span class="muted small">(бүх ажилтанд харагдана)</span>' +
+        '<p class="small" style="margin-top:4px;white-space:pre-wrap">' + (d.desc ? esc(d.desc) : '<span class="muted">Тайлбар алга — "Мэдээлэл засах"-аар нэмнэ үү.</span>') + '</p></div>' +
         '<div class="stat-grid" style="margin:10px 0">' +
         '<div class="stat"><b>' + d.stats.visits + '</b><span>Ирсэн</span></div>' +
         '<div class="stat"><b>' + money(d.stats.spent) + '</b><span>Нийт зарцуулсан</span></div>' +
@@ -496,9 +656,12 @@
           '<input id="adjNote" class="cell-input" placeholder="Тайлбар (ж: бэлэн мөнгөөр цэнэглэв)">' +
           '<button class="mini-btn" id="adjBtn">Хэтэвч засах</button></div>' : '') +
 
-        '<h3 style="font-size:1rem;margin:12px 0 6px">📝 Миний тэмдэглэл <span class="muted small">(зөвхөн танд харагдана)</span></h3>' +
-        '<div id="notesHost">' + notesHtml + '</div>' +
-        '<div class="row"><input id="newNote" class="cell-input" maxlength="500" placeholder="ж: хүчтэй массаж таалагддаг, нуруу эмзэг…">' +
+        '<h3 style="font-size:1rem;margin:14px 0 6px">🔁 Давтан үйлчилгээ</h3>' + plansHtml +
+
+        '<h3 style="font-size:1rem;margin:14px 0 6px">📝 Тэмдэглэл</h3>' +
+        '<div id="notesHost">' + notesHtml + sharedHtml + '</div>' +
+        '<div class="row" style="flex-wrap:wrap"><input id="newNote" class="cell-input" style="flex:1;min-width:200px" maxlength="500" placeholder="ж: хүчтэй массаж таалагддаг, нуруу эмзэг…">' +
+        '<label class="small" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="noteShared" checked> 👥 багтай хуваалцах</label>' +
         '<button class="mini-btn" id="addNote">+ Нэмэх</button></div>' +
 
         (featureWallet ? '<h3 style="font-size:1rem;margin:14px 0 6px">🎁 Багцууд</h3>' + pkgHtml : '') +
@@ -509,6 +672,23 @@
         '<div class="modal-actions"><button class="btn btn-ghost" id="cpClose">Хаах</button></div>'
       );
       m.querySelector('#cpClose').onclick = closeModal;
+      var cu = { id: userId, name: u.name, phone: u.phone, desc: d.desc, skinType: u.skinType, allergies: u.allergies, birthday: u.birthday };
+      m.querySelector('#cpVisit').onclick = function () { closeModal(); openRecordVisit(cu); };
+      m.querySelector('#cpPlan').onclick = function () { closeModal(); openAddPlan(cu); };
+      m.querySelector('#cpEdit').onclick = function () { closeModal(); openCustomerForm(cu); };
+      m.querySelectorAll('[data-plbook]').forEach(function (b) {
+        b.onclick = function () { closeModal(); openRecordVisit(cu, b.getAttribute('data-plbook')); };
+      });
+      m.querySelectorAll('[data-pldel]').forEach(function (b) {
+        b.onclick = function () {
+          confirmDlg('Давтан үйлчилгээг устгах уу?').then(function (yes) {
+            if (!yes) return;
+            api('/api/admin/customers/' + userId + '/plans/' + b.getAttribute('data-pldel'), { method: 'DELETE' })
+              .then(function () { closeModal(); openClientProfile(userId); })
+              .catch(function () { toast('Алдаа гарлаа', 'err'); });
+          });
+        };
+      });
 
       var adj = m.querySelector('#adjBtn');
       if (adj) adj.onclick = function () {
@@ -522,7 +702,7 @@
       m.querySelector('#addNote').onclick = function () {
         var txt = m.querySelector('#newNote').value.trim();
         if (!txt) return;
-        api('/api/admin/notes', { method: 'POST', body: { customerId: userId, text: txt } })
+        api('/api/admin/notes', { method: 'POST', body: { customerId: userId, text: txt, shared: m.querySelector('#noteShared').checked } })
           .then(function () { toast('Тэмдэглэл нэмэгдлээ ✓', 'ok'); closeModal(); openClientProfile(userId); })
           .catch(function () { toast('Алдаа гарлаа', 'err'); });
       };

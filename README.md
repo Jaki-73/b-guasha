@@ -31,6 +31,16 @@ Both the website and the app have two layouts that switch automatically by scree
 
 Every "Book" button on the website opens the app on that service's booking step (`/app#book=<serviceId>`); if the visitor isn't logged in, it continues right after login.
 
+## Customer records (staff)
+
+In **Админ → 👤 Үйлчлүүлэгч** every admin-side user (staff included) can:
+
+- **＋ Шинэ үйлчлүүлэгч** — create a customer by name + phone, no password needed. If that person later registers in the app with the same phone, the record (with its history) becomes their account. Such records show an "апп-гүй" tag until then.
+- **📋 Тайлбар** — a description every staff member sees (never shown to the customer).
+- **✅ Үйлчилгээ бүртгэх** — record a service given today or in the last 60 days (saved as done), or pick a future date to book the next visit.
+- **🔁 Давтан үйлчилгээ** — "this customer comes for X every N days". The list shows ⏰ when it is due within 3 days or overdue; tick "Давтан үйлчилгээ ойртсон / хоцорсон" to see who to call.
+- **📝 Тэмдэглэл** — notes are shared with the team by default; untick "багтай хуваалцах" to keep one private.
+
 ## Roles
 
 | Role | Logs in at | Can do |
