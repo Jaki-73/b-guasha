@@ -61,9 +61,11 @@ try {
 /* effective config = config.json + owner-edited settings stored in the db */
 function cfg() { return db && db.settings ? { ...config, ...db.settings } : config; }
 
-/* feature flags — the owner (super admin) toggles these in Admin → Тохиргоо.
+/* feature flags — the super admin toggles these in Admin → Тохиргоо.
    Wallet off = no balance, top-up, bundles, gift cards or promo codes anywhere.
    Nothing is deleted: existing balances stay in the db and come back when re-enabled. */
+/* salon texts the owner edits in Admin → Тохиргоо (stored in db.settings, override config.json) */
+const CONTACT_FIELDS = ['addressMn', 'addressEn', 'phoneDisplay', 'phoneTel', 'email', 'facebook'];
 function walletOn() { return cfg().featureWallet === true; }
 
 /* ---------------- image guards ----------------
@@ -186,6 +188,16 @@ function seedStaffUsers() {
   return [owner, ex];
 }
 
+/* Super admin — the platform account. Not a therapist (no staff profile, never
+   booked). Controls feature switches and creates / edits every account. */
+const SUPER_PHONE = '80000000';
+const SUPER_PASSWORD = 'super123';
+function seedSuperAdmin() {
+  const su = makeUser('Супер админ', SUPER_PHONE, SUPER_PASSWORD);
+  su.role = 'superadmin';
+  return su;
+}
+
 function seedDb() {
   const demo = makeUser('Сараа (Demo)', '99000000', 'demo123');
   demo.balance = 50000;
@@ -194,7 +206,7 @@ function seedDb() {
     meta: { version: 3 },
     settings: {},
     services: seedServices(),
-    users: [demo, ...seedStaffUsers()],
+    users: [demo, ...seedStaffUsers(), seedSuperAdmin()],
     sessions: {},
     adminSessions: {},
     bookings: [],
@@ -224,6 +236,12 @@ function migrateDb() {
       if (db.users.some((u) => u.phone === su.phone)) su.phone = String(90000000 + Math.floor(Math.random() * 9999999));
       db.users.push(su);
     }
+  }
+  if (!db.users.some((u) => u.role === 'superadmin')) {
+    const sa = seedSuperAdmin();
+    if (db.users.some((u) => u.phone === sa.phone)) sa.phone = String(80000000 + Math.floor(Math.random() * 999999));
+    db.users.push(sa);
+    console.log('Created super admin account: ' + sa.phone + ' / ' + SUPER_PASSWORD + '  (change the password after first login)');
   }
   const firstStaff = db.users.find((u) => u.role === 'owner' && u.staff) || db.users.find((u) => u.role === 'staff' && u.staff);
   db.bookings.forEach((b) => {
@@ -272,6 +290,10 @@ function makeUser(name, phone, password) {
   const hash = crypto.scryptSync(password, salt, 32).toString('hex');
   return { id: uid('u'), name, phone, salt, hash, balance: 0, role: 'customer', createdAt: nowIso() };
 }
+function setPassword(user, password) {
+  user.salt = crypto.randomBytes(16).toString('hex');
+  user.hash = crypto.scryptSync(password, user.salt, 32).toString('hex');
+}
 function checkPassword(user, password) {
   try {
     const hash = crypto.scryptSync(password, user.salt, 32).toString('hex');
@@ -281,7 +303,7 @@ function checkPassword(user, password) {
 function publicUser(u) {
   return {
     id: u.id, name: u.name, phone: u.phone, balance: u.balance, createdAt: u.createdAt, isDemo: !!u.isDemo,
-    role: u.role || 'customer',
+    role: u.role || 'customer', disabled: !!u.disabled,
     skinType: u.skinType || '', allergies: u.allergies || '', birthday: u.birthday || '',
     prefNote: u.prefNote || '', preferredStaffId: u.preferredStaffId || ''
   };
@@ -323,12 +345,23 @@ function authUser(req, q) {
   if (!t) return null;
   const s = db.sessions[t];
   if (!s) return null;
-  return db.users.find((u) => u.id === s.userId) || null;
+  const u = db.users.find((x) => x.id === s.userId);
+  return u && !u.disabled ? u : null;
 }
+const ADMIN_ROLES = ['superadmin', 'owner', 'staff'];
+/* The session is re-checked against the account on every request, so a role
+   change, a disabled account or a deactivated therapist takes effect at once. */
 function authAdmin(req, q) {
   const t = tokenFrom(req, q);
   if (!t) return null;
-  return db.adminSessions[t] || null;
+  const s = db.adminSessions[t];
+  if (!s) return null;
+  const uid_ = s.userId || s.staffUserId;
+  if (!uid_) return s.role === 'superadmin' ? s : null;
+  const u = db.users.find((x) => x.id === uid_);
+  if (!u || u.disabled || !ADMIN_ROLES.includes(u.role)) return null;
+  if (u.role === 'staff' && (!u.staff || u.staff.active === false)) return null;
+  return { ...s, userId: u.id, role: u.role, name: u.name, staffUserId: u.staff ? u.id : null };
 }
 function newSession(map, payload) {
   const t = crypto.randomBytes(24).toString('hex');
@@ -537,7 +570,7 @@ async function handleApi(req, res, pathname, q) {
   let m;
 
   /* ---------- wallet feature gate ----------
-     When the owner turns the wallet off, every money-in-app endpoint is closed
+     When the super admin turns the wallet off, every money-in-app endpoint is closed
      server-side. List endpoints answer with an empty array so an old cached app
      degrades quietly instead of showing errors. */
   if (!walletOn()) {
@@ -611,6 +644,7 @@ async function handleApi(req, res, pathname, q) {
     const b = await readJson(req);
     const user = db.users.find((u) => u.phone === String(b.phone || '').trim());
     if (!user || !checkPassword(user, String(b.password || ''))) return fail(res, 401, 'invalid_credentials');
+    if (user.disabled) return fail(res, 403, 'account_disabled');
     const token = newSession(db.sessions, { userId: user.id });
     saveDb();
     return json(res, 200, { token, user: publicUser(user) });
@@ -1008,28 +1042,34 @@ async function handleApi(req, res, pathname, q) {
       return fail(res, 401, 'bad_pin');
     }
     pinFails.count = 0;
-    const ownerStaff = db.users.find((u) => u.role === 'owner' && u.staff);
-    const token = newSession(db.adminSessions, { role: 'owner', staffUserId: ownerStaff ? ownerStaff.id : null, name: ownerStaff ? ownerStaff.name : 'Owner' });
+    /* the config.json PIN is the emergency key — it opens the super admin account */
+    const sa = db.users.find((u) => u.role === 'superadmin' && !u.disabled);
+    const token = newSession(db.adminSessions, { role: 'superadmin', userId: sa ? sa.id : null, staffUserId: null, name: sa ? sa.name : 'Super admin' });
     saveDb();
-    return json(res, 200, { token, role: 'owner', name: ownerStaff ? ownerStaff.name : 'Owner', staffUserId: ownerStaff ? ownerStaff.id : null });
+    return json(res, 200, { token, role: 'superadmin', name: sa ? sa.name : 'Super admin', staffUserId: null });
   }
 
+  /* phone + password login for every admin-side account: super admin, owner, staff */
   if (route === 'POST /api/admin/login-staff') {
     const b = await readJson(req);
-    const su = db.users.find((u) => u.phone === String(b.phone || '').trim() && (u.role === 'staff' || u.role === 'owner'));
+    const su = db.users.find((u) => u.phone === String(b.phone || '').trim() && ADMIN_ROLES.includes(u.role));
     if (!su || !checkPassword(su, String(b.password || ''))) return fail(res, 401, 'invalid_credentials');
-    if (!su.staff || su.staff.active === false) return fail(res, 403, 'staff_inactive');
-    const role = su.role === 'owner' ? 'owner' : 'staff';
-    const token = newSession(db.adminSessions, { role, staffUserId: su.id, name: su.name });
+    if (su.disabled) return fail(res, 403, 'account_disabled');
+    if (su.role === 'staff' && (!su.staff || su.staff.active === false)) return fail(res, 403, 'staff_inactive');
+    const staffUserId = su.staff ? su.id : null;
+    const token = newSession(db.adminSessions, { role: su.role, userId: su.id, staffUserId, name: su.name });
     saveDb();
-    return json(res, 200, { token, role, name: su.name, staffUserId: su.id });
+    return json(res, 200, { token, role: su.role, name: su.name, staffUserId });
   }
 
   if (pathname.startsWith('/api/admin/') && pathname !== '/api/admin/login' && pathname !== '/api/admin/login-staff') {
     const sess = authAdmin(req, q);
     if (!sess) return fail(res, 401, 'unauthorized');
-    const isOwner = sess.role === 'owner';
+    /* superadmin ⊃ owner ⊃ staff: the super admin can do everything the owner can */
+    const isSuper = sess.role === 'superadmin';
+    const isOwner = isSuper || sess.role === 'owner';
     const ownerOnly = () => fail(res, 403, 'owner_only');
+    const superOnly = () => fail(res, 403, 'superadmin_only');
 
     /* same wallet gate for the admin side — after auth, so an unauthenticated
        request still gets 401 rather than an empty list */
@@ -1235,7 +1275,7 @@ async function handleApi(req, res, pathname, q) {
         return { id: ub.id, name: bd.nameMn || '?', remaining: ub.remaining, sessions: bd.sessions || 0, expiresAt: ub.expiresAt, expired: new Date(ub.expiresAt).getTime() < Date.now() };
       });
       const reviews = db.reviews.filter((r) => r.userId === u.id).map((r) => ({ id: r.id, rating: r.rating, text: r.text, approved: r.approved, createdAt: r.createdAt }));
-      const myNotes = db.notes.filter((n) => n.customerId === u.id && n.staffUserId === sess.staffUserId)
+      const myNotes = db.notes.filter((n) => n.customerId === u.id && n.staffUserId === sess.userId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       const preferred = u.preferredStaffId ? staffById(u.preferredStaffId) : null;
       return json(res, 200, {
@@ -1267,10 +1307,10 @@ async function handleApi(req, res, pathname, q) {
       const b = await readJson(req);
       const cu = db.users.find((x) => x.id === b.customerId);
       if (!cu) return fail(res, 404, 'not_found');
-      if (!sess.staffUserId) return fail(res, 403, 'forbidden');
+      if (!sess.userId) return fail(res, 403, 'forbidden');
       const text = String(b.text || '').trim().slice(0, 500);
       if (!text) return fail(res, 400, 'bad_request');
-      const note = { id: uid('nt'), staffUserId: sess.staffUserId, customerId: cu.id, text, createdAt: nowIso(), updatedAt: nowIso() };
+      const note = { id: uid('nt'), staffUserId: sess.userId, customerId: cu.id, text, createdAt: nowIso(), updatedAt: nowIso() };
       db.notes.push(note);
       saveDb();
       return json(res, 200, note);
@@ -1279,7 +1319,7 @@ async function handleApi(req, res, pathname, q) {
     if (m && (method === 'POST' || method === 'DELETE')) {
       const idx = db.notes.findIndex((n) => n.id === m[1]);
       if (idx === -1) return fail(res, 404, 'not_found');
-      if (db.notes[idx].staffUserId !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      if (db.notes[idx].staffUserId !== sess.userId) return fail(res, 403, 'forbidden');
       if (method === 'DELETE') {
         db.notes.splice(idx, 1);
         saveDb();
@@ -1364,7 +1404,7 @@ async function handleApi(req, res, pathname, q) {
     }
 
     if (route === 'POST /api/admin/staff') {
-      if (!isOwner) return ownerOnly();
+      if (!isSuper) return superOnly();
       const b = await readJson(req);
       const name = String(b.name || '').trim();
       const phone = String(b.phone || '').trim();
@@ -1375,13 +1415,7 @@ async function handleApi(req, res, pathname, q) {
       if (db.users.some((u) => u.phone === phone)) return fail(res, 409, 'phone_taken');
       const su = makeUser(name, phone, password);
       su.role = 'staff';
-      su.staff = {
-        specialtyMn: String(b.specialtyMn || '').trim().slice(0, 80),
-        specialtyEn: String(b.specialtyEn || '').trim().slice(0, 80),
-        color: /^#[0-9a-fA-F]{6}$/.test(b.color || '') ? b.color : '#b08c46',
-        hours: validHours(b.hours) || { ...DEFAULT_HOURS },
-        daysOff: [], active: true
-      };
+      su.staff = newStaffProfile(b);
       db.users.push(su);
       saveDb();
       return json(res, 200, { ok: true, id: su.id });
@@ -1405,9 +1439,96 @@ async function handleApi(req, res, pathname, q) {
       if (Array.isArray(b.daysOff)) su.staff.daysOff = b.daysOff.filter((d) => DATE_RE.test(d)).slice(0, 200);
       if (b.active !== undefined && su.role !== 'owner') su.staff.active = !!b.active;
       if (b.newPassword) {
+        if (!isSuper) return superOnly();
         if (String(b.newPassword).length < 6) return fail(res, 400, 'bad_password');
-        su.salt = crypto.randomBytes(16).toString('hex');
-        su.hash = crypto.scryptSync(String(b.newPassword), su.salt, 32).toString('hex');
+        setPassword(su, String(b.newPassword));
+      }
+      saveDb();
+      return json(res, 200, { ok: true });
+    }
+
+    /* ----- accounts (super admin only) -----
+       Every login in the system: customers, staff, owners and the super admin. */
+    if (route === 'GET /api/admin/accounts') {
+      if (!isSuper) return superOnly();
+      const qry = (q.get('q') || '').toLowerCase().trim();
+      const roleF = q.get('role') || '';
+      let list = db.users.slice();
+      if (roleF) list = list.filter((u) => (u.role || 'customer') === roleF);
+      if (qry) list = list.filter((u) => u.name.toLowerCase().includes(qry) || u.phone.includes(qry));
+      const order = { superadmin: 0, owner: 1, staff: 2, customer: 3 };
+      list.sort((a, b) => (order[a.role] - order[b.role]) || a.name.localeCompare(b.name));
+      return json(res, 200, list.map((u) => ({
+        id: u.id, name: u.name, phone: u.phone, role: u.role || 'customer',
+        disabled: !!u.disabled, isDemo: !!u.isDemo, createdAt: u.createdAt,
+        therapist: !!(u.staff && u.staff.active !== false), isMe: u.id === sess.userId
+      })));
+    }
+
+    if (route === 'POST /api/admin/accounts') {
+      if (!isSuper) return superOnly();
+      const b = await readJson(req);
+      const name = String(b.name || '').trim();
+      const phone = String(b.phone || '').trim();
+      const password = String(b.password || '');
+      const accRole = String(b.role || 'customer');
+      if (!['customer', 'staff', 'owner'].includes(accRole)) return fail(res, 400, 'bad_role');
+      if (!name || name.length > 60) return fail(res, 400, 'bad_name');
+      if (!PHONE_RE.test(phone)) return fail(res, 400, 'bad_phone');
+      if (password.length < 6) return fail(res, 400, 'bad_password');
+      if (db.users.some((u) => u.phone === phone)) return fail(res, 409, 'phone_taken');
+      const u = makeUser(name, phone, password);
+      u.role = accRole;
+      u.createdBy = 'superadmin';
+      if (accRole === 'staff' || (accRole === 'owner' && b.therapist)) u.staff = newStaffProfile(b);
+      db.users.push(u);
+      saveDb();
+      return json(res, 200, { ok: true, id: u.id });
+    }
+
+    m = pathname.match(/^\/api\/admin\/accounts\/([\w-]+)$/);
+    if (m && method === 'POST') {
+      if (!isSuper) return superOnly();
+      const u = db.users.find((x) => x.id === m[1]);
+      if (!u) return fail(res, 404, 'not_found');
+      const b = await readJson(req);
+      const self = u.id === sess.userId;
+      if (typeof b.name === 'string') {
+        const nm = b.name.trim();
+        if (!nm || nm.length > 60) return fail(res, 400, 'bad_name');
+        u.name = nm;
+      }
+      if (b.phone !== undefined) {
+        const ph = String(b.phone).trim();
+        if (!PHONE_RE.test(ph)) return fail(res, 400, 'bad_phone');
+        if (db.users.some((x) => x.phone === ph && x.id !== u.id)) return fail(res, 409, 'phone_taken');
+        u.phone = ph;
+      }
+      if (b.role !== undefined && b.role !== u.role) {
+        /* the super admin account itself can't be demoted or created here */
+        if (u.role === 'superadmin' || !['customer', 'staff', 'owner'].includes(b.role)) return fail(res, 400, 'bad_role');
+        u.role = b.role;
+        if (u.role === 'staff') {
+          if (!u.staff) u.staff = newStaffProfile(b);
+          u.staff.active = true;
+        }
+        if (u.role === 'customer' && u.staff) u.staff.active = false;
+      }
+      if (b.therapist !== undefined && u.role === 'owner') {
+        if (b.therapist && !u.staff) u.staff = newStaffProfile(b);
+        if (u.staff) u.staff.active = !!b.therapist;
+      }
+      if (b.disabled !== undefined) {
+        if (self) return fail(res, 400, 'cannot_disable_self');
+        u.disabled = !!b.disabled;
+        if (u.disabled) {
+          for (const [t, s0] of Object.entries(db.sessions)) if (s0.userId === u.id) delete db.sessions[t];
+          for (const [t, s0] of Object.entries(db.adminSessions)) if ((s0.userId || s0.staffUserId) === u.id) delete db.adminSessions[t];
+        }
+      }
+      if (b.newPassword) {
+        if (String(b.newPassword).length < 6) return fail(res, 400, 'bad_password');
+        setPassword(u, String(b.newPassword));
       }
       saveDb();
       return json(res, 200, { ok: true });
@@ -1582,8 +1703,8 @@ async function handleApi(req, res, pathname, q) {
       const b = await readJson(req);
       const text = String(b.text || '').trim().slice(0, 1000);
       if (!text) return fail(res, 400, 'bad_request');
-      const sender = sess.staffUserId ? db.users.find((u) => u.id === sess.staffUserId) : null;
-      const msg = { id: uid('msg'), userId: cu.id, from: 'salon', fromName: sender ? firstName(sender.name) : c.salonName, staffUserId: sess.staffUserId || null, text, createdAt: nowIso(), readByCustomer: false, readBySalon: true };
+      const sender = sess.userId && sess.role !== 'superadmin' ? db.users.find((u) => u.id === sess.userId) : null;
+      const msg = { id: uid('msg'), userId: cu.id, from: 'salon', fromName: sender ? firstName(sender.name) : c.salonName, staffUserId: sess.userId || null, text, createdAt: nowIso(), readByCustomer: false, readBySalon: true };
       db.messages.push(msg);
       saveDb();
       return json(res, 200, msgOut(msg));
@@ -1597,7 +1718,9 @@ async function handleApi(req, res, pathname, q) {
         closedWeekdays: c.closedWeekdays, closedDates: c.closedDates || [],
         bookingDaysAhead: c.bookingDaysAhead, cancelHours: c.cancelHours,
         topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent,
-        featureWallet: c.featureWallet === true
+        featureWallet: c.featureWallet === true,
+        canToggleFeatures: isSuper,
+        contact: Object.fromEntries(CONTACT_FIELDS.map((k) => [k, c[k] || '']))
       });
     }
     if (route === 'POST /api/admin/settings') {
@@ -1615,7 +1738,22 @@ async function handleApi(req, res, pathname, q) {
       if (b.cancelHours !== undefined) { const v = Math.round(Number(b.cancelHours)); if (!Number.isFinite(v) || v < 0 || v > 96) return fail(res, 400, 'bad_request'); s.cancelHours = v; }
       if (b.topupBonusThreshold !== undefined) { const v = Math.round(Number(b.topupBonusThreshold)); if (!Number.isFinite(v) || v < 0) return fail(res, 400, 'bad_request'); s.topupBonusThreshold = v; }
       if (b.topupBonusPercent !== undefined) { const v = Math.round(Number(b.topupBonusPercent)); if (!Number.isFinite(v) || v < 0 || v > 50) return fail(res, 400, 'bad_request'); s.topupBonusPercent = v; }
-      if (b.featureWallet !== undefined) s.featureWallet = b.featureWallet === true;
+      /* feature switches belong to the super admin; the owner's form never sends them */
+      if (b.featureWallet !== undefined) {
+        if (!isSuper) return superOnly();
+        s.featureWallet = b.featureWallet === true;
+      }
+      /* salon name, slogans, address and contacts shown on the website and in the app */
+      if (b.contact && typeof b.contact === 'object') {
+        for (const k of CONTACT_FIELDS) {
+          if (b.contact[k] === undefined) continue;
+          const v = String(b.contact[k]).trim().slice(0, k.startsWith('address') ? 300 : 120);
+          if (k === 'facebook' && v && !/^https:\/\//.test(v)) return fail(res, 400, 'bad_url');
+          if (k === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return fail(res, 400, 'bad_email');
+          if (k === 'phoneTel' && v && !/^\+?\d{6,15}$/.test(v)) return fail(res, 400, 'bad_phone');
+          s[k] = v;
+        }
+      }
       saveDb();
       return json(res, 200, { ok: true });
     }
@@ -1717,6 +1855,15 @@ function eduFromBody(b, base) {
     order: Number.isFinite(Number(b.order)) ? Number(b.order) : 99
   };
 }
+function newStaffProfile(b) {
+  return {
+    specialtyMn: String(b.specialtyMn || '').trim().slice(0, 80),
+    specialtyEn: String(b.specialtyEn || '').trim().slice(0, 80),
+    color: /^#[0-9a-fA-F]{6}$/.test(b.color || '') ? b.color : '#b08c46',
+    hours: validHours(b.hours) || { ...DEFAULT_HOURS },
+    daysOff: [], active: true
+  };
+}
 function validHours(h) {
   if (h === undefined || h === null) return null;
   const out = {};
@@ -1780,7 +1927,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  ----------------------------------------');
   console.log('  Website : http://localhost:' + PORT + '/');
   console.log('  App     : http://localhost:' + PORT + '/app');
-  console.log('  Admin   : http://localhost:' + PORT + '/admin   (owner PIN: ' + cfg().adminPin + ')');
+  console.log('  Admin   : http://localhost:' + PORT + '/admin   (super admin PIN: ' + cfg().adminPin + ')');
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
     for (const net of nets[name] || []) {
@@ -1791,7 +1938,8 @@ server.listen(PORT, '0.0.0.0', () => {
   }
   console.log('  ----------------------------------------');
   console.log('  Demo customer : 99000000 / demo123');
-  console.log('  Owner (staff login) : 91113958 / owner123   |   Example staff : 88000001 / staff123');
+  console.log('  Super admin : ' + SUPER_PHONE + ' / ' + SUPER_PASSWORD + '  (default — change it in Admin → Бүртгэл)');
+  console.log('  Owner       : 91113958 / owner123   |   Example staff : 88000001 / staff123');
   console.log('  Payments are in DEMO mode (no real money). See docs/PAYMENTS-QPAY.md');
   console.log('');
 });

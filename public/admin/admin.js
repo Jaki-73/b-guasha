@@ -1,4 +1,4 @@
-/* B's Gua Sha — admin panel v3 (owner PIN or staff phone login). Mongolian-first labels. */
+/* B's Gua Sha — admin panel v3. Roles: superadmin ⊃ owner ⊃ staff (PIN = super admin, others log in by phone). Mongolian-first labels. */
 (function () {
   'use strict';
 
@@ -85,6 +85,10 @@
     render();
   }
 
+  function isSuperRole() { return role === 'superadmin'; }
+  function isOwnerRole() { return role === 'superadmin' || role === 'owner'; }
+  var ROLE_LABEL = { superadmin: '🛡 Супер админ', owner: '👑 Эзэмшигч', staff: '👤 Ажилтан', customer: '🙂 Үйлчлүүлэгч' };
+
   var ST_LABEL = { confirmed: 'Баталгаажсан', done: 'Болсон ✓', cancelled: 'Цуцалсан', noshow: 'Ирээгүй' };
   var PAID_LABEL = { balance: 'Үлдэгдлээс ✓', salon: 'Салон дээр', refunded: 'Буцаагдсан', package: 'Багцаас ✓', package_returned: 'Багц руу буцсан' };
 
@@ -92,7 +96,7 @@
   function render() {
     if (chatPoll) { clearInterval(chatPoll); chatPoll = null; }
     if (!token) return renderLogin();
-    var isOwner = role === 'owner';
+    var isOwner = isOwnerRole();
     var tabs = isOwner ? [
       ['cal', '🗓 Календарь'],
       ['bookings', '📋 Захиалга'],
@@ -100,6 +104,7 @@
       ['chat', '💬 Чат'],
       ['reviews', '⭐ Сэтгэгдэл'],
       ['services', '🌿 Үйлчилгээ'],
+      ['products', '🛍 Бүтээгдэхүүн'],
       ['offers', '🎁 Багц · Код'],
       ['staff', '👥 Ажилтан'],
       ['stats', '📊 Тайлан'],
@@ -110,11 +115,12 @@
       ['users', '👤 Үйлчлүүлэгч'],
       ['chat', '💬 Чат']
     ];
+    if (isSuperRole()) tabs.push(['accounts', '🔐 Бүртгэл']);
     tabs = tabs.filter(function (x) { return x[0] !== 'offers' || featureWallet; });
     if (!tabs.some(function (x) { return x[0] === tab; })) tab = 'cal';
     root.innerHTML =
       '<div class="row" style="gap:12px;flex-wrap:wrap"><h2 style="font-family:\'Playfair Display\',serif">B\'s Gua Sha — Удирдлага</h2>' +
-      '<span class="pill">' + (isOwner ? '👑 Эзэмшигч' : '👤 Ажилтан') + (meName ? ' · ' + esc(meName) : '') + '</span>' +
+      '<span class="pill">' + (ROLE_LABEL[role] || ROLE_LABEL.staff) + (meName ? ' · ' + esc(meName) : '') + '</span>' +
       '<div class="spacer" style="flex:1"></div>' +
       (isOwner ? '<a class="icon-btn" href="/api/admin/export?token=' + encodeURIComponent(token) + '" download>⬇ Backup</a>' : '') +
       '<button class="icon-btn" id="themeBtn">' + (theme === 'dark' ? '☀️' : '🌙') + '</button>' +
@@ -135,25 +141,25 @@
       b.onclick = function () { tab = b.getAttribute('data-tab'); render(); };
     });
 
-    ({ cal: loadCalendar, bookings: loadBookings, users: loadUsers, chat: loadChat, reviews: loadReviews, services: loadServices, offers: loadOffers, staff: loadStaff, stats: loadStats, settings: loadSettings }[tab] || loadCalendar)();
+    ({ cal: loadCalendar, bookings: loadBookings, users: loadUsers, chat: loadChat, reviews: loadReviews, services: loadServices, products: loadProducts, offers: loadOffers, staff: loadStaff, stats: loadStats, settings: loadSettings, accounts: loadAccounts }[tab] || loadCalendar)();
   }
 
   function renderLogin() {
-    var mode = sessionStorage.getItem('bg_admin_mode') || 'pin';
+    var mode = sessionStorage.getItem('bg_admin_mode') || 'staff';
     root.innerHTML =
       '<div class="pin-wrap"><img src="/assets/logo.svg" alt="">' +
       '<h2 style="font-family:\'Playfair Display\',serif;margin:12px 0">Удирдлагын хэсэг</h2>' +
       '<div class="auth-tabs" style="max-width:320px;margin:0 auto 16px">' +
-      '<button id="mPin" class="' + (mode === 'pin' ? 'active' : '') + '">Эзэмшигч (PIN)</button>' +
-      '<button id="mStaff" class="' + (mode === 'staff' ? 'active' : '') + '">Ажилтан</button></div>' +
+      '<button id="mStaff" class="' + (mode === 'staff' ? 'active' : '') + '">Утсаар</button>' +
+      '<button id="mPin" class="' + (mode === 'pin' ? 'active' : '') + '">Супер админ (PIN)</button></div>' +
       (mode === 'pin'
         ? '<form id="pinForm"><div class="field"><input id="pin" type="password" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:1.3rem;letter-spacing:0.4em"></div>' +
           '<button class="btn btn-primary btn-block" type="submit">Нэвтрэх</button></form>' +
-          '<p class="muted small" style="margin-top:12px">Анхны PIN: 1234 — config.json дотор солино</p>'
+          '<p class="muted small" style="margin-top:12px">PIN нь супер админы нөөц түлхүүр — config.json дотор солино</p>'
         : '<form id="staffForm"><div class="field"><input id="sfPhone" inputmode="numeric" maxlength="8" placeholder="Утасны дугаар"></div>' +
           '<div class="field"><input id="sfPass" type="password" placeholder="Нууц үг"></div>' +
           '<button class="btn btn-primary btn-block" type="submit">Нэвтрэх</button></form>' +
-          '<p class="muted small" style="margin-top:12px">Ажилтны эрхийг эзэмшигч "Ажилтан" хэсгээс үүсгэнэ</p>') +
+          '<p class="muted small" style="margin-top:12px">Супер админ, эзэмшигч, ажилтан бүгд утас + нууц үгээр нэвтэрнэ. Эрхийг супер админ "Бүртгэл" хэсгээс үүсгэнэ.</p>') +
       '</div>';
     document.getElementById('mPin').onclick = function () { sessionStorage.setItem('bg_admin_mode', 'pin'); renderLogin(); };
     document.getElementById('mStaff').onclick = function () { sessionStorage.setItem('bg_admin_mode', 'staff'); renderLogin(); };
@@ -172,7 +178,7 @@
       api('/api/admin/login-staff', { method: 'POST', body: { phone: document.getElementById('sfPhone').value.trim(), password: document.getElementById('sfPass').value } })
         .then(afterLogin)
         .catch(function (err) {
-          toast(err && err.error === 'staff_inactive' ? 'Энэ ажилтны эрх идэвхгүй байна' : 'Утас эсвэл нууц үг буруу', 'err');
+          toast(err && (err.error === 'staff_inactive' || err.error === 'account_disabled') ? 'Энэ эрх идэвхгүй байна' : 'Утас эсвэл нууц үг буруу', 'err');
         });
     };
   }
@@ -356,7 +362,7 @@
       '<p class="small muted">' + esc(bk.service ? bk.service.nameMn : '') + ' · ' + bk.date + ' ' + bk.time + ' · ' + money(bk.amount) +
       '<br>Төлбөр: ' + (PAID_LABEL[bk.paid] || bk.paid) + ' · Төлөв: ' + (ST_LABEL[bk.status] || bk.status) + '</p>' +
       (bk.user.phone ? '<p><a href="tel:' + esc(bk.user.phone) + '">📞 ' + esc(bk.user.phone) + '</a></p>' : '') +
-      (role === 'owner' && bk.status === 'confirmed' ? '<div class="field mt"><label>Ажилтан солих</label><select id="bmStaff">' + staffOpts + '</select></div>' : '') +
+      (isOwnerRole() && bk.status === 'confirmed' ? '<div class="field mt"><label>Ажилтан солих</label><select id="bmStaff">' + staffOpts + '</select></div>' : '') +
       '<div class="bk-actions mt">' +
       (bk.status === 'confirmed'
         ? '<button data-st="done">Болсон ✓</button><button data-st="noshow">Ирээгүй</button><button data-st="cancelled">Цуцлах</button>'
@@ -485,7 +491,7 @@
         '<div class="list-row"><span class="lbl">Хүсэлт</span><span class="small">' + esc(u.prefNote || '—') + '</span></div>' +
         '<div class="list-row"><span class="lbl">Дуртай ажилтан</span><span>' + esc(d.preferredStaffName || '—') + '</span></div></div>' +
 
-        (role === 'owner' && featureWallet ? '<div class="row" style="margin:10px 0"><input id="adjAmount" class="cell-input" style="max-width:130px" inputmode="numeric" placeholder="± дүн ₮">' +
+        (isOwnerRole() && featureWallet ? '<div class="row" style="margin:10px 0"><input id="adjAmount" class="cell-input" style="max-width:130px" inputmode="numeric" placeholder="± дүн ₮">' +
           '<input id="adjNote" class="cell-input" placeholder="Тайлбар (ж: бэлэн мөнгөөр цэнэглэв)">' +
           '<button class="mini-btn" id="adjBtn">Хэтэвч засах</button></div>' : '') +
 
@@ -940,7 +946,7 @@
       var c = document.getElementById('content');
       c.innerHTML =
         '<div class="row" style="margin-bottom:10px"><p class="muted small" style="flex:1">Ажилтан бүр өөрийн утас + нууц үгээрээ энэ хуудсанд нэвтэрч зөвхөн өөрийн календарь, үйлчлүүлэгч, чатыг харна.</p>' +
-        '<button class="btn btn-primary btn-sm" id="addStaff">＋ Шинэ ажилтан</button></div>' +
+        (isSuperRole() ? '<button class="btn btn-primary btn-sm" id="addStaff">＋ Шинэ ажилтан</button>' : '<span class="muted small">Шинэ эрхийг супер админ үүсгэнэ</span>') + '</div>' +
         list.map(function (s) {
           var hoursTxt = [];
           for (var d = 0; d <= 6; d++) {
@@ -961,7 +967,8 @@
             (s.daysOff && s.daysOff.length ? '<p class="muted small">Амрах өдрүүд: ' + s.daysOff.join(', ') + '</p>' : '') +
             '</div>';
         }).join('');
-      document.getElementById('addStaff').onclick = openNewStaff;
+      var addBtn = document.getElementById('addStaff');
+      if (addBtn) addBtn.onclick = openNewStaff;
       c.querySelectorAll('[data-edits]').forEach(function (b) {
         b.onclick = function () {
           var s = staffCache.find(function (x) { return x.id === b.getAttribute('data-edits'); });
@@ -1010,7 +1017,7 @@
       '<h3 style="font-size:1rem;margin:12px 0 6px">🏖 Амрах өдрүүд (тодорхой огноо)</h3>' +
       '<div class="row"><input type="date" id="sOffDate" class="cell-input" style="max-width:170px"><button class="mini-btn" id="sOffAdd">+ Нэмэх</button></div>' +
       '<div class="chipline" id="offList"></div>' +
-      '<div class="field mt"><label>Шинэ нууц үг (солих бол л бөглөнө)</label><input id="sPass" type="password" placeholder="••••••"></div>' +
+      (isSuperRole() ? '<div class="field mt"><label>Шинэ нууц үг (солих бол л бөглөнө)</label><input id="sPass" type="password" placeholder="••••••"></div>' : '') +
       '<div class="modal-actions"><button class="btn btn-ghost" id="sCancel">Болих</button>' +
       '<button class="btn btn-primary" id="sSave">Хадгалах</button></div>'
     );
@@ -1051,7 +1058,7 @@
       };
       var act = m.querySelector('#sActive');
       if (act) body.active = act.checked;
-      var np = m.querySelector('#sPass').value;
+      var np = m.querySelector('#sPass') ? m.querySelector('#sPass').value : '';
       if (np) body.newPassword = np;
       api('/api/admin/staff/' + s.id, { method: 'POST', body: body })
         .then(function () { closeModal(); toast('Хадгалагдлаа ✓', 'ok'); loadStaff(); })
@@ -1090,6 +1097,199 @@
           if (e && e.error === 'bad_name') msg = 'Нэрээ оруулна уу';
           toast(msg, 'err');
         });
+    };
+  }
+
+  /* ================= products ("What we use" — shown on the website and in the app) ================= */
+  var EDU_CAT = { product: 'Бүтээгдэхүүн', tool: 'Багаж', machine: 'Аппарат', method: 'Арга барил' };
+  function loadProducts() {
+    api('/api/admin/edu').then(function (list) {
+      var c = document.getElementById('content');
+      c.innerHTML =
+        '<div class="row" style="margin-bottom:10px"><p class="muted small" style="flex:1">Вэбсайт болон апп-ын "Бидний хэрэглэдэг" хэсэгт харагдана. Идэвхгүй бол нуугдана.</p>' +
+        '<button class="btn btn-primary btn-sm" id="addEdu">＋ Шинэ бүтээгдэхүүн</button></div>' +
+        (list.length ? '<div class="card"><table><tr><th></th><th>Нэр</th><th>Ангилал</th><th>Дараалал</th><th>Төлөв</th><th></th></tr>' +
+          list.map(function (it) {
+            return '<tr><td style="font-size:1.3rem">' + esc(it.emoji) + '</td>' +
+              '<td><b>' + esc(it.nameMn) + '</b><br><span class="muted small">' + esc(it.nameEn) + '</span></td>' +
+              '<td>' + esc(EDU_CAT[it.category] || it.category) + '</td><td>' + (it.order || 0) + '</td>' +
+              '<td>' + (it.active ? '<span class="chip confirmed">идэвхтэй</span>' : '<span class="chip cancelled">нуусан</span>') + '</td>' +
+              '<td><button class="mini-btn" data-edu="' + it.id + '">✎ Засах</button> <button class="mini-btn" data-edudel="' + it.id + '">🗑</button></td></tr>';
+          }).join('') + '</table></div>' : '<p class="muted">Бүтээгдэхүүн алга.</p>');
+      document.getElementById('addEdu').onclick = function () { openEduModal(null); };
+      c.querySelectorAll('[data-edu]').forEach(function (b) {
+        b.onclick = function () { openEduModal(list.find(function (x) { return x.id === b.getAttribute('data-edu'); })); };
+      });
+      c.querySelectorAll('[data-edudel]').forEach(function (b) {
+        b.onclick = function () {
+          confirmDlg('Энэ бүтээгдэхүүнийг устгах уу?').then(function (ok) {
+            if (!ok) return;
+            api('/api/admin/edu/' + b.getAttribute('data-edudel'), { method: 'DELETE' })
+              .then(function () { toast('Устгалаа', 'ok'); loadProducts(); })
+              .catch(function () { toast('Алдаа гарлаа', 'err'); });
+          });
+        };
+      });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+  function openEduModal(it) {
+    var x = it || { category: 'product', emoji: '🌿', nameMn: '', nameEn: '', descMn: '', descEn: '', order: 99, active: true };
+    var m = openModal(
+      '<h3>' + (it ? '✎ Засах' : '＋ Шинэ бүтээгдэхүүн') + '</h3>' +
+      '<div class="row"><div class="field" style="flex:0 0 80px"><label>Эможи</label><input id="eEmoji" maxlength="8" value="' + esc(x.emoji) + '"></div>' +
+      '<div class="field grow"><label>Ангилал</label><select id="eCat" class="cell-input">' + Object.keys(EDU_CAT).map(function (k) {
+        return '<option value="' + k + '"' + (x.category === k ? ' selected' : '') + '>' + EDU_CAT[k] + '</option>';
+      }).join('') + '</select></div>' +
+      '<div class="field" style="flex:0 0 90px"><label>Дараалал</label><input id="eOrder" type="number" value="' + (x.order || 0) + '"></div></div>' +
+      '<div class="row"><div class="field grow"><label>Нэр (МН)</label><input id="eNameMn" maxlength="80" value="' + esc(x.nameMn) + '"></div>' +
+      '<div class="field grow"><label>Name (EN)</label><input id="eNameEn" maxlength="80" value="' + esc(x.nameEn) + '"></div></div>' +
+      '<div class="field"><label>Тайлбар (МН)</label><textarea id="eDescMn" rows="3" maxlength="500">' + esc(x.descMn) + '</textarea></div>' +
+      '<div class="field"><label>Description (EN)</label><textarea id="eDescEn" rows="3" maxlength="500">' + esc(x.descEn) + '</textarea></div>' +
+      '<label class="small"><input type="checkbox" id="eActive"' + (x.active ? ' checked' : '') + '> Идэвхтэй (сайт, апп дээр харагдана)</label>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" id="eCancel">Болих</button>' +
+      '<button class="btn btn-primary" id="eSave">Хадгалах</button></div>'
+    );
+    m.querySelector('#eCancel').onclick = closeModal;
+    m.querySelector('#eSave').onclick = function () {
+      var body = {
+        emoji: m.querySelector('#eEmoji').value, category: m.querySelector('#eCat').value,
+        order: Number(m.querySelector('#eOrder').value),
+        nameMn: m.querySelector('#eNameMn').value, nameEn: m.querySelector('#eNameEn').value,
+        descMn: m.querySelector('#eDescMn').value, descEn: m.querySelector('#eDescEn').value,
+        active: m.querySelector('#eActive').checked
+      };
+      if (!body.nameMn.trim()) { toast('Монгол нэрээ оруулна уу', 'err'); return; }
+      api('/api/admin/edu' + (it ? '/' + it.id : ''), { method: 'POST', body: body })
+        .then(function () { closeModal(); toast('Хадгалагдлаа ✓', 'ok'); loadProducts(); })
+        .catch(function () { toast('Алдаа гарлаа', 'err'); });
+    };
+  }
+
+  /* ================= accounts (super admin only) ================= */
+  var accFilter = { q: '', role: '' };
+  function accountError(e) {
+    var map = {
+      phone_taken: 'Энэ дугаар бүртгэлтэй байна', bad_phone: 'Утас 8 оронтой байх ёстой',
+      bad_password: 'Нууц үг 6+ тэмдэгт', bad_name: 'Нэрээ оруулна уу', bad_role: 'Эрхийг өөрчлөх боломжгүй',
+      cannot_disable_self: 'Өөрийгөө идэвхгүй болгох боломжгүй'
+    };
+    toast((e && map[e.error]) || 'Алдаа гарлаа', 'err');
+  }
+  function loadAccounts() {
+    var qs = [];
+    if (accFilter.q) qs.push('q=' + encodeURIComponent(accFilter.q));
+    if (accFilter.role) qs.push('role=' + accFilter.role);
+    api('/api/admin/accounts' + (qs.length ? '?' + qs.join('&') : '')).then(function (list) {
+      var c = document.getElementById('content');
+      c.innerHTML =
+        '<div class="row" style="margin-bottom:10px;flex-wrap:wrap">' +
+        '<input id="accQ" class="cell-input" style="max-width:220px" placeholder="Нэр эсвэл утас" value="' + esc(accFilter.q) + '">' +
+        '<select id="accRole" class="cell-input" style="max-width:170px"><option value="">Бүх эрх</option>' +
+        ['superadmin', 'owner', 'staff', 'customer'].map(function (r) {
+          return '<option value="' + r + '"' + (accFilter.role === r ? ' selected' : '') + '>' + ROLE_LABEL[r] + '</option>';
+        }).join('') + '</select>' +
+        '<div class="spacer" style="flex:1"></div>' +
+        '<button class="btn btn-primary btn-sm" id="addAcc">＋ Шинэ бүртгэл</button></div>' +
+        '<div class="card"><table><tr><th>Нэр</th><th>Утас</th><th>Эрх</th><th>Төлөв</th><th></th></tr>' +
+        list.map(function (u) {
+          return '<tr><td><b>' + esc(u.name) + '</b>' + (u.isMe ? ' <span class="muted small">(та)</span>' : '') + '</td>' +
+            '<td>' + esc(u.phone) + '</td>' +
+            '<td>' + ROLE_LABEL[u.role] + (u.role === 'owner' && u.therapist ? ' <span class="muted small">+ эмчилгээ хийнэ</span>' : '') + '</td>' +
+            '<td>' + (u.disabled ? '<span class="chip cancelled">хаасан</span>' : '<span class="chip confirmed">идэвхтэй</span>') + '</td>' +
+            '<td><button class="mini-btn" data-acc="' + u.id + '">✎ Засах</button></td></tr>';
+        }).join('') + '</table>' + (list.length ? '' : '<p class="muted">Олдсонгүй.</p>') + '</div>';
+      var qEl = document.getElementById('accQ');
+      qEl.onkeydown = function (e) { if (e.key === 'Enter') { accFilter.q = qEl.value.trim(); loadAccounts(); } };
+      document.getElementById('accRole').onchange = function (e) { accFilter.role = e.target.value; loadAccounts(); };
+      document.getElementById('addAcc').onclick = openNewAccount;
+      c.querySelectorAll('[data-acc]').forEach(function (b) {
+        b.onclick = function () { openAccountModal(list.find(function (x) { return x.id === b.getAttribute('data-acc'); })); };
+      });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+  function roleOptions(sel) {
+    return ['customer', 'staff', 'owner'].map(function (r) {
+      return '<option value="' + r + '"' + (sel === r ? ' selected' : '') + '>' + ROLE_LABEL[r] + '</option>';
+    }).join('');
+  }
+  function openNewAccount() {
+    var m = openModal(
+      '<h3>＋ Шинэ бүртгэл</h3>' +
+      '<div class="field"><label>Эрх</label><select id="naRole" class="cell-input">' + roleOptions('customer') + '</select></div>' +
+      '<div class="field"><label>Нэр</label><input id="naName" maxlength="60"></div>' +
+      '<div class="row"><div class="field grow"><label>Утас (нэвтрэх нэр)</label><input id="naPhone" inputmode="numeric" maxlength="8"></div>' +
+      '<div class="field grow"><label>Нууц үг (6+)</label><input id="naPass" type="text" autocomplete="off"></div></div>' +
+      '<div id="naStaffBox"><div class="field"><label>Мэргэшил (МН)</label><input id="naSpMn" maxlength="80" placeholder="ж: Нүүрний гуаша"></div></div>' +
+      '<label class="small" id="naTherBox" hidden><input type="checkbox" id="naTher"> Эмчилгээ хийнэ (календарьт харагдаж, захиалга авна)</label>' +
+      '<p class="muted small" style="margin-top:8px" id="naHint"></p>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" id="naCancel">Болих</button>' +
+      '<button class="btn btn-primary" id="naSave">Үүсгэх</button></div>'
+    );
+    var HINT = {
+      customer: 'Үйлчлүүлэгч /app дээр утас + нууц үгээр нэвтэрнэ.',
+      staff: 'Ажилтан /admin дээр нэвтэрч зөвхөн өөрийн календарь, үйлчлүүлэгч, чатыг харна.',
+      owner: 'Эзэмшигч /admin дээр нэвтэрч үйлчилгээ, бүтээгдэхүүн, хаяг, тохиргоо, ажилтны хуваарийг удирдана.'
+    };
+    function sync() {
+      var r = m.querySelector('#naRole').value;
+      m.querySelector('#naHint').textContent = HINT[r];
+      m.querySelector('#naTherBox').hidden = r !== 'owner';
+      m.querySelector('#naStaffBox').hidden = !(r === 'staff' || (r === 'owner' && m.querySelector('#naTher').checked));
+    }
+    m.querySelector('#naRole').onchange = sync;
+    m.querySelector('#naTher').onchange = sync;
+    sync();
+    m.querySelector('#naCancel').onclick = closeModal;
+    m.querySelector('#naSave').onclick = function () {
+      api('/api/admin/accounts', {
+        method: 'POST',
+        body: {
+          role: m.querySelector('#naRole').value,
+          name: m.querySelector('#naName').value,
+          phone: m.querySelector('#naPhone').value.trim(),
+          password: m.querySelector('#naPass').value,
+          therapist: m.querySelector('#naTher').checked,
+          specialtyMn: m.querySelector('#naSpMn').value
+        }
+      }).then(function () { closeModal(); toast('Бүртгэл үүслээ ✓', 'ok'); loadAccounts(); })
+        .catch(accountError);
+    };
+  }
+  function openAccountModal(u) {
+    var locked = u.role === 'superadmin';
+    var m = openModal(
+      '<h3>✎ ' + esc(u.name) + '</h3>' +
+      '<div class="row"><div class="field grow"><label>Нэр</label><input id="eaName" maxlength="60" value="' + esc(u.name) + '"></div>' +
+      '<div class="field grow"><label>Утас</label><input id="eaPhone" inputmode="numeric" maxlength="8" value="' + esc(u.phone) + '"></div></div>' +
+      (locked ? '<p class="small">Эрх: ' + ROLE_LABEL.superadmin + '</p>'
+        : '<div class="field"><label>Эрх</label><select id="eaRole" class="cell-input">' + roleOptions(u.role) + '</select></div>' +
+          '<label class="small" id="eaTherBox"' + (u.role === 'owner' ? '' : ' hidden') + '><input type="checkbox" id="eaTher"' + (u.therapist ? ' checked' : '') + '> Эмчилгээ хийнэ (захиалга авна)</label>') +
+      '<div class="field mt"><label>Шинэ нууц үг (солих бол л бөглөнө)</label><input id="eaPass" type="text" autocomplete="off" placeholder="••••••"></div>' +
+      (u.isMe ? '' : '<label class="small"><input type="checkbox" id="eaDisabled"' + (u.disabled ? ' checked' : '') + '> Бүртгэлийг хаах (нэвтэрч чадахгүй)</label>') +
+      '<div class="modal-actions"><button class="btn btn-ghost" id="eaCancel">Болих</button>' +
+      '<button class="btn btn-primary" id="eaSave">Хадгалах</button></div>'
+    );
+    var roleSel = m.querySelector('#eaRole');
+    if (roleSel) roleSel.onchange = function () { m.querySelector('#eaTherBox').hidden = roleSel.value !== 'owner'; };
+    m.querySelector('#eaCancel').onclick = closeModal;
+    m.querySelector('#eaSave').onclick = function () {
+      var body = { name: m.querySelector('#eaName').value, phone: m.querySelector('#eaPhone').value.trim() };
+      if (roleSel) {
+        body.role = roleSel.value;
+        if (body.role === 'owner') body.therapist = m.querySelector('#eaTher').checked;
+      }
+      var np = m.querySelector('#eaPass').value;
+      if (np) body.newPassword = np;
+      var dis = m.querySelector('#eaDisabled');
+      if (dis && dis.checked !== u.disabled) body.disabled = dis.checked;
+      api('/api/admin/accounts/' + u.id, { method: 'POST', body: body })
+        .then(function () {
+          closeModal(); toast('Хадгалагдлаа ✓', 'ok');
+          staffCache = null;
+          if (u.isMe) { meName = body.name; sessionStorage.setItem('bg_admin_name', meName); }
+          loadAccounts();
+        })
+        .catch(accountError);
     };
   }
 
@@ -1135,6 +1335,7 @@
     api('/api/admin/settings').then(function (s) {
       var c = document.getElementById('content');
       var closedDates = (s.closedDates || []).slice();
+      var ct = s.contact || {};
       c.innerHTML =
         '<div class="card" style="max-width:640px">' +
         '<h3 style="margin-bottom:12px">⚙️ Салоны тохиргоо</h3>' +
@@ -1156,14 +1357,25 @@
         '<div class="row" id="bonusRow"' + (s.featureWallet ? '' : ' hidden') + '><div class="field grow"><label>Бонус босго (₮)</label><input type="number" id="stBth" class="cell-input" step="10000" min="0" value="' + s.topupBonusThreshold + '"></div>' +
         '<div class="field grow"><label>Бонус хувь (%)</label><input type="number" id="stBpc" class="cell-input" min="0" max="50" value="' + s.topupBonusPercent + '"></div></div>' +
         '<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">' +
+        '<h3 style="margin-bottom:10px">📍 Холбоо барих мэдээлэл</h3>' +
+        '<p class="muted small" style="margin-bottom:8px">Вэбсайт болон апп дээр шууд харагдана.</p>' +
+        '<div class="field"><label>Хаяг (МН)</label><textarea id="ctAddrMn" class="cell-input" rows="2" maxlength="300">' + esc(ct.addressMn) + '</textarea></div>' +
+        '<div class="field"><label>Address (EN)</label><textarea id="ctAddrEn" class="cell-input" rows="2" maxlength="300">' + esc(ct.addressEn) + '</textarea></div>' +
+        '<div class="row"><div class="field grow"><label>Утас (харагдах)</label><input id="ctPhoneDisp" class="cell-input" maxlength="40" value="' + esc(ct.phoneDisplay) + '" placeholder="+976 9911-2233"></div>' +
+        '<div class="field grow"><label>Утас (залгах, зөвхөн тоо)</label><input id="ctPhoneTel" class="cell-input" maxlength="16" value="' + esc(ct.phoneTel) + '" placeholder="+97699112233"></div></div>' +
+        '<div class="row"><div class="field grow"><label>Имэйл</label><input id="ctEmail" class="cell-input" maxlength="120" value="' + esc(ct.email) + '"></div>' +
+        '<div class="field grow"><label>Facebook холбоос</label><input id="ctFb" class="cell-input" maxlength="120" value="' + esc(ct.facebook) + '" placeholder="https://facebook.com/..."></div></div>' +
+        '<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">' +
         '<label class="small" style="font-weight:600;color:var(--muted)">Нэмэлт боломж</label>' +
-        '<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:8px 0 2px;cursor:pointer">' +
-        '<input type="checkbox" id="stWallet"' + (s.featureWallet ? ' checked' : '') + ' style="margin-top:3px">' +
-        '<span><b>Хэтэвч — цэнэглэлт, багц, бэлгийн карт, урамшууллын код</b><br>' +
-        '<span class="muted">Унтраавал үйлчлүүлэгч зөвхөн цаг захиална, төлбөрийг утсаар эсвэл салон дээр авна. ' +
-        'Одоо байгаа үлдэгдэл устахгүй — дахин асаахад бүгд буцаж ирнэ.</span></span></label>' +
+        (s.canToggleFeatures
+          ? '<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:8px 0 2px;cursor:pointer">' +
+            '<input type="checkbox" id="stWallet"' + (s.featureWallet ? ' checked' : '') + ' style="margin-top:3px">' +
+            '<span><b>Хэтэвч — цэнэглэлт, багц, бэлгийн карт, урамшууллын код</b><br>' +
+            '<span class="muted">Унтраавал үйлчлүүлэгч зөвхөн цаг захиална, төлбөрийг утсаар эсвэл салон дээр авна. ' +
+            'Одоо байгаа үлдэгдэл устахгүй — дахин асаахад бүгд буцаж ирнэ.</span></span></label>'
+          : '<p class="small" style="margin:8px 0">Хэтэвч: <b>' + (s.featureWallet ? 'асаалттай' : 'унтраалттай') + '</b> <span class="muted">— зөвхөн супер админ өөрчилнө</span></p>') +
         '<button class="btn btn-primary mt" id="stSave">Хадгалах</button>' +
-        '<p class="muted small" style="margin-top:12px">📍 Хаяг, утас, имэйл, PIN, QPay тохиргоог <b>config.json</b> файлд солино (апп ажиллаж байгаа фолдер дотор бий).</p>' +
+        '<p class="muted small" style="margin-top:12px">PIN, QPay тохиргоог <b>config.json</b> файлд солино.</p>' +
         '</div>';
       function renderCd() {
         document.getElementById('cdList').innerHTML = closedDates.map(function (d) {
@@ -1177,7 +1389,8 @@
         });
       }
       renderCd();
-      document.getElementById('stWallet').onchange = function () {
+      var walletBox = document.getElementById('stWallet');
+      if (walletBox) walletBox.onchange = function () {
         var br = document.getElementById('bonusRow');
         if (br) br.hidden = !this.checked;
       };
@@ -1188,9 +1401,7 @@
       document.getElementById('stSave').onclick = function () {
         var closedWeekdays = [];
         c.querySelectorAll('.cwd:checked').forEach(function (cb) { closedWeekdays.push(Number(cb.value)); });
-        api('/api/admin/settings', {
-          method: 'POST',
-          body: {
+        var body = {
             hoursOpen: document.getElementById('stOpen').value,
             hoursClose: document.getElementById('stClose').value,
             slotMinutes: Number(document.getElementById('stSlot').value),
@@ -1200,15 +1411,29 @@
             cancelHours: Number(document.getElementById('stCancel').value),
             topupBonusThreshold: Number(document.getElementById('stBth').value),
             topupBonusPercent: Number(document.getElementById('stBpc').value),
-            featureWallet: document.getElementById('stWallet').checked
-          }
-        }).then(function () {
+            contact: {
+              addressMn: document.getElementById('ctAddrMn').value,
+              addressEn: document.getElementById('ctAddrEn').value,
+              phoneDisplay: document.getElementById('ctPhoneDisp').value,
+              phoneTel: document.getElementById('ctPhoneTel').value,
+              email: document.getElementById('ctEmail').value,
+              facebook: document.getElementById('ctFb').value
+            }
+        };
+        if (walletBox) body.featureWallet = walletBox.checked;
+        api('/api/admin/settings', { method: 'POST', body: body }).then(function () {
           var wasOn = featureWallet;
-          featureWallet = document.getElementById('stWallet').checked;
+          if (walletBox) featureWallet = walletBox.checked;
           toast('Хадгалагдлаа ✓ — шинэ тохиргоо шууд үйлчилнэ', 'ok');
           if (wasOn !== featureWallet) render();
         })
-          .catch(function () { toast('Алдаа — утгуудаа шалгана уу', 'err'); });
+          .catch(function (e) {
+            var msg = 'Алдаа — утгуудаа шалгана уу';
+            if (e && e.error === 'bad_url') msg = 'Facebook холбоос https:// -ээр эхлэх ёстой';
+            if (e && e.error === 'bad_email') msg = 'Имэйл буруу байна';
+            if (e && e.error === 'bad_phone') msg = 'Залгах утас зөвхөн тоо (+976...)';
+            toast(msg, 'err');
+          });
       };
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }

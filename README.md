@@ -12,12 +12,25 @@ Double-click **`start-server.bat`** (or run `node server.js`). Then:
 |---|---|---|
 | Website | http://localhost:3000 | — |
 | Mobile app | http://localhost:3000/app | demo customer: `99000000` / `demo123`, or register |
-| Admin (owner) | http://localhost:3000/admin | PIN `1234` (change in `config.json`) |
-| Admin (staff) | http://localhost:3000/admin → "Ажилтан" tab | owner: `91113958` / `owner123` · example staff: `88000001` / `staff123` |
+| Admin (super admin) | http://localhost:3000/admin → "Утсаар" | `80000000` / `super123` — or the "Супер админ (PIN)" tab with PIN `1234` (config.json) |
+| Admin (owner) | http://localhost:3000/admin → "Утсаар" | `91113958` / `owner123` |
+| Admin (staff) | http://localhost:3000/admin → "Утсаар" | example staff: `88000001` / `staff123` |
 
 On your phone (same Wi-Fi): `http://<your-PC-IP>:3000/app` → "Add to Home Screen" installs it like a real app. Full steps: **docs/TESTING-GUIDE.md**.
 
-⚠️ **Change these before going live:** admin PIN (config.json), owner password and the example staff account (Админ → Ажилтан).
+⚠️ **Change these before going live:** admin PIN (config.json), the super admin, owner and example staff passwords (Админ → 🔐 Бүртгэл).
+
+## Roles
+
+| Role | Logs in at | Can do |
+|---|---|---|
+| **Super admin** 🛡 | /admin (phone+password, or the PIN) | Everything the owner can, plus: turn features on/off (wallet), create/edit **every** account (customer, staff, owner), change roles, reset passwords, block accounts |
+| **Owner** 👑 | /admin | Services & prices, products ("What we use"), address/phone/email/Facebook, opening hours & booking rules, staff schedules, bookings, reviews, reports, backup |
+| **Staff** 👤 | /admin | Only their own calendar, clients and chat |
+| **Customer** 🙂 | /app | Book, profile, chat (and wallet when it is on) |
+
+The super admin is a separate account and is not a therapist (it never appears in the booking calendar).
+An owner can optionally also be a therapist ("Эмчилгээ хийнэ"). Role changes and blocked accounts take effect immediately, even for people already logged in.
 
 ## What's new in v3
 
@@ -57,7 +70,7 @@ legacy/                The old v1 site & app, kept for reference
 ## Turning the wallet on and off
 
 The whole money-in-app side — wallet balance, QPay top-up, bundles (багц), gift cards
-and promo codes — is a single switch the owner controls in **Админ → ⚙️ Тохиргоо →
+and promo codes — is a single switch the super admin controls in **Админ → ⚙️ Тохиргоо →
 Нэмэлт боломж**. It ships **off**.
 
 - **Off** (default): customers browse services and book a time; payment is arranged by
@@ -70,7 +83,7 @@ Switching it off **deletes nothing** — balances, bundles and gift cards stay i
 `data/db.json` and reappear the moment it is switched back on. The choice is stored in
 the database, so it survives restarts and overrides `featureWallet` in `config.json`.
 
-Only the owner (super admin) sees this setting; staff accounts get 403.
+Only the super admin can change this setting; the owner sees whether it is on or off, and staff accounts get 403.
 
 ## Demo vs real payments
 
