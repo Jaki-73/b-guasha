@@ -149,21 +149,134 @@ function seedBundles() {
 }
 
 function seedEdu() {
-  const mk = (cat, emoji, nameMn, nameEn, descMn, descEn, order) => ({ id: uid('edu'), category: cat, emoji, nameMn, nameEn, descMn, descEn, order, active: true });
+  const mk = (cat, emoji, nameMn, nameEn, benefitMn, benefitEn, descMn, descEn, order) => ({ id: uid('edu'), category: cat, emoji, nameMn, nameEn, benefitMn, benefitEn, descMn, descEn, order, active: true });
   return [
-    mk('tool', '💎', 'Хаш гуаша чулуу', 'Jade gua sha stone', 'Жинхэнэ хаш чулуун хусуур — арьсыг сэрүүцүүлж, лимфийн урсгалыг идэвхжүүлж, нүүрний тоймыг тодруулна.', 'Genuine jade scraping stone — cools the skin, activates lymphatic drainage and sculpts facial contours.', 1),
-    mk('tool', '🌸', 'Ягаан кварц чулуу', 'Rose quartz stone', 'Мэдрэмтгий арьсанд тохиромжтой зөөлөн чулуу. Тайвшруулах, улайлт багасгах үйлчилгээтэй.', 'A gentler stone suited to sensitive skin; calming and redness-reducing.', 2),
-    mk('tool', '🌀', 'Хаш өнхрүүш (роллер)', 'Jade roller', 'Эмчилгээний төгсгөлд сийрэгжүүлэх, маскны шингээлтийг сайжруулахад ашиглана.', 'Used at the end of a treatment to de-puff and help masks absorb.', 3),
-    mk('product', '🫒', 'Эмчилгээний тос', 'Facial treatment oil', 'Жожоба, сараана зэрэг ургамлын гаралтай тос — чулуу арьсан дээр зөөлөн гулгах нөхцөлийг бүрдүүлж, арьсыг тэжээнэ.', 'Plant-based oils (jojoba, camellia) that let the stone glide smoothly while nourishing the skin.', 4),
-    mk('product', '🧖‍♀️', 'Шавар маск', 'Clay mask', 'Гуаша массажийн дараа нүх сүвийг цэвэрлэж, илүүдэл тосыг шингээнэ. Бентонит ба каолин шавар ашиглана.', 'Applied after gua sha to deep-clean pores and absorb excess oil. We use bentonite and kaolin clays.', 5),
-    mk('product', '💧', 'Тонер', 'Toner', 'Арьсны pH тэнцвэрийг сэргээж, дараагийн бүтээгдэхүүний шингээлтийг сайжруулна. Спиргүй, ургамлын ханд бүхий тонер хэрэглэнэ.', 'Restores the skin pH balance and preps it to absorb what follows. We use alcohol-free botanical toners.', 6),
-    mk('product', '✨', 'Гиалурон серум', 'Hyaluronic serum', 'Арьсыг гүн чийгшүүлж, гуашагийн дараах гэрэлтэлтийг хадгална.', 'Deeply hydrates and locks in the post-gua sha glow.', 7),
-    mk('product', '🍊', 'Витамин C серум', 'Vitamin C serum', 'Толбо бууруулж, арьсны өнгийг тэгшилнэ. Өглөөний эмчилгээнд тохиромжтой.', 'Brightens, evens skin tone and fades dark spots. Great in morning treatments.', 8),
-    mk('machine', '♨️', 'Нүүрний уураар жигнэгч', 'Facial steamer', 'Эмчилгээний эхэнд нүх сүвийг нээж, цэвэрлэгээ ба маскны үр дүнг нэмэгдүүлнэ.', 'Opens the pores at the start of a treatment so cleansing and masks work better.', 9),
-    mk('machine', '💡', 'LED гэрлэн эмчилгээ', 'LED light therapy', 'Улаан гэрэл — коллаген, сэргээлт; цэнхэр гэрэл — батга үүсгэгч бактерийг бууруулна.', 'Red light supports collagen and recovery; blue light reduces acne-causing bacteria.', 10),
-    mk('machine', '⚡', 'Микро гүйдлийн чангалгаа', 'Microcurrent lifting device', 'Сул гүйдлээр булчинг идэвхжүүлж, өргөх эффектийг гүнзгийрүүлнэ. Гуашатай хослуулахад үр дүнтэй.', 'Gentle currents tone facial muscles and deepen the lifting effect; pairs well with gua sha.', 11),
-    mk('method', '🌿', '100% органик арчилгаа', '100% organic care', 'Бид байгалийн гаралтай, органик бүтээгдэхүүнийг сонгож, арьсанд ээлтэй аргыг баримталдаг. Лазер зэрэг хүчтэй аппаратын эмчилгээг арьсны мэргэжилтний зөвлөгөөний дагуу л санал болгоно.', 'We choose natural, organic products and skin-friendly methods. Stronger device treatments (e.g. laser) are only suggested with a specialist advice.', 12)
+    mk('tool', '💎', 'Хаш гуаша чулуу', 'Jade gua sha stone', 'Хаван бууруулна', 'De-puffs',
+      'Жинхэнэ хаш чулуун хусуур. Байгалиасаа сэрүүн тул арьсыг тайвшруулж, лимфийн урсгалыг дэмжин, эрүү ба хацрын ясны тоймыг тодруулна.',
+      'A genuine jade scraping stone. Naturally cool, it soothes the skin, encourages lymphatic flow and defines the jawline and cheekbones.', 1),
+    mk('tool', '🌸', 'Ягаан кварц чулуу', 'Rose quartz stone', 'Мэдрэмтгий арьсанд', 'For sensitive skin',
+      'Хашнаас зөөлөн мэдрэмжтэй чулуу. Улайх, цочрох хандлагатай мэдрэмтгий арьсанд сонгож, тайвшруулах зорилгоор хэрэглэнэ.',
+      'A softer-feeling stone we choose for sensitive skin that reddens or reacts easily, used to calm and soothe.', 2),
+    mk('tool', '🌀', 'Хаш өнхрүүш (роллер)', 'Jade roller', 'Шингээлт сайжруулна', 'Boosts absorption',
+      'Эмчилгээний төгсгөлд нүүрийг сэрүүцүүлж, хавангаа буулгах ба серум, маскийг арьсанд жигд шингээхэд ашиглана.',
+      'Used at the end of a treatment to cool and de-puff, and to press serums and masks evenly into the skin.', 3),
+    mk('product', '🫒', 'Эмчилгээний тос', 'Facial treatment oil', 'Чулуу зөөлөн гулгана', 'Smooth glide',
+      'Жожоба, камелиа зэрэг ургамлын гаралтай хөнгөн тос. Чулууг арьсан дээр чирэхгүй зөөлөн гулгуулж, эмчилгээний явцад арьсыг тэжээнэ. Харшилтай бол урьдчилан хэлээрэй.',
+      'A light plant-based oil (jojoba, camellia) that lets the stone glide without tugging and nourishes the skin during the treatment. Tell us beforehand about any allergies.', 4),
+    mk('product', '🧖‍♀️', 'Шавар маск', 'Clay mask', 'Нүх сүв цэвэрлэнэ', 'Clears pores',
+      'Бентонит ба каолин шавар. Гуашагийн дараа түрхэж нүх сүвийг цэвэрлэн, илүүдэл тосыг шингээж, арьсыг гөлгөр болгоно.',
+      'Bentonite and kaolin clays applied after gua sha to clear pores, absorb excess oil and leave the skin smooth.', 5),
+    mk('product', '💧', 'Тонер', 'Toner', 'pH тэнцвэржүүлнэ', 'Balances pH',
+      'Спиртгүй, ургамлын ханд бүхий тонер. Цэвэрлэгээний дараа арьсны pH-ийг тэнцвэржүүлж, дараагийн бүтээгдэхүүнд бэлдэнэ.',
+      'An alcohol-free botanical toner that rebalances skin pH after cleansing and preps it for what comes next.', 6),
+    mk('product', '✨', 'Гиалурон серум', 'Hyaluronic serum', 'Гүн чийгшүүлнэ', 'Deep hydration',
+      'Арьсанд чийгийг татаж барина. Гуашагийн дараах гэрэлтэлтийг удаан хадгалж, хуурай арьсыг зөөлрүүлнэ.',
+      'Draws moisture into the skin and holds it there — keeps the post-gua sha glow longer and softens dry skin.', 7),
+    mk('product', '🍊', 'Витамин C серум', 'Vitamin C serum', 'Өнгө тэгшилнэ', 'Evens tone',
+      'Арьсны өнгийг тэгшилж, пигмент толбыг аажмаар цайруулна. Мэдрэмтгий арьсанд бага тунгаар хэрэглэнэ.',
+      'Evens skin tone and gradually fades dark spots. Used at a lower strength on sensitive skin.', 8),
+    mk('machine', '♨️', 'Нүүрний уураар жигнэгч', 'Facial steamer', 'Нүх сүв нээнэ', 'Opens pores',
+      'Эмчилгээний эхэнд зөөлөн уураар арьсыг зөөлрүүлж, нүх сүвийг нээснээр цэвэрлэгээ ба маскны үр дүн нэмэгдэнэ.',
+      'Gentle steam at the start of a treatment softens the skin and opens pores so cleansing and masks work better.', 9),
+    mk('machine', '💡', 'LED гэрлэн эмчилгээ', 'LED light therapy', 'Коллаген дэмжинэ', 'Supports collagen',
+      'Улаан гэрэл арьсны нөхөн сэргээлт, коллагены нийлэгжилтийг дэмжинэ; цэнхэр гэрэл батга үүсгэгч бактерийг бууруулна. Өвдөлтгүй, дулаан мэдрэмжтэй.',
+      'Red light supports skin renewal and collagen; blue light reduces acne-causing bacteria. Painless, with a gentle warmth.', 10),
+    mk('machine', '⚡', 'Микро гүйдлийн чангалгаа', 'Microcurrent lifting device', 'Чангалгаа', 'Lifting',
+      'Маш сул гүйдлээр нүүрний булчинг идэвхжүүлж, гуашагийн өргөх эффектийг гүнзгийрүүлнэ. Зүрхний аппараттай болон жирэмсэн хүнд хэрэглэхгүй.',
+      'Very gentle currents tone the facial muscles and deepen the gua sha lift. Not used with pacemakers or during pregnancy.', 11),
+    mk('method', '🌿', '100% органик арчилгаа', '100% organic care', 'Арьсанд ээлтэй', 'Skin-friendly',
+      'Бид байгалийн гаралтай, органик бүтээгдэхүүнийг сонгож, арьсанд ээлтэй аргыг баримталдаг. Лазер зэрэг хүчтэй аппаратын эмчилгээг зөвхөн арьсны эмчийн зөвлөгөөний дагуу санал болгоно.',
+      'We choose natural, organic products and skin-friendly methods. Stronger device treatments (e.g. laser) are only suggested on a dermatologist\'s advice.', 12)
   ];
+}
+
+/* Product descriptions shipped before content v2. An item still carrying one of
+   these was never edited by the owner, so the migration may refresh it. */
+const LEGACY_EDU_DESC_MN = new Set([
+  'Жинхэнэ хаш чулуун хусуур — арьсыг сэрүүцүүлж, лимфийн урсгалыг идэвхжүүлж, нүүрний тоймыг тодруулна.',
+  'Мэдрэмтгий арьсанд тохиромжтой зөөлөн чулуу. Тайвшруулах, улайлт багасгах үйлчилгээтэй.',
+  'Эмчилгээний төгсгөлд сийрэгжүүлэх, маскны шингээлтийг сайжруулахад ашиглана.',
+  'Жожоба, сараана зэрэг ургамлын гаралтай тос — чулуу арьсан дээр зөөлөн гулгах нөхцөлийг бүрдүүлж, арьсыг тэжээнэ.',
+  'Гуаша массажийн дараа нүх сүвийг цэвэрлэж, илүүдэл тосыг шингээнэ. Бентонит ба каолин шавар ашиглана.',
+  'Арьсны pH тэнцвэрийг сэргээж, дараагийн бүтээгдэхүүний шингээлтийг сайжруулна. Спиргүй, ургамлын ханд бүхий тонер хэрэглэнэ.',
+  'Арьсыг гүн чийгшүүлж, гуашагийн дараах гэрэлтэлтийг хадгална.',
+  'Толбо бууруулж, арьсны өнгийг тэгшилнэ. Өглөөний эмчилгээнд тохиромжтой.',
+  'Эмчилгээний эхэнд нүх сүвийг нээж, цэвэрлэгээ ба маскны үр дүнг нэмэгдүүлнэ.',
+  'Улаан гэрэл — коллаген, сэргээлт; цэнхэр гэрэл — батга үүсгэгч бактерийг бууруулна.',
+  'Сул гүйдлээр булчинг идэвхжүүлж, өргөх эффектийг гүнзгийрүүлнэ. Гуашатай хослуулахад үр дүнтэй.',
+  'Бид байгалийн гаралтай, органик бүтээгдэхүүнийг сонгож, арьсанд ээлтэй аргыг баримталдаг. Лазер зэрэг хүчтэй аппаратын эмчилгээг арьсны мэргэжилтний зөвлөгөөний дагуу л санал болгоно.'
+]);
+
+/* FAQ — owner-editable in Admin → ❓ Асуулт. `show` hides wallet-only answers
+   when the wallet is off (and vice versa). Answers may use {cancelHours},
+   {phone}, {hoursOpen} and {hoursClose}; they are filled in from the settings. */
+const FAQ_GROUPS = ['treatment', 'booking', 'care'];
+function seedFaq() {
+  let n = 0;
+  const mk = (group, qMn, qEn, aMn, aEn, show) => ({ id: uid('faq'), group, qMn, qEn, aMn, aEn, show: show || 'always', order: ++n, active: true });
+  return [
+    mk('treatment', 'Гуаша гэж юу вэ?', 'What exactly is gua sha?',
+      'Тос түрхсэн арьсыг хаш эсвэл кварц чулуун хавтгай хусуураар тодорхой чиглэлд зөөлөн иллэх, дорно дахины уламжлалт арга. Нүүрний гуаша хөнгөн, тайвшруулах даралттай; биеийн гуаша булчинд арай гүн хүрнэ.',
+      'A traditional East Asian technique: a flat jade or quartz stone is stroked over oiled skin in set directions. Facial gua sha uses light, soothing pressure; body gua sha works a little deeper into the muscles.'),
+    mk('treatment', 'Өвддөг үү?', 'Does it hurt?',
+      'Үгүй. Нүүрний гуаша зөөлөн, тайвшруулах мэдрэмжтэй — олон хүн эмчилгээний үеэр унтчихдаг. Биеийн гуаша булчин зангирсан хэсэгт бага зэрэг эмзэг байж болох ч даралтыг таны хүссэнээр тохируулна.',
+      'No. Facial gua sha feels gentle and calming — many clients doze off. Body gua sha can feel tender over tight muscles, and we adjust the pressure to suit you.'),
+    mk('treatment', 'Үр дүн хэзээ харагдах вэ?', 'When will I see results?',
+      'Хаван багасч, арьс гэрэлтэх нь ихэвчлэн эхний удаагаас л мэдэгддэг. Нүүрний тойм тодрох, арьсны чийгшил сайжрах нь 3–5 удаагийн дараа илүү тогтвортой болдог. Үр дүн хүн бүрийн арьснаас хамаарч харилцан адилгүй.',
+      'Less puffiness and a brighter look usually show after the very first visit. A more defined contour and better-hydrated skin become steadier after 3–5 sessions. Results vary from person to person.'),
+    mk('treatment', 'Хэр олон удаа хийлгэх вэ?', 'How often should I come?',
+      'Эхний сард 7 хоногт 1 удаа, дараа нь үр дүнгээ хадгалахын тулд сард 1–2 удаа хийлгэхийг зөвлөдөг. Ажилтан тань арьсны байдлыг хараад хувийн зөвлөгөө өгнө.',
+      'We suggest once a week for the first month, then 1–2 times a month to maintain results. Your therapist will tailor this to your skin.'),
+    mk('treatment', 'Хэнд тохирохгүй вэ?', 'Is it suitable for everyone?',
+      'Ихэнх хүнд тохиромжтой. Харин арьсан дээр идэвхтэй үрэвсэл, шарх, халдвар байгаа, ботокс эсвэл филлер хийлгээд 2 долоо хоног болоогүй, цус шингэлэх эм ууж байгаа, эсвэл жирэмсэн бол захиалахаасаа өмнө бидэнд хэлээрэй — шаардлагатай бол эмчээсээ зөвлөгөө авахыг санал болгоно.',
+      'It suits most people. If you have active inflammation, broken or infected skin, had Botox or fillers in the last 2 weeks, take blood thinners, or are pregnant, please tell us before booking — we may suggest checking with your doctor first.'),
+    mk('treatment', 'Эрэгтэй хүн хийлгэж болох уу?', 'Do you treat men?',
+      'Мэдээж. Нуруу, хүзүү, мөрний гуаша ажлын ачаалалтай эрэгтэйчүүдийн дунд хамгийн их эрэлттэй үйлчилгээ.',
+      'Of course. Back, neck and shoulder gua sha is especially popular with men who spend long hours at a desk.'),
+    mk('booking', 'Цагаа яаж захиалах вэ?', 'How do I book?',
+      'Апп-аар 24/7: үйлчилгээгээ сонгоод ажилтнаа (эсвэл "Хэн ч байсан болно") сонгож, чөлөөтэй цагаас товшино. Утсаар захиалах бол {phone} дугаарт {hoursOpen}–{hoursClose} цагийн хооронд залгаарай.',
+      'In the app, 24/7: pick a service, a therapist (or "Anyone is fine") and tap a free slot. To book by phone, call {phone} between {hoursOpen} and {hoursClose}.'),
+    mk('booking', 'Төлбөрөө яаж төлөх вэ?', 'How can I pay?',
+      'Аппын хэтэвчээ QPay QR-ээр цэнэглээд үлдэгдлээсээ, эсвэл багц, бэлгийн картаараа төлж болно. Салон дээр бэлнээр болон картаар төлөх боломжтой.',
+      'Top up your in-app wallet with QPay and pay from your balance, a bundle or a gift card — or pay by cash or card at the salon.', 'wallet_on'),
+    mk('booking', 'Төлбөрөө яаж төлөх вэ?', 'How can I pay?',
+      'Төлбөрөө үйлчилгээ авсны дараа салон дээр бэлнээр эсвэл картаар төлнө. Урьдчилгаа шаардлагагүй.',
+      'You pay at the salon after your treatment, by cash or card. No deposit is needed.', 'wallet_off'),
+    mk('booking', 'Цагаа цуцлах, өөрчлөх боломжтой юу?', 'Can I cancel or reschedule?',
+      'Болно. Цагаасаа {cancelHours}-аас дээш цагийн өмнө аппын Профайл → Миний захиалгууд хэсгээс цуцлаад шинэ цаг авна. Түүнээс ойрхон болсон бол {phone} дугаарт залгаарай.',
+      'Yes. Up to {cancelHours} hours before your time, cancel in the app under Profile → My bookings and pick a new slot. Closer than that, please call {phone}.'),
+    mk('booking', 'Цуцалбал төлбөр буцаж орох уу?', 'Do I get my payment back if I cancel?',
+      'Тийм. Хугацаандаа цуцалбал үлдэгдлээс төлсөн мөнгө хэтэвчинд, багцаас ашигласан эрх багцад тань шууд буцаж орно.',
+      'Yes. Cancel in time and money paid from your balance returns to your wallet, and a bundle session returns to your bundle — instantly.', 'wallet_on'),
+    mk('booking', 'Багц гэж юу вэ?', 'What is a bundle?',
+      'Хэд хэдэн удаагийн эмчилгээг урьдчилан төлж, нэг бүрчлэн авснаас хямд авах боломж. Багцад хамаарах үйлчилгээ болон хүчинтэй хугацаа нь багц бүр дээр бичигдсэн байдаг.',
+      'Prepay several sessions for less than booking them one by one. Each bundle lists which services it covers and how long it is valid.', 'wallet_on'),
+    mk('booking', 'Бэлгийн карт яаж ажилладаг вэ?', 'How do gift cards work?',
+      'Аппаас бэлгийн карт аваад кодыг нь хайртай хүндээ илгээнэ. Тэр хүн аппын "Код идэвхжүүлэх" хэсэгт оруулахад мөнгө хэтэвчинд нь шууд орно.',
+      'Buy a gift card in the app and send the code to someone special. They enter it under "Redeem a code" and the amount lands in their wallet.', 'wallet_on'),
+    mk('care', 'Эмчилгээнд яаж бэлдэх вэ?', 'How should I prepare?',
+      'Будалттай ирсэн ч болно — бид эхлээд арьсыг тань цэвэрлэнэ. Цагаасаа 5–10 минутын өмнө ирж, арьсны онцлог, харшлаа хэлээрэй. Эдгээрийг аппын Профайл хэсэгт урьдчилан бичиж болно.',
+      'Coming with make-up is fine — we cleanse first. Arrive 5–10 minutes early and tell us about your skin and any allergies; you can also note them in your app profile beforehand.'),
+    mk('care', 'Эмчилгээний дараа юу анхаарах вэ?', 'What should I do afterwards?',
+      'Ус сайн ууж, 4–6 цаг будалт хийхгүй байх, тэр өдөртөө саун, халуун усанд орохоос зайлсхийгээрэй. Биеийн гуашагийн дараа арьсан дээр ягаан-улаавтар толбо гарах нь хэвийн бөгөөд 2–4 хоногт арилдаг.',
+      'Drink plenty of water, skip make-up for 4–6 hours and avoid the sauna or a hot bath that day. After body gua sha, pink-red marks on the skin are normal and fade within 2–4 days.'),
+    mk('care', 'Гэртээ гуаша хийж болох уу?', 'Can I do gua sha at home?',
+      'Болно — өдөрт хэдхэн минутын гэрийн арчилгаа салоны үр дүнг удаан хадгалахад тусална. Ямар чулуу, ямар хөдөлгөөн тохирохыг ажилтнаасаа асуугаарай.',
+      'Yes — a few minutes a day at home helps salon results last longer. Ask your therapist which stone and strokes suit you.')
+  ];
+}
+function faqFromBody(b, base) {
+  const qMn = String(b.qMn || '').trim();
+  const aMn = String(b.aMn || '').trim();
+  if (!qMn || !aMn) return null;
+  return {
+    ...base,
+    group: FAQ_GROUPS.includes(b.group) ? b.group : 'treatment',
+    qMn: qMn.slice(0, 160), qEn: String(b.qEn || qMn).trim().slice(0, 160),
+    aMn: aMn.slice(0, 1200), aEn: String(b.aEn || aMn).trim().slice(0, 1200),
+    show: ['always', 'wallet_on', 'wallet_off'].includes(b.show) ? b.show : 'always',
+    order: Number.isFinite(Number(b.order)) ? Number(b.order) : 99
+  };
 }
 
 function seedReviews() {
@@ -203,7 +316,7 @@ function seedDb() {
   demo.balance = 50000;
   demo.isDemo = true;
   return {
-    meta: { version: 3 },
+    meta: { version: 3, contentVersion: 2 },
     settings: {},
     services: seedServices(),
     users: [demo, ...seedStaffUsers(), seedSuperAdmin()],
@@ -221,7 +334,8 @@ function seedDb() {
     promos: seedPromos(),
     notes: [],
     blocks: [],
-    edu: seedEdu()
+    edu: seedEdu(),
+    faq: seedFaq()
   };
 }
 
@@ -254,6 +368,16 @@ function migrateDb() {
   if (!db.reviews.length) db.reviews = seedReviews();
   if (!db.promos.length) db.promos = seedPromos();
   if (db.meta.version < 3) { db.adminSessions = {}; db.meta.version = 3; }
+  /* content v2: richer product texts with a short benefit label. Only items the
+     owner never edited are refreshed; edited ones are left exactly as they are. */
+  if ((db.meta.contentVersion || 1) < 2) {
+    const fresh = seedEdu();
+    for (const it of db.edu) {
+      const nu = fresh.find((f) => f.nameMn === it.nameMn);
+      if (nu && LEGACY_EDU_DESC_MN.has(it.descMn)) Object.assign(it, { descMn: nu.descMn, descEn: nu.descEn, benefitMn: nu.benefitMn, benefitEn: nu.benefitEn });
+    }
+    db.meta.contentVersion = 2;
+  }
 }
 
 function loadDb() {
@@ -611,13 +735,28 @@ async function handleApi(req, res, pathname, q) {
         const u = r.userId ? db.users.find((x) => x.id === r.userId) : null;
         return {
           rating: r.rating, text: r.text, createdAt: r.createdAt,
+          verified: !!r.bookingId, /* written after a real booking in the app */
           name: r.name || firstName(u && u.name) || 'Үйлчлүүлэгч',
           serviceMn: svc ? svc.nameMn : '', serviceEn: svc ? svc.nameEn : '',
           staffName: st ? firstName(st.name) : ''
         };
       });
     const avg = list.length ? Math.round((list.reduce((s, r) => s + r.rating, 0) / list.length) * 10) / 10 : 0;
-    return json(res, 200, { average: avg, count: list.length, reviews: list });
+    const distribution = [5, 4, 3, 2, 1].map((st) => list.filter((r) => r.rating === st).length);
+    return json(res, 200, { average: avg, count: list.length, distribution, reviews: list });
+  }
+
+  if (route === 'GET /api/public/faq') {
+    const fill = (txt) => String(txt || '')
+      .replace(/\{cancelHours\}/g, String(c.cancelHours))
+      .replace(/\{phone\}/g, c.phoneDisplay || '')
+      .replace(/\{hoursOpen\}/g, c.hoursOpen || '')
+      .replace(/\{hoursClose\}/g, c.hoursClose || '');
+    const w = walletOn();
+    return json(res, 200, db.faq
+      .filter((f) => f.active && (f.show === 'always' || (f.show === 'wallet_on') === w))
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map((f) => ({ id: f.id, group: f.group, qMn: f.qMn, qEn: f.qEn, aMn: fill(f.aMn), aEn: fill(f.aEn) })));
   }
 
   if (route === 'GET /api/public/edu') {
@@ -1683,6 +1822,41 @@ async function handleApi(req, res, pathname, q) {
       return json(res, 200, { ok: true });
     }
 
+    /* ----- FAQ CRUD ----- */
+    if (route === 'GET /api/admin/faq') {
+      if (!isOwner) return ownerOnly();
+      return json(res, 200, db.faq.slice().sort((a, b) => (a.order || 0) - (b.order || 0)));
+    }
+    if (route === 'POST /api/admin/faq') {
+      if (!isOwner) return ownerOnly();
+      const b = await readJson(req);
+      const it = faqFromBody(b, { id: uid('faq'), active: true });
+      if (!it) return fail(res, 400, 'bad_request');
+      db.faq.push(it);
+      saveDb();
+      return json(res, 200, it);
+    }
+    m = pathname.match(/^\/api\/admin\/faq\/([\w-]+)$/);
+    if (m && method === 'POST') {
+      if (!isOwner) return ownerOnly();
+      const it = db.faq.find((x) => x.id === m[1]);
+      if (!it) return fail(res, 404, 'not_found');
+      const b = await readJson(req);
+      const upd = faqFromBody({ ...it, ...b }, { id: it.id, active: b.active !== undefined ? !!b.active : it.active });
+      if (!upd) return fail(res, 400, 'bad_request');
+      Object.assign(it, upd);
+      saveDb();
+      return json(res, 200, it);
+    }
+    if (m && method === 'DELETE') {
+      if (!isOwner) return ownerOnly();
+      const idx = db.faq.findIndex((x) => x.id === m[1]);
+      if (idx === -1) return fail(res, 404, 'not_found');
+      db.faq.splice(idx, 1);
+      saveDb();
+      return json(res, 200, { ok: true });
+    }
+
     /* ----- chat (salon side) ----- */
     if (route === 'GET /api/admin/chat') {
       return json(res, 200, threadList());
@@ -1852,6 +2026,7 @@ function eduFromBody(b, base) {
     emoji: String(b.emoji || '🌿').trim().slice(0, 8),
     nameMn: nameMn.slice(0, 80), nameEn: String(b.nameEn || nameMn).trim().slice(0, 80),
     descMn: String(b.descMn || '').trim().slice(0, 500), descEn: String(b.descEn || '').trim().slice(0, 500),
+    benefitMn: String(b.benefitMn || '').trim().slice(0, 40), benefitEn: String(b.benefitEn || '').trim().slice(0, 40),
     order: Number.isFinite(Number(b.order)) ? Number(b.order) : 99
   };
 }

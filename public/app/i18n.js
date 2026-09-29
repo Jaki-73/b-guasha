@@ -222,7 +222,21 @@ window.I18N = {
     'prof.pass_ok': 'Нууц үг солигдлоо ✓',
     'prof.my_packages': 'Миний багцууд',
     'prof.edu_link': 'Гуаша гэж юу вэ? — багаж, бүтээгдэхүүн',
-    'prof.chat_link': 'Салонтой чатлах'
+    'prof.chat_link': 'Салонтой чатлах',
+    'prof.faq_link': 'Түгээмэл асуулт',
+
+    'nav.chat': 'Чат', 'nav.edu': 'Бүтээгдэхүүн', 'nav.faq': 'Асуулт', 'nav.site': 'Вэбсайт руу буцах',
+    'home.reviews': 'Үйлчлүүлэгчдийн сэтгэгдэл', 'home.reviews_n': 'сэтгэгдэл', 'home.all_services': 'Бүх үйлчилгээ',
+    'book.st1': 'Үйлчилгээ', 'book.st2': 'Ажилтан', 'book.st3': 'Өдөр, цаг', 'book.st4': 'Баталгаажуулах',
+    'auth.hero_t': 'Гоо сайхны туслах тань',
+    'auth.hero_1': '📅 Цагаа 24/7 захиалж, чөлөөт цагийг шууд харна',
+    'auth.hero_2': '💬 Салонтой шууд чатлана',
+    'auth.hero_3': '📸 Явцын зургаа нууцлалтай хадгална',
+    'auth.book_first': 'Цаг захиалахын тулд нэвтрэх эсвэл бүртгүүлнэ үү.',
+    'edu.all': 'Бүгд',
+    'faq.title': 'Түгээмэл асуулт', 'faq.sub': 'Эмчилгээ, захиалга, арчилгааны талаар хамгийн их асуудаг асуултууд.',
+    'faq.all': 'Бүгд', 'faq.g_treatment': 'Эмчилгээ', 'faq.g_booking': 'Захиалга ба төлбөр', 'faq.g_care': 'Бэлтгэл ба арчилгаа',
+    'faq.more': 'Хариултаа олсонгүй юу? Бидэнд бичээрэй'
   },
 
   en: {
@@ -447,6 +461,20 @@ window.I18N = {
     'prof.pass_ok': 'Password changed ✓',
     'prof.my_packages': 'My bundles',
     'prof.edu_link': 'What is gua sha? — tools & products',
-    'prof.chat_link': 'Chat with the salon'
+    'prof.chat_link': 'Chat with the salon',
+    'prof.faq_link': 'FAQ',
+
+    'nav.chat': 'Chat', 'nav.edu': 'Products', 'nav.faq': 'FAQ', 'nav.site': 'Back to website',
+    'home.reviews': 'What clients say', 'home.reviews_n': 'reviews', 'home.all_services': 'All services',
+    'book.st1': 'Service', 'book.st2': 'Therapist', 'book.st3': 'Date & time', 'book.st4': 'Confirm',
+    'auth.hero_t': 'Your beauty companion',
+    'auth.hero_1': '📅 Book 24/7 and see free slots instantly',
+    'auth.hero_2': '💬 Chat with the salon directly',
+    'auth.hero_3': '📸 Keep private progress photos',
+    'auth.book_first': 'Log in or register to book your visit.',
+    'edu.all': 'All',
+    'faq.title': 'Frequently asked questions', 'faq.sub': 'What people ask most about treatments, booking and aftercare.',
+    'faq.all': 'All', 'faq.g_treatment': 'Treatment', 'faq.g_booking': 'Booking & payment', 'faq.g_care': 'Prep & aftercare',
+    'faq.more': "Didn't find your answer? Message us"
   }
 };

@@ -1,4 +1,6 @@
-/* B's Gua Sha — mobile app (PWA, v3). Vanilla JS single-page app. */
+/* B's Gua Sha — app (PWA, v3). Vanilla JS single-page app.
+   Phone: bottom tab bar, one column. Desktop (>= 1024px, see app.css): the tab bar
+   becomes a sidebar and views spread into two columns (.cols / .col). */
 (function () {
   'use strict';
 
@@ -17,6 +19,8 @@
     unreadChat: 0,
     chatMsgs: null,
     edu: null,
+    faq: null,
+    reviews: null,
     view: 'home',
     book: { step: 1, service: null, staffId: 'any', date: null, time: null, payWith: null, slots: null, loadingSlots: false },
     walletAmount: 50000,
@@ -187,12 +191,15 @@
   function walletOn() { return !!(state.config && state.config.featureWallet); }
 
   function render() {
+    document.body.classList.toggle('signed-in', !!state.user);
     if (!state.user) { $tabbar.hidden = true; return vAuth(); }
     $tabbar.hidden = false;
+    var sb = document.getElementById('sideChatBadge');
+    if (sb) { sb.hidden = !state.unreadChat; sb.textContent = state.unreadChat || ''; }
     var wTab = $tabbar.querySelector('[data-view="wallet"]');
     if (wTab) wTab.hidden = !walletOn();
     if (!walletOn() && state.view === 'wallet') state.view = 'home';
-    ({ home: vHome, book: vBook, wallet: vWallet, progress: vProgress, profile: vProfile, chat: vChat, edu: vEdu }[state.view] || vHome)();
+    ({ home: vHome, book: vBook, wallet: vWallet, progress: vProgress, profile: vProfile, chat: vChat, edu: vEdu, faq: vFaq }[state.view] || vHome)();
   }
 
   function appbar(titleHtml) {
@@ -212,11 +219,18 @@
   var authMode = 'login';
   function vAuth() {
     $app.innerHTML =
+      '<div class="auth-split">' +
+      /* desktop only: brand panel beside the form */
+      '<aside class="auth-hero"><img src="/assets/logo.svg" alt="">' +
+      '<h2>' + esc(t('auth.hero_t')) + '</h2><p class="auth-tag">' + esc(t('app.tagline')) + '</p>' +
+      '<ul><li>' + esc(t('auth.hero_1')) + '</li><li>' + esc(t('auth.hero_2')) + '</li><li>' + esc(t('auth.hero_3')) + '</li></ul>' +
+      '<a href="/" class="auth-back">← ' + esc(t('nav.site')) + '</a></aside>' +
       '<div class="auth-wrap">' +
       '<div class="auth-logo"><img src="/assets/logo.svg" alt=""><h1>' + esc(t('app.name')) + '</h1><p>' + esc(t('app.tagline')) + '</p></div>' +
       '<div class="row" style="justify-content:center;margin-bottom:16px">' +
       '<button class="icon-btn" id="abLang">' + (state.lang === 'mn' ? 'EN' : 'МН') + '</button>' +
       '<button class="icon-btn" id="abTheme">' + (state.theme === 'dark' ? '☀️' : '🌙') + '</button></div>' +
+      (pendingBook ? '<p class="auth-note">📅 ' + esc(t('auth.book_first')) + '</p>' : '') +
       '<div class="auth-tabs">' +
       '<button id="tabLogin" class="' + (authMode === 'login' ? 'active' : '') + '">' + t('auth.login') + '</button>' +
       '<button id="tabReg" class="' + (authMode === 'register' ? 'active' : '') + '">' + t('auth.register') + '</button></div>' +
@@ -228,7 +242,7 @@
       '</form>' +
       '<p class="center mt small muted">' + (authMode === 'login' ? t('auth.no_account') + ' <a href="#" id="swap">' + t('auth.register') + '</a>' : t('auth.have_account') + ' <a href="#" id="swap">' + t('auth.login') + '</a>') + '</p>' +
       '<p class="demo-hint">' + esc(t('auth.demo_hint')) + '</p>' +
-      '</div>';
+      '</div></div>';
     bindAppbar();
     document.getElementById('tabLogin').onclick = function () { authMode = 'login'; render(); };
     document.getElementById('tabReg').onclick = function () { authMode = 'register'; render(); };
@@ -251,7 +265,7 @@
         localStorage.setItem('bg_token', d.token);
         state.bookings = null; state.photos = null; state.myBundles = null; state.myGiftcards = null; state.chatMsgs = null;
         loadMyBundles();
-        setView('home');
+        if (!applyPendingBook()) setView('home');
       }).catch(function (e2) { toast(errMsg(e2), 'err'); btn.disabled = false; });
     };
   }
@@ -303,35 +317,49 @@
     var rateBk = (state.bookings || []).filter(function (b) { return b.status === 'done' && !b.reviewId; })
       .sort(function (a, b) { return (b.date + b.time).localeCompare(a.date + a.time); })[0];
 
-    var svcPreview = state.services.slice(0, 3).map(svcRowHtml).join('');
+    /* phone shows the first 3 services; desktop shows them all (.svc-more) */
+    var svcPreview = state.services.map(function (s, i) { return svcRowHtml(s, i >= 3 ? 'svc-more' : ''); }).join('');
     var cfg = state.config || {};
 
+    /* On a phone .col is display:contents and the oN classes set the order;
+       on desktop the two columns sit side by side. */
     $app.innerHTML = appbar() +
       (cfg.paymentsDemo ? '<div class="demo-banner">' + t('home.demo_banner') + '</div>' : '') +
-      '<p class="muted">' + t('home.hello') + '</p>' +
-      '<h2 class="view-title" style="margin-bottom:14px">' + esc(u.name) + '</h2>' +
-      (rateBk ? '<div class="rate-banner"><p>' + t('home.rate_banner') + '</p><button class="btn btn-sm btn-primary" id="rateNow">' + t('home.rate_btn') + '</button></div>' : '') +
-      (walletOn() ? '<div class="balance-card"><small>' + t('home.balance') + '</small>' +
-        '<div class="balance-amount">' + money(u.balance) + '</div>' +
-        '<button class="btn btn-sm" id="goTopup">+ ' + t('home.topup') + '</button></div>' : '') +
-      '<div class="qa-grid">' +
+      '<div class="cols dash"><div class="col col-main">' +
+      '<div class="o1 greet"><p class="muted">' + t('home.hello') + '</p>' +
+      '<h2 class="view-title">' + esc(u.name) + '</h2></div>' +
+      (rateBk ? '<div class="o2 rate-banner"><p>' + t('home.rate_banner') + '</p><button class="btn btn-sm btn-primary" id="rateNow">' + t('home.rate_btn') + '</button></div>' : '') +
+      '<div class="o4 qa-grid">' +
       '<button class="qa" data-qa="book"><span class="ico">📅</span><span>' + t('home.q_book') + '</span></button>' +
       '<button class="qa" data-qa="chat"><span class="ico">💬</span>' + (state.unreadChat ? '<span class="badge">' + state.unreadChat + '</span>' : '') + '<span>' + t('home.q_chat') + '</span></button>' +
       (walletOn() ? '<button class="qa" data-qa="gift"><span class="ico">🎁</span><span>' + t('home.q_gift') + '</span></button>' : '') +
       '<button class="qa" data-qa="edu"><span class="ico">💎</span><span>' + t('home.q_edu') + '</span></button>' +
       '</div>' +
-      '<div class="section-head"><h3>' + t('home.next') + '</h3></div>' + nextHtml +
-      '<div class="section-head"><h3>' + t('home.services') + '</h3><button id="goBook">' + t('home.book_now') + ' →</button></div>' +
-      svcPreview +
-      '<div class="section-head"><h3>' + t('home.info') + '</h3></div>' +
+      '<div class="o5"><div class="section-head"><h3>' + t('home.next') + '</h3></div>' + nextHtml + '</div>' +
+      '<div class="o6"><div class="section-head"><h3>' + t('home.services') + '</h3><button id="goBook">' + t('home.book_now') + ' →</button></div>' +
+      '<div class="svc-list">' + svcPreview + '</div></div>' +
+      '</div><aside class="col col-side">' +
+      (walletOn() ? '<div class="o3 balance-card"><small>' + t('home.balance') + '</small>' +
+        '<div class="balance-amount">' + money(u.balance) + '</div>' +
+        '<button class="btn btn-sm" id="goTopup">+ ' + t('home.topup') + '</button></div>' : '') +
+      '<div class="o7" id="homeReviews">' + reviewsCardHtml() + '</div>' +
+      '<div class="o8"><div class="section-head"><h3>' + t('home.info') + '</h3></div>' +
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.hours') + '</span><span>' + esc((cfg.hoursOpen || '') + ' – ' + (cfg.hoursClose || '')) + '</span></div>' +
       (cfg.facebook ? '<div class="list-row"><span class="lbl">Facebook</span><a href="' + esc(cfg.facebook) + '" target="_blank" rel="noopener">B\'s Gua Sha ↗</a></div>' : '') +
-      '</div>';
+      '</div></div></aside></div>';
 
     bindAppbar();
+    if (state.reviews === null) {
+      state.reviews = { count: 0, reviews: [] };
+      api('/api/public/reviews').then(function (d) {
+        state.reviews = d;
+        var h = document.getElementById('homeReviews');
+        if (h) h.innerHTML = reviewsCardHtml();
+      }).catch(function () {});
+    }
     var gt = document.getElementById('goTopup'); if (gt) gt.onclick = function () { setView('wallet'); };
     var gb = document.getElementById('goBook'); if (gb) gb.onclick = function () { setView('book'); };
     var gb2 = document.getElementById('goBook2'); if (gb2) gb2.onclick = function () { setView('book'); };
@@ -358,8 +386,22 @@
     }
   }
 
-  function svcRowHtml(s) {
-    return '<div class="svc-row" data-id="' + esc(s.id) + '"><div class="emoji">' + (s.emoji || '🌿') + '</div>' +
+  function reviewsCardHtml() {
+    var d = state.reviews;
+    if (!d || !d.count) return '';
+    return '<div class="section-head"><h3>' + t('home.reviews') + '</h3></div><div class="card rev-mini">' +
+      '<div class="row"><b class="rv-avg">' + Number(d.average).toFixed(1) + '</b><div><div class="star-inline">' + stars(Math.round(d.average)) + '</div>' +
+      '<div class="muted small">' + d.count + ' ' + t('home.reviews_n') + '</div></div></div>' +
+      d.reviews.filter(function (r) { return r.text; }).slice(0, 2).map(function (r) {
+        var sv = state.lang === 'mn' ? r.serviceMn : r.serviceEn;
+        return '<div class="rv-item"><span class="star-inline small">' + stars(r.rating) + '</span>' +
+          '<p>“' + esc(r.text) + '”</p><span class="muted small">— ' + esc(r.name) + (sv ? ' · ' + esc(sv) : '') + '</span></div>';
+      }).join('') + '</div>';
+  }
+
+  function svcRowHtml(s, extraClass) {
+    var cls = typeof extraClass === 'string' && extraClass ? ' ' + extraClass : '';
+    return '<div class="svc-row' + cls + '" data-id="' + esc(s.id) + '"><div class="emoji">' + (s.emoji || '🌿') + '</div>' +
       '<div><div class="name">' + esc(svcName(s)) + '</div><div class="meta">' + s.minutes + ' ' + t('book.min') + '</div></div>' +
       '<div class="price">' + money(s.price) + '</div></div>';
   }
@@ -395,14 +437,20 @@
       '</div>';
   }
 
+  function stepperHtml(step) {
+    return '<ol class="stepper">' + [1, 2, 3, 4].map(function (i) {
+      return '<li class="' + (i < step ? 'done' : (i === step ? 'on' : '')) + '"><span>' + (i < step ? '✓' : i) + '</span><em>' + t('book.st' + i) + '</em></li>';
+    }).join('') + '</ol>';
+  }
+
   function vBook() {
     var bk = state.book;
-    var html = appbar() + '<h2 class="view-title">' + t('book.title') + '</h2>';
+    var html = appbar() + '<div class="book-wrap"><h2 class="view-title">' + t('book.title') + '</h2>' + stepperHtml(bk.step);
 
     /* step 1 — service */
     if (bk.step === 1) {
-      html += '<p class="view-sub">' + t('book.step_service') + '</p>' + state.services.map(svcRowHtml).join('');
-      $app.innerHTML = html;
+      html += '<p class="view-sub">' + t('book.step_service') + '</p><div class="svc-list svc-list-book">' + state.services.map(function (x) { return svcRowHtml(x); }).join('') + '</div>';
+      $app.innerHTML = html + '</div>';
       bindAppbar();
       $app.querySelectorAll('.svc-row').forEach(function (row) {
         row.onclick = function () {
@@ -424,12 +472,12 @@
     if (bk.step === 2) {
       var prefId = state.user.preferredStaffId || '';
       html += '<p class="view-sub" style="margin-top:8px">' + t('book.step_staff') + '</p>';
-      html += '<div class="staff-card' + (bk.staffId === 'any' ? ' active' : '') + '" data-staff="any">' +
+      html += '<div class="staff-list"><div class="staff-card' + (bk.staffId === 'any' ? ' active' : '') + '" data-staff="any">' +
         '<div class="staff-avatar" style="background:var(--gold)">✦</div>' +
         '<div><div class="nm">' + t('book.any_staff') + '</div><div class="sp">' + t('book.any_staff_d') + '</div></div></div>';
-      html += state.staff.map(function (st) { return staffCardHtml(st, bk.staffId === st.id, prefId === st.id); }).join('');
+      html += state.staff.map(function (st) { return staffCardHtml(st, bk.staffId === st.id, prefId === st.id); }).join('') + '</div>';
       html += '<button class="btn btn-primary btn-block mt" id="bkNext">' + t('common.confirm') + ' →</button>';
-      $app.innerHTML = html;
+      $app.innerHTML = html + '</div>';
       bindAppbar();
       document.getElementById('bkBack').onclick = function () { bk.step = 1; bk.service = null; render(); };
       $app.querySelectorAll('.staff-card').forEach(function (c) {
@@ -474,7 +522,7 @@
         }
       }
       html += '<button class="btn btn-primary btn-block mt" id="bkNext"' + (bk.time ? '' : ' disabled') + '>' + t('common.confirm') + ' →</button>';
-      $app.innerHTML = html;
+      $app.innerHTML = html + '</div>';
       bindAppbar();
       document.getElementById('bkBack').onclick = function () { bk.step = 2; render(); };
       $app.querySelectorAll('.date-chip').forEach(function (c) {
@@ -512,7 +560,7 @@
       '<div class="pay-opt' + (bk.payWith === 'salon' ? ' active' : '') + '" data-pay="salon">' +
       '<span class="radio"></span><div><div class="ttl">' + t('book.pay_salon') + '</div></div></div>' +
       '<button class="btn btn-primary btn-block mt" id="bkConfirm">' + t('book.confirm_btn') + '</button>';
-    $app.innerHTML = html;
+    $app.innerHTML = html + '</div>';
     bindAppbar();
     document.getElementById('bkBack').onclick = function () { bk.step = 3; render(); };
     $app.querySelectorAll('.pay-opt').forEach(function (po) {
@@ -588,6 +636,7 @@
 
     $app.innerHTML = appbar() +
       '<h2 class="view-title">' + t('wallet.title') + '</h2>' +
+      '<div class="cols"><div class="col">' +
       '<div class="balance-card"><small>' + t('wallet.balance') + '</small>' +
       '<div class="balance-amount">' + money(state.user.balance) + '</div></div>' +
 
@@ -600,6 +649,7 @@
       '<h3 style="font-size:1.02rem;margin:14px 0 10px">' + t('wallet.method') + '</h3>' +
       '<div class="pay-opt active"><span class="radio"></span><div><div class="ttl">QPay</div><div class="sub">' + t('wallet.m_qpay_d') + '</div></div><span style="margin-left:auto">🔵</span></div>' +
       '<button class="btn btn-primary btn-block mt" id="topupBtn">' + t('wallet.create') + ' · ' + money(state.walletAmount) + '</button></div>' +
+      '</div><div class="col">' +
 
       '<div class="card"><h3 style="font-size:1.02rem;margin-bottom:10px">🎟 ' + t('wallet.redeem_title') + '</h3>' +
       '<div class="row"><div class="field grow" style="margin-bottom:0"><input id="redeemCode" placeholder="' + esc(t('wallet.redeem_ph')) + '" style="text-transform:uppercase"></div>' +
@@ -613,6 +663,7 @@
       (state.bundles.length ? '<div class="section-head"><h3>' + t('bundle.title') + '</h3></div>' +
         '<p class="view-sub" style="margin-bottom:10px">' + t('bundle.sub') + '</p>' + bundlesForSale : '') +
       myBundles +
+      '</div></div>' +
 
       '<div class="section-head"><h3>' + t('wallet.tx_title') + '</h3></div>' +
       '<div class="card" id="txList"><div class="skeleton"></div></div>';
@@ -790,7 +841,7 @@
     $app.innerHTML = appbar() +
       '<button class="back-btn" id="chBack">← ' + t('common.back') + '</button>' +
       '<h2 class="view-title" style="margin-bottom:12px">' + t('chat.title') + '</h2>' +
-      '<div class="chat-wrap"><div class="chat-list" id="chatList"><div class="skeleton"></div></div>' +
+      '<div class="chat-wrap narrow"><div class="chat-list" id="chatList"><div class="skeleton"></div></div>' +
       '<div class="chat-input"><input id="chatText" maxlength="1000" placeholder="' + esc(t('chat.ph')) + '">' +
       '<button id="chatSend">➤</button></div></div>';
     bindAppbar();
@@ -853,22 +904,64 @@
     else api('/api/public/edu').then(function (list) { state.edu = list; if (state.view === 'edu') renderEdu(); }).catch(function () { state.edu = []; renderEdu(); });
   }
 
+  var eduTab = 'all';
   function renderEdu() {
     var host = document.getElementById('eduHost');
     if (!host) return;
-    var cats = ['tool', 'product', 'machine', 'method'];
-    var html = '';
-    cats.forEach(function (cat) {
-      var items = (state.edu || []).filter(function (x) { return x.category === cat; });
-      if (!items.length) return;
-      html += '<h3 class="edu-cat">' + t('edu.cat_' + cat) + '</h3><div class="card">' +
-        items.map(function (it) {
-          return '<div class="edu-item"><div class="ico">' + (it.emoji || '🌿') + '</div>' +
-            '<div><div class="nm">' + esc(state.lang === 'mn' ? it.nameMn : it.nameEn) + '</div>' +
-            '<div class="ds">' + esc(state.lang === 'mn' ? it.descMn : it.descEn) + '</div></div></div>';
-        }).join('') + '</div>';
+    var all = state.edu || [];
+    var cats = ['tool', 'product', 'machine', 'method'].filter(function (c) { return all.some(function (x) { return x.category === c; }); });
+    if (eduTab !== 'all' && cats.indexOf(eduTab) < 0) eduTab = 'all';
+    var list = all.filter(function (x) { return eduTab === 'all' || x.category === eduTab; });
+    host.innerHTML = (cats.length > 1 ? '<div class="chips">' + ['all'].concat(cats).map(function (c) {
+      return '<button class="chip-btn' + (c === eduTab ? ' active' : '') + '" data-cat="' + c + '">' + t(c === 'all' ? 'edu.all' : 'edu.cat_' + c) + '</button>';
+    }).join('') + '</div>' : '') +
+      (list.length ? '<div class="edu-grid">' + list.map(function (it) {
+        var benefit = state.lang === 'mn' ? it.benefitMn : it.benefitEn;
+        return '<div class="edu-card"><div class="row"><span class="ico">' + esc(it.emoji || '🌿') + '</span>' +
+          '<div><div class="cat">' + t('edu.cat_' + it.category) + '</div><div class="nm">' + esc(state.lang === 'mn' ? it.nameMn : it.nameEn) + '</div></div></div>' +
+          (benefit ? '<span class="benefit">' + esc(benefit) + '</span>' : '') +
+          '<div class="ds">' + esc(state.lang === 'mn' ? it.descMn : it.descEn) + '</div></div>';
+      }).join('') + '</div>' : '<div class="empty">—</div>');
+    host.querySelectorAll('[data-cat]').forEach(function (b) {
+      b.onclick = function () { eduTab = b.getAttribute('data-cat'); renderEdu(); };
     });
-    host.innerHTML = html || '<div class="empty">—</div>';
+  }
+
+  /* ================= FAQ view ================= */
+  var faqTab = 'all';
+  function vFaq() {
+    $app.innerHTML = appbar() + '<div class="narrow">' +
+      '<button class="back-btn" id="fqBack">← ' + t('common.back') + '</button>' +
+      '<h2 class="view-title">' + t('faq.title') + '</h2>' +
+      '<p class="view-sub">' + t('faq.sub') + '</p>' +
+      '<div id="faqHost"><div class="skeleton"></div><div class="skeleton"></div></div></div>';
+    bindAppbar();
+    document.getElementById('fqBack').onclick = function () { setView('profile'); };
+    if (state.faq) renderFaq();
+    else api('/api/public/faq').then(function (list) { state.faq = list; if (state.view === 'faq') renderFaq(); })
+      .catch(function () { state.faq = []; renderFaq(); });
+  }
+  function renderFaq() {
+    var host = document.getElementById('faqHost');
+    if (!host) return;
+    var all = state.faq || [];
+    var groups = ['treatment', 'booking', 'care'].filter(function (g) { return all.some(function (f) { return f.group === g; }); });
+    var shown = faqTab === 'all' ? groups : [faqTab];
+    host.innerHTML = '<div class="chips">' + ['all'].concat(groups).map(function (g) {
+      return '<button class="chip-btn' + (g === faqTab ? ' active' : '') + '" data-g="' + g + '">' + t('faq.' + (g === 'all' ? 'all' : 'g_' + g)) + '</button>';
+    }).join('') + '</div>' +
+      shown.map(function (g) {
+        return (faqTab === 'all' ? '<h3 class="edu-cat">' + t('faq.g_' + g) + '</h3>' : '') +
+          all.filter(function (f) { return f.group === g; }).map(function (f) {
+            return '<details class="faq-item"><summary>' + esc(state.lang === 'mn' ? f.qMn : f.qEn) + '</summary>' +
+              '<p>' + esc(state.lang === 'mn' ? f.aMn : f.aEn) + '</p></details>';
+          }).join('');
+      }).join('') +
+      '<button class="btn btn-ghost btn-block mt" id="fqChat">💬 ' + t('faq.more') + '</button>';
+    host.querySelectorAll('[data-g]').forEach(function (b) {
+      b.onclick = function () { faqTab = b.getAttribute('data-g'); renderFaq(); };
+    });
+    document.getElementById('fqChat').onclick = function () { setView('chat'); };
   }
 
   /* ================= reviews ================= */
@@ -1170,7 +1263,8 @@
     $app.innerHTML = appbar() +
       '<h2 class="view-title">' + t('prof.title') + '</h2>' +
 
-      '<div class="card"><div class="row"><div class="grow"><div style="font-weight:700;font-size:1.1rem">' + esc(u.name) + '</div>' +
+      '<div class="cols"><div class="col">' +
+      '<div class="card o1"><div class="row"><div class="grow"><div style="font-weight:700;font-size:1.1rem">' + esc(u.name) + '</div>' +
       '<div class="muted small">📱 ' + esc(u.phone) + '</div></div>' +
       '<button class="btn btn-ghost btn-sm" id="editInfo">✎ ' + t('prof.edit_info') + '</button></div>' +
       '<div class="list-row" style="margin-top:8px"><span class="lbl">' + t('prof.skin') + '</span><span>' + esc(u.skinType || '—') + '</span></div>' +
@@ -1179,33 +1273,34 @@
       '<div class="list-row"><span class="lbl">' + t('prof.prefnote') + '</span><span class="small">' + esc(u.prefNote || '—') + '</span></div>' +
       '<p class="small muted" style="margin-top:8px">' + t('prof.info_note') + '</p></div>' +
 
-      '<div class="card" style="padding:6px 16px">' +
+      '<div class="card o2" style="padding:6px 16px">' +
       '<button class="link-row" id="lnkEdu">💎 ' + t('prof.edu_link') + '<span class="arr">→</span></button>' +
       '<button class="link-row" id="lnkChat">💬 ' + t('prof.chat_link') + (state.unreadChat ? ' <span class="pill">' + state.unreadChat + '</span>' : '') + '<span class="arr">→</span></button>' +
+      '<button class="link-row" id="lnkFaq">❓ ' + t('prof.faq_link') + '<span class="arr">→</span></button>' +
       '<button class="link-row" id="lnkPass">🔑 ' + t('prof.password') + '<span class="arr">→</span></button></div>' +
 
-      '<div class="section-head"><h3>' + t('prof.bookings') + '</h3></div>' +
-      '<div class="card" id="bkList"><div class="skeleton"></div></div>' +
-
-      '<div class="section-head"><h3>' + t('prof.settings') + '</h3></div>' +
+      '<div class="o4"><div class="section-head"><h3>' + t('prof.settings') + '</h3></div>' +
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.language') + '</span>' +
       '<div class="seg grow"><button id="langMn" class="' + (state.lang === 'mn' ? 'active' : '') + '">Монгол</button>' +
       '<button id="langEn" class="' + (state.lang === 'en' ? 'active' : '') + '">English</button></div></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.theme') + '</span>' +
       '<div class="seg grow"><button id="thLight" class="' + (state.theme === 'light' ? 'active' : '') + '">☀️ ' + t('prof.light') + '</button>' +
-      '<button id="thDark" class="' + (state.theme === 'dark' ? 'active' : '') + '">🌙 ' + t('prof.dark') + '</button></div></div></div>' +
+      '<button id="thDark" class="' + (state.theme === 'dark' ? 'active' : '') + '">🌙 ' + t('prof.dark') + '</button></div></div></div></div>' +
 
-      '<div class="section-head"><h3>' + t('prof.about') + '</h3></div>' +
+      '<div class="o5"><div class="section-head"><h3>' + t('prof.about') + '</h3></div>' +
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
       (cfg.email ? '<div class="list-row"><span class="lbl">Email</span><a href="mailto:' + esc(cfg.email) + '">' + esc(cfg.email) + '</a></div>' : '') +
       '<div class="list-row"><span class="lbl">' + t('prof.hours') + '</span><span>' + esc((cfg.hoursOpen || '') + ' – ' + (cfg.hoursClose || '')) + '</span></div>' +
       (cfg.facebook ? '<div class="list-row"><span class="lbl">Facebook</span><a href="' + esc(cfg.facebook) + '" target="_blank" rel="noopener">B\'s Gua Sha ↗</a></div>' : '') +
-      '</div>' +
-      '<button class="btn btn-danger btn-block mt" id="logoutBtn">' + t('prof.logout') + '</button>' +
-      '<p class="center small muted mt">B\'s Gua Sha v3.0</p>';
+      '</div></div>' +
+      '<div class="o6"><button class="btn btn-danger btn-block mt" id="logoutBtn">' + t('prof.logout') + '</button>' +
+      '<p class="center small muted mt">B\'s Gua Sha v3.0</p></div>' +
+      /* bookings: right column on desktop, third block on a phone */
+      '</div><div class="col"><div class="o3"><div class="section-head"><h3>' + t('prof.bookings') + '</h3></div>' +
+      '<div class="card" id="bkList"><div class="skeleton"></div></div></div></div></div>';
 
     bindAppbar();
     document.getElementById('langMn').onclick = function () { setLang('mn'); };
@@ -1215,6 +1310,7 @@
     document.getElementById('editInfo').onclick = openEditInfo;
     document.getElementById('lnkEdu').onclick = function () { setView('edu'); };
     document.getElementById('lnkChat').onclick = function () { setView('chat'); };
+    document.getElementById('lnkFaq').onclick = function () { setView('faq'); };
     document.getElementById('lnkPass').onclick = openChangePass;
     document.getElementById('logoutBtn').onclick = function () {
       confirmDlg(t('prof.logout_q')).then(function (yes) { if (yes) doLogout(); });
@@ -1347,6 +1443,25 @@
     }).catch(function () {});
   }
 
+  /* ================= deep link ================= */
+  /* /app#book or /app#book=<serviceId> — the website's "Book" buttons land here */
+  var pendingBook = null;
+  (function readDeepLink() {
+    var m = /^#book(?:=([\w-]+))?$/.exec(location.hash || '');
+    if (!m) return;
+    pendingBook = m[1] || 'any';
+    if (history.replaceState) history.replaceState(null, '', location.pathname);
+  })();
+  function applyPendingBook() {
+    if (!pendingBook || !state.user) return false;
+    var id = pendingBook;
+    pendingBook = null;
+    setView('book');
+    var svc = state.services.find(function (s) { return s.id === id; });
+    if (svc) { state.book.service = svc; state.book.step = 2; render(); }
+    return true;
+  }
+
   /* ================= init ================= */
   function init() {
     applyTheme();
@@ -1370,7 +1485,7 @@
           state.user = d.user;
           state.unreadChat = d.unreadChat || 0;
           loadMyBundles();
-          render();
+          if (!applyPendingBook()) render();
         }).catch(function () {
           state.token = null;
           localStorage.removeItem('bg_token');

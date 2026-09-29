@@ -20,12 +20,23 @@ On your phone (same Wi-Fi): `http://<your-PC-IP>:3000/app` → "Add to Home Scre
 
 ⚠️ **Change these before going live:** admin PIN (config.json), the super admin, owner and example staff passwords (Админ → 🔐 Бүртгэл).
 
+## Phone and desktop layouts
+
+Both the website and the app have two layouts that switch automatically by screen width:
+
+| | Phone | Desktop (≥ 1024px) |
+|---|---|---|
+| **Website** (`/`) | Burger menu, a bottom bar with **📞 Call** and **Book now**, swipeable reviews and products, one-column lists | Full top menu, multi-column grids, review summary and FAQ categories in sticky side panels |
+| **App** (`/app`) | Bottom tab bar, one column | Left sidebar (with Chat, Products and FAQ), two-column dashboard and profile, wide booking grid, split login screen |
+
+Every "Book" button on the website opens the app on that service's booking step (`/app#book=<serviceId>`); if the visitor isn't logged in, it continues right after login.
+
 ## Roles
 
 | Role | Logs in at | Can do |
 |---|---|---|
 | **Super admin** 🛡 | /admin (phone+password, or the PIN) | Everything the owner can, plus: turn features on/off (wallet), create/edit **every** account (customer, staff, owner), change roles, reset passwords, block accounts |
-| **Owner** 👑 | /admin | Services & prices, products ("What we use"), address/phone/email/Facebook, opening hours & booking rules, staff schedules, bookings, reviews, reports, backup |
+| **Owner** 👑 | /admin | Services & prices, products ("What we use"), FAQ, address/phone/email/Facebook, opening hours & booking rules, staff schedules, bookings, reviews, reports, backup |
 | **Staff** 👤 | /admin | Only their own calendar, clients and chat |
 | **Customer** 🙂 | /app | Book, profile, chat (and wallet when it is on) |
 
@@ -46,7 +57,8 @@ An owner can optionally also be a therapist ("Эмчилгээ хийнэ"). Rol
 - **Private client notes**: each staff member can keep notes per client ("likes stronger massage") that **only they** can see — not even the owner
 - **Client history**: visits, total spent, no-shows, packages, preferences, skin type & allergies per client
 - **Customer profile**: skin type, allergies, birthday, requests, favourite therapist — used to personalise service
-- **Education section**: "What we use" — stones, toner, clay mask, serums, LED, microcurrent… on the website and in the app; owner can edit items in the admin
+- **Education section**: "What we use" — stones, toner, clay mask, serums, LED, microcurrent… each with a short key-benefit label, filterable by category on the website and in the app; owner edits them in Админ → 🛍 Бүтээгдэхүүн
+- **FAQ**: 16 questions in three groups (treatment, booking & payment, prep & aftercare), owner-editable in Админ → ❓ Асуулт. Answers can use `{cancelHours}`, `{phone}`, `{hoursOpen}`, `{hoursClose}`, filled from the settings; wallet-only answers hide themselves when the wallet is off
 - **Monthly report**: revenue (services / bundles / gift cards), top services, staff performance with ratings, new & returning clients
 - **Editable settings in admin**: opening hours, slot length, closed days, cancellation window, top-up bonus
 

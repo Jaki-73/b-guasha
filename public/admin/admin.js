@@ -105,6 +105,7 @@
       ['reviews', '⭐ Сэтгэгдэл'],
       ['services', '🌿 Үйлчилгээ'],
       ['products', '🛍 Бүтээгдэхүүн'],
+      ['faq', '❓ Асуулт'],
       ['offers', '🎁 Багц · Код'],
       ['staff', '👥 Ажилтан'],
       ['stats', '📊 Тайлан'],
@@ -141,7 +142,7 @@
       b.onclick = function () { tab = b.getAttribute('data-tab'); render(); };
     });
 
-    ({ cal: loadCalendar, bookings: loadBookings, users: loadUsers, chat: loadChat, reviews: loadReviews, services: loadServices, products: loadProducts, offers: loadOffers, staff: loadStaff, stats: loadStats, settings: loadSettings, accounts: loadAccounts }[tab] || loadCalendar)();
+    ({ cal: loadCalendar, bookings: loadBookings, users: loadUsers, chat: loadChat, reviews: loadReviews, services: loadServices, products: loadProducts, faq: loadFaqAdmin, offers: loadOffers, staff: loadStaff, stats: loadStats, settings: loadSettings, accounts: loadAccounts }[tab] || loadCalendar)();
   }
 
   function renderLogin() {
@@ -1111,7 +1112,7 @@
         (list.length ? '<div class="card"><table><tr><th></th><th>Нэр</th><th>Ангилал</th><th>Дараалал</th><th>Төлөв</th><th></th></tr>' +
           list.map(function (it) {
             return '<tr><td style="font-size:1.3rem">' + esc(it.emoji) + '</td>' +
-              '<td><b>' + esc(it.nameMn) + '</b><br><span class="muted small">' + esc(it.nameEn) + '</span></td>' +
+              '<td><b>' + esc(it.nameMn) + '</b><br><span class="muted small">' + esc(it.nameEn) + '</span>' + (it.benefitMn ? '<br><span class="pill">' + esc(it.benefitMn) + '</span>' : '') + '</td>' +
               '<td>' + esc(EDU_CAT[it.category] || it.category) + '</td><td>' + (it.order || 0) + '</td>' +
               '<td>' + (it.active ? '<span class="chip confirmed">идэвхтэй</span>' : '<span class="chip cancelled">нуусан</span>') + '</td>' +
               '<td><button class="mini-btn" data-edu="' + it.id + '">✎ Засах</button> <button class="mini-btn" data-edudel="' + it.id + '">🗑</button></td></tr>';
@@ -1133,7 +1134,7 @@
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
   function openEduModal(it) {
-    var x = it || { category: 'product', emoji: '🌿', nameMn: '', nameEn: '', descMn: '', descEn: '', order: 99, active: true };
+    var x = it || { category: 'product', emoji: '🌿', nameMn: '', nameEn: '', benefitMn: '', benefitEn: '', descMn: '', descEn: '', order: 99, active: true };
     var m = openModal(
       '<h3>' + (it ? '✎ Засах' : '＋ Шинэ бүтээгдэхүүн') + '</h3>' +
       '<div class="row"><div class="field" style="flex:0 0 80px"><label>Эможи</label><input id="eEmoji" maxlength="8" value="' + esc(x.emoji) + '"></div>' +
@@ -1143,6 +1144,8 @@
       '<div class="field" style="flex:0 0 90px"><label>Дараалал</label><input id="eOrder" type="number" value="' + (x.order || 0) + '"></div></div>' +
       '<div class="row"><div class="field grow"><label>Нэр (МН)</label><input id="eNameMn" maxlength="80" value="' + esc(x.nameMn) + '"></div>' +
       '<div class="field grow"><label>Name (EN)</label><input id="eNameEn" maxlength="80" value="' + esc(x.nameEn) + '"></div></div>' +
+      '<div class="row"><div class="field grow"><label>Гол үр нөлөө (МН, богино)</label><input id="eBenMn" maxlength="40" placeholder="ж: Хаван бууруулна" value="' + esc(x.benefitMn || '') + '"></div>' +
+      '<div class="field grow"><label>Key benefit (EN)</label><input id="eBenEn" maxlength="40" placeholder="e.g. De-puffs" value="' + esc(x.benefitEn || '') + '"></div></div>' +
       '<div class="field"><label>Тайлбар (МН)</label><textarea id="eDescMn" rows="3" maxlength="500">' + esc(x.descMn) + '</textarea></div>' +
       '<div class="field"><label>Description (EN)</label><textarea id="eDescEn" rows="3" maxlength="500">' + esc(x.descEn) + '</textarea></div>' +
       '<label class="small"><input type="checkbox" id="eActive"' + (x.active ? ' checked' : '') + '> Идэвхтэй (сайт, апп дээр харагдана)</label>' +
@@ -1155,12 +1158,85 @@
         emoji: m.querySelector('#eEmoji').value, category: m.querySelector('#eCat').value,
         order: Number(m.querySelector('#eOrder').value),
         nameMn: m.querySelector('#eNameMn').value, nameEn: m.querySelector('#eNameEn').value,
+        benefitMn: m.querySelector('#eBenMn').value, benefitEn: m.querySelector('#eBenEn').value,
         descMn: m.querySelector('#eDescMn').value, descEn: m.querySelector('#eDescEn').value,
         active: m.querySelector('#eActive').checked
       };
       if (!body.nameMn.trim()) { toast('Монгол нэрээ оруулна уу', 'err'); return; }
       api('/api/admin/edu' + (it ? '/' + it.id : ''), { method: 'POST', body: body })
         .then(function () { closeModal(); toast('Хадгалагдлаа ✓', 'ok'); loadProducts(); })
+        .catch(function () { toast('Алдаа гарлаа', 'err'); });
+    };
+  }
+
+  /* ================= FAQ (shown on the website and in the app) ================= */
+  var FAQ_GROUP = { treatment: 'Эмчилгээ', booking: 'Захиалга ба төлбөр', care: 'Бэлтгэл ба арчилгаа' };
+  var FAQ_SHOW = { always: 'Үргэлж', wallet_on: 'Хэтэвч асаалттай үед', wallet_off: 'Хэтэвч унтраалттай үед' };
+  function loadFaqAdmin() {
+    api('/api/admin/faq').then(function (list) {
+      var c = document.getElementById('content');
+      c.innerHTML =
+        '<div class="row" style="margin-bottom:10px"><p class="muted small" style="flex:1">Вэбсайтын "Түгээмэл асуулт" хэсэг болон апп-д харагдана. ' +
+        'Хариултад <b>{cancelHours}</b>, <b>{phone}</b>, <b>{hoursOpen}</b>, <b>{hoursClose}</b> бичвэл тохиргооны утгаар автоматаар солигдоно.</p>' +
+        '<button class="btn btn-primary btn-sm" id="addFaq">＋ Шинэ асуулт</button></div>' +
+        Object.keys(FAQ_GROUP).map(function (g) {
+          var items = list.filter(function (f) { return f.group === g; });
+          if (!items.length) return '';
+          return '<div class="card"><h3 style="margin-bottom:8px">' + FAQ_GROUP[g] + '</h3><table>' +
+            '<tr><th>#</th><th>Асуулт</th><th>Харагдах</th><th>Төлөв</th><th></th></tr>' +
+            items.map(function (f) {
+              return '<tr><td>' + (f.order || 0) + '</td><td><b>' + esc(f.qMn) + '</b><br><span class="muted small">' + esc(f.aMn.slice(0, 110)) + (f.aMn.length > 110 ? '…' : '') + '</span></td>' +
+                '<td class="small">' + FAQ_SHOW[f.show || 'always'] + '</td>' +
+                '<td>' + (f.active ? '<span class="chip confirmed">идэвхтэй</span>' : '<span class="chip cancelled">нуусан</span>') + '</td>' +
+                '<td style="white-space:nowrap"><button class="mini-btn" data-faq="' + f.id + '">✎ Засах</button> <button class="mini-btn" data-faqdel="' + f.id + '">🗑</button></td></tr>';
+            }).join('') + '</table></div>';
+        }).join('');
+      document.getElementById('addFaq').onclick = function () { openFaqModal(null); };
+      c.querySelectorAll('[data-faq]').forEach(function (b) {
+        b.onclick = function () { openFaqModal(list.find(function (x) { return x.id === b.getAttribute('data-faq'); })); };
+      });
+      c.querySelectorAll('[data-faqdel]').forEach(function (b) {
+        b.onclick = function () {
+          confirmDlg('Энэ асуултыг устгах уу?').then(function (ok) {
+            if (!ok) return;
+            api('/api/admin/faq/' + b.getAttribute('data-faqdel'), { method: 'DELETE' })
+              .then(function () { toast('Устгалаа', 'ok'); loadFaqAdmin(); })
+              .catch(function () { toast('Алдаа гарлаа', 'err'); });
+          });
+        };
+      });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+  function openFaqModal(f) {
+    var x = f || { group: 'treatment', show: 'always', order: 99, qMn: '', qEn: '', aMn: '', aEn: '', active: true };
+    function opts(map, sel) {
+      return Object.keys(map).map(function (k) { return '<option value="' + k + '"' + (sel === k ? ' selected' : '') + '>' + map[k] + '</option>'; }).join('');
+    }
+    var m = openModal(
+      '<h3>' + (f ? '✎ Асуулт засах' : '＋ Шинэ асуулт') + '</h3>' +
+      '<div class="row"><div class="field grow"><label>Бүлэг</label><select id="fqGroup" class="cell-input">' + opts(FAQ_GROUP, x.group) + '</select></div>' +
+      '<div class="field grow"><label>Хэзээ харагдах</label><select id="fqShow" class="cell-input">' + opts(FAQ_SHOW, x.show || 'always') + '</select></div>' +
+      '<div class="field" style="flex:0 0 90px"><label>Дараалал</label><input id="fqOrder" type="number" value="' + (x.order || 0) + '"></div></div>' +
+      '<div class="field"><label>Асуулт (МН)</label><input id="fqQMn" maxlength="160" value="' + esc(x.qMn) + '"></div>' +
+      '<div class="field"><label>Хариулт (МН)</label><textarea id="fqAMn" rows="4" maxlength="1200">' + esc(x.aMn) + '</textarea></div>' +
+      '<div class="field"><label>Question (EN)</label><input id="fqQEn" maxlength="160" value="' + esc(x.qEn) + '"></div>' +
+      '<div class="field"><label>Answer (EN)</label><textarea id="fqAEn" rows="4" maxlength="1200">' + esc(x.aEn) + '</textarea></div>' +
+      '<label class="small"><input type="checkbox" id="fqActive"' + (x.active ? ' checked' : '') + '> Идэвхтэй (сайт, апп дээр харагдана)</label>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" id="fqCancel">Болих</button>' +
+      '<button class="btn btn-primary" id="fqSave">Хадгалах</button></div>'
+    );
+    m.querySelector('#fqCancel').onclick = closeModal;
+    m.querySelector('#fqSave').onclick = function () {
+      var body = {
+        group: m.querySelector('#fqGroup').value, show: m.querySelector('#fqShow').value,
+        order: Number(m.querySelector('#fqOrder').value),
+        qMn: m.querySelector('#fqQMn').value, aMn: m.querySelector('#fqAMn').value,
+        qEn: m.querySelector('#fqQEn').value, aEn: m.querySelector('#fqAEn').value,
+        active: m.querySelector('#fqActive').checked
+      };
+      if (!body.qMn.trim() || !body.aMn.trim()) { toast('Монгол асуулт, хариултаа бөглөнө үү', 'err'); return; }
+      api('/api/admin/faq' + (f ? '/' + f.id : ''), { method: 'POST', body: body })
+        .then(function () { closeModal(); toast('Хадгалагдлаа ✓', 'ok'); loadFaqAdmin(); })
         .catch(function () { toast('Алдаа гарлаа', 'err'); });
     };
   }

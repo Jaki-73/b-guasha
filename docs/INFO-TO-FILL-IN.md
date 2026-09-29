@@ -21,8 +21,9 @@ Double-check they're correct (especially the English address spelling).
 6. **Bundle** — seeded as "Нүүрний гуаша — 5 удаагийн багц, 250,000₮, 90 хоног" valid for the three facial services. Adjust price/sessions/validity/services: Админ → Багц · Код.
 7. **Promo code WELCOME10** (10,000₮ × 100 хүн) — keep, edit or switch off: Админ → Багц · Код.
 8. **Working hours** — currently 10:00–19:00 all week (your FB says "Always open"). Set real hours: Админ → Тохиргоо + each therapist's weekly hours in Ажилтан.
-9. **Education items ("Бид юу хэрэглэдэг вэ")** — default descriptions of stones/toner/clay mask/LED etc. Review and adjust to the products you actually use: Админ → (currently via the website section; items are editable through the API — easiest is to tell me what to change). Mention your real product brands if you like.
-10. **Sample reviews** (Номин, Анужин, Сүврэг) — visible on the website now so it doesn't look empty. Once real reviews come in, hide/delete them: Админ → Сэтгэгдэл (they're marked "жишээ").
+9. **Products ("Бидний хэрэглэдэг зүйлс")** — default descriptions of stones/oil/clay mask/LED etc., each with a short benefit label. Review and adjust to the products you actually use (brands welcome): Админ → 🛍 Бүтээгдэхүүн.
+10. **Sample reviews** (Номин, Анужин, Сүврэг) — visible on the website now so it doesn't look empty. They are not real customers: hide/delete them before launch or as soon as real reviews come in: Админ → Сэтгэгдэл (they're marked "жишээ"). Real reviews written after an app booking get a "✓ Апп-аар захиалсан" badge on the website.
+11. **FAQ policies** — Админ → ❓ Асуулт. The answers are written as sensible defaults; check the ones that state salon policy (who shouldn't be treated, payment, cancellation, aftercare) and change anything that doesn't match how you work.
 
 ## 🟡 When you're ready for real money
 
