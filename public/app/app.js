@@ -347,6 +347,9 @@
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
+      (cfg.bookingPhones ? '<div class="list-row"><span class="lbl">' + t('prof.book_phones') + '</span><span>' + String(cfg.bookingPhones).split(',').map(function (n) {
+        n = n.trim(); return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
+      }).join(', ') + '</span></div>' : '') +
       '<div class="list-row"><span class="lbl">' + t('prof.hours') + '</span><span>' + esc((cfg.hoursOpen || '') + ' – ' + (cfg.hoursClose || '')) + '</span></div>' +
       (cfg.facebook ? '<div class="list-row"><span class="lbl">Facebook</span><a href="' + esc(cfg.facebook) + '" target="_blank" rel="noopener">B\'s Gua Sha ↗</a></div>' : '') +
       '</div></div></aside></div>';
@@ -1292,6 +1295,9 @@
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
+      (cfg.bookingPhones ? '<div class="list-row"><span class="lbl">' + t('prof.book_phones') + '</span><span>' + String(cfg.bookingPhones).split(',').map(function (n) {
+        n = n.trim(); return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
+      }).join(', ') + '</span></div>' : '') +
       (cfg.email ? '<div class="list-row"><span class="lbl">Email</span><a href="mailto:' + esc(cfg.email) + '">' + esc(cfg.email) + '</a></div>' : '') +
       '<div class="list-row"><span class="lbl">' + t('prof.hours') + '</span><span>' + esc((cfg.hoursOpen || '') + ' – ' + (cfg.hoursClose || '')) + '</span></div>' +
       (cfg.facebook ? '<div class="list-row"><span class="lbl">Facebook</span><a href="' + esc(cfg.facebook) + '" target="_blank" rel="noopener">B\'s Gua Sha ↗</a></div>' : '') +

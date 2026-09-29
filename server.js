@@ -32,6 +32,7 @@ const DEFAULT_CONFIG = {
   sloganEn: 'Naturally, Healthy and Beautiful',
   phoneDisplay: '+976 9111-3958',
   phoneTel: '+97691113958',
+  bookingPhones: '91113859, 99083070, 96674700',
   email: 'bolormaa.b.b@gmail.com',
   addressEn: '2nd floor, Khas Munkh center, Engels street, Naran khoroolol, Bayangol district, 26th khoroo, Ulaanbaatar 16020',
   addressMn: 'Баянгол дүүрэг, 26-р хороо, Нарны хороолол, Энгельсийн гудамж — Хас Мөнх төвийн 2 давхарт, Улаанбаатар 16020',
@@ -65,7 +66,7 @@ function cfg() { return db && db.settings ? { ...config, ...db.settings } : conf
    Wallet off = no balance, top-up, bundles, gift cards or promo codes anywhere.
    Nothing is deleted: existing balances stay in the db and come back when re-enabled. */
 /* salon texts the owner edits in Admin → Тохиргоо (stored in db.settings, override config.json) */
-const CONTACT_FIELDS = ['addressMn', 'addressEn', 'phoneDisplay', 'phoneTel', 'email', 'facebook'];
+const CONTACT_FIELDS = ['addressMn', 'addressEn', 'phoneDisplay', 'phoneTel', 'bookingPhones', 'email', 'facebook'];
 function walletOn() { return cfg().featureWallet === true; }
 
 /* ---------------- image guards ----------------
@@ -184,6 +185,12 @@ function seedEdu() {
     mk('machine', '⚡', 'Микро гүйдлийн чангалгаа', 'Microcurrent lifting device', 'Чангалгаа', 'Lifting',
       'Маш сул гүйдлээр нүүрний булчинг идэвхжүүлж, гуашагийн өргөх эффектийг гүнзгийрүүлнэ. Зүрхний аппараттай болон жирэмсэн хүнд хэрэглэхгүй.',
       'Very gentle currents tone the facial muscles and deepen the gua sha lift. Not used with pacemakers or during pregnancy.', 11),
+    mk('product', '🇰🇷', 'CL Medisys эмнэлзүйн арчилгаа', 'CL Medisys clinical skincare', 'Гэрийн арчилгаа', 'Home care',
+      'Бидний хамтран ажилладаг Солонгосын CL Medisys брэндийн эмнэлзүйн арьс арчилгааны бүтээгдэхүүн. Салоны курс эмчилгээгээ гэртээ үргэлжлүүлэхэд тохиромжтой — танд аль нь тохирохыг ажилтнаасаа асуугаарай.',
+      'Korean clinical skincare from CL Medisys, the brand we work with. Good for continuing your salon course at home — ask your therapist which products suit you.', 8.5),
+    mk('machine', '🪡', 'Бичил зүүний аппарат (CL Medisys)', 'Micro-needle device (CL Medisys)', 'Гүн давхаргад ажиллана', 'Works in deeper layers',
+      'CL Medisys-ийн бичил зүүний аппарат нь арьсны гүн давхаргад ажиллаж, арьсыг өөрөө нөхөн төлжихөд нь дэмжлэг үзүүлнэ. Мэс засалгүй, зүсэлтгүй арга. Тохирох эсэхийг зөвлөгөөний үеэр шийднэ.',
+      'The CL Medisys micro-needle device works in the deeper layers of the skin and supports its own renewal — no surgery or incisions. Whether it suits you is decided at your consultation.', 11.5),
     mk('method', '🌿', '100% органик арчилгаа', '100% organic care', 'Арьсанд ээлтэй', 'Skin-friendly',
       'Бид байгалийн гаралтай, органик бүтээгдэхүүнийг сонгож, арьсанд ээлтэй аргыг баримталдаг. Лазер зэрэг хүчтэй аппаратын эмчилгээг зөвхөн арьсны эмчийн зөвлөгөөний дагуу санал болгоно.',
       'We choose natural, organic products and skin-friendly methods. Stronger device treatments (e.g. laser) are only suggested on a dermatologist\'s advice.', 12)
@@ -231,8 +238,8 @@ function seedFaq() {
       'Ихэнх хүнд тохиромжтой. Харин арьсан дээр идэвхтэй үрэвсэл, шарх, халдвар байгаа, ботокс эсвэл филлер хийлгээд 2 долоо хоног болоогүй, цус шингэлэх эм ууж байгаа, эсвэл жирэмсэн бол захиалахаасаа өмнө бидэнд хэлээрэй — шаардлагатай бол эмчээсээ зөвлөгөө авахыг санал болгоно.',
       'It suits most people. If you have active inflammation, broken or infected skin, had Botox or fillers in the last 2 weeks, take blood thinners, or are pregnant, please tell us before booking — we may suggest checking with your doctor first.'),
     mk('treatment', 'Эрэгтэй хүн хийлгэж болох уу?', 'Do you treat men?',
-      'Мэдээж. Нуруу, хүзүү, мөрний гуаша ажлын ачаалалтай эрэгтэйчүүдийн дунд хамгийн их эрэлттэй үйлчилгээ.',
-      'Of course. Back, neck and shoulder gua sha is especially popular with men who spend long hours at a desk.'),
+      'Мэдээж. Ажлын стресс, ачааллаа түр хойш тавиад өөртөө цаг гаргаарай — нүүр, хуйх, нуруу, хүзүү, мөрний гуаша ба массаж алжаалыг тайлж, цусны эргэлтийг сайжруулна. Эрэгтэйчүүдийн дунд хамгийн их эрэлттэй нь нуруу, хүзүү, мөрний гуаша.',
+      'Of course. Put work stress aside for an hour — face, scalp, back, neck and shoulder gua sha and massage ease tension and boost circulation. Back, neck and shoulder gua sha is the most popular with men.'),
     mk('booking', 'Цагаа яаж захиалах вэ?', 'How do I book?',
       'Апп-аар 24/7: үйлчилгээгээ сонгоод ажилтнаа (эсвэл "Хэн ч байсан болно") сонгож, чөлөөтэй цагаас товшино. Утсаар захиалах бол {phone} дугаарт {hoursOpen}–{hoursClose} цагийн хооронд залгаарай.',
       'In the app, 24/7: pick a service, a therapist (or "Anyone is fine") and tap a free slot. To book by phone, call {phone} between {hoursOpen} and {hoursClose}.'),
@@ -316,7 +323,7 @@ function seedDb() {
   demo.balance = 50000;
   demo.isDemo = true;
   return {
-    meta: { version: 3, contentVersion: 2 },
+    meta: { version: 3, contentVersion: 3 },
     settings: {},
     services: seedServices(),
     users: [demo, ...seedStaffUsers(), seedSuperAdmin()],
@@ -377,6 +384,17 @@ function migrateDb() {
       if (nu && LEGACY_EDU_DESC_MN.has(it.descMn)) Object.assign(it, { descMn: nu.descMn, descEn: nu.descEn, benefitMn: nu.benefitMn, benefitEn: nu.benefitEn });
     }
     db.meta.contentVersion = 2;
+  }
+  /* content v3 (from the Facebook page): CL Medisys items, men's FAQ answer */
+  if (db.meta.contentVersion < 3) {
+    const fresh = seedEdu();
+    for (const nm of ['CL Medisys эмнэлзүйн арчилгаа', 'Бичил зүүний аппарат (CL Medisys)']) {
+      if (!db.edu.some((e) => e.nameMn === nm)) db.edu.push(fresh.find((f) => f.nameMn === nm));
+    }
+    const men = db.faq.find((f) => f.qMn === 'Эрэгтэй хүн хийлгэж болох уу?' && f.aMn.startsWith('Мэдээж. Нуруу, хүзүү, мөрний гуаша ажлын'));
+    const nu = seedFaq().find((f) => f.qMn === 'Эрэгтэй хүн хийлгэж болох уу?');
+    if (men && nu) Object.assign(men, { aMn: nu.aMn, aEn: nu.aEn });
+    db.meta.contentVersion = 3;
   }
 }
 
@@ -709,7 +727,7 @@ async function handleApi(req, res, pathname, q) {
   if (route === 'GET /api/config') {
     return json(res, 200, {
       salonName: c.salonName, sloganMn: c.sloganMn, sloganEn: c.sloganEn,
-      phoneDisplay: c.phoneDisplay, phoneTel: c.phoneTel, email: c.email,
+      phoneDisplay: c.phoneDisplay, phoneTel: c.phoneTel, bookingPhones: c.bookingPhones || '', email: c.email,
       addressEn: c.addressEn, addressMn: c.addressMn,
       facebook: c.facebook, instagram: c.instagram,
       hoursOpen: c.hoursOpen, hoursClose: c.hoursClose,
@@ -2017,6 +2035,7 @@ async function handleApi(req, res, pathname, q) {
           if (k === 'facebook' && v && !/^https:\/\//.test(v)) return fail(res, 400, 'bad_url');
           if (k === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return fail(res, 400, 'bad_email');
           if (k === 'phoneTel' && v && !/^\+?\d{6,15}$/.test(v)) return fail(res, 400, 'bad_phone');
+          if (k === 'bookingPhones' && v && !/^[\d\s+,\-]{6,120}$/.test(v)) return fail(res, 400, 'bad_phone');
           s[k] = v;
         }
       }

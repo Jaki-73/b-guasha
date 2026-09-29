@@ -312,6 +312,7 @@ button { font-family: inherit; }
 .c-ico { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 12px; background: var(--brand-soft); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
 .c-item h3 { font-family: 'Inter', sans-serif; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
 .c-item p { font-size: 0.97rem; }
+.book-phones { font-size: 0.9rem; color: var(--muted); margin-top: 4px; }
 .link-arrow { display: inline-block; margin-top: 6px; font-weight: 600; font-size: 0.9rem; }
 .contact-cta {
   border-radius: var(--radius); padding: 28px; color: #fff; display: flex; flex-direction: column; justify-content: center; gap: 10px; align-items: flex-start;

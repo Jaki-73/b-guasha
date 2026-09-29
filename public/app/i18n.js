@@ -224,6 +224,7 @@ window.I18N = {
     'prof.edu_link': 'Гуаша гэж юу вэ? — багаж, бүтээгдэхүүн',
     'prof.chat_link': 'Салонтой чатлах',
     'prof.faq_link': 'Түгээмэл асуулт',
+    'prof.book_phones': 'Цаг авах',
 
     'nav.chat': 'Чат', 'nav.edu': 'Бүтээгдэхүүн', 'nav.faq': 'Асуулт', 'nav.site': 'Вэбсайт руу буцах',
     'home.reviews': 'Үйлчлүүлэгчдийн сэтгэгдэл', 'home.reviews_n': 'сэтгэгдэл', 'home.all_services': 'Бүх үйлчилгээ',
@@ -463,6 +464,7 @@ window.I18N = {
     'prof.edu_link': 'What is gua sha? — tools & products',
     'prof.chat_link': 'Chat with the salon',
     'prof.faq_link': 'FAQ',
+    'prof.book_phones': 'Bookings',
 
     'nav.chat': 'Chat', 'nav.edu': 'Products', 'nav.faq': 'FAQ', 'nav.site': 'Back to website',
     'home.reviews': 'What clients say', 'home.reviews_n': 'reviews', 'home.all_services': 'All services',

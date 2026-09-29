@@ -81,7 +81,7 @@
       'contact.kicker': 'Холбоо барих',
       'contact.title': 'Биднийг олох',
       'contact.addr_t': 'Хаяг', 'contact.map': 'Газрын зураг дээр харах ↗', 'contact.hours_t': 'Ажиллах цаг', 'contact.hours_daily': 'Өдөр бүр',
-      'contact.call_t': 'Утас', 'contact.email_t': 'Имэйл', 'contact.social_t': 'Сошиал',
+      'contact.call_t': 'Утас', 'contact.book_phones': 'Цаг авах', 'contact.email_t': 'Имэйл', 'contact.social_t': 'Сошиал',
       'contact.book_t': 'Цагаа одоо захиалаарай', 'contact.book_d': 'Бүртгүүлээд 1 минутад цагаа баталгаажуулна.', 'contact.book_btn': 'Цаг захиалах',
 
       'footer.tag': 'Гоо сайхан, Эрүүл арьс, Итгэлтэй чи', 'footer.menu': 'Цэс', 'footer.contact': 'Холбоо барих', 'footer.admin': 'Удирдлагын хэсэг'
@@ -161,7 +161,7 @@
       'contact.kicker': 'Contact',
       'contact.title': 'Find us',
       'contact.addr_t': 'Address', 'contact.map': 'Open in Google Maps ↗', 'contact.hours_t': 'Opening hours', 'contact.hours_daily': 'Every day',
-      'contact.call_t': 'Phone', 'contact.email_t': 'Email', 'contact.social_t': 'Social',
+      'contact.call_t': 'Phone', 'contact.book_phones': 'Bookings', 'contact.email_t': 'Email', 'contact.social_t': 'Social',
       'contact.book_t': 'Book your visit', 'contact.book_d': 'Register and confirm your time within a minute.', 'contact.book_btn': 'Book now',
 
       'footer.tag': 'Naturally, Healthy and Beautiful', 'footer.menu': 'Menu', 'footer.contact': 'Contact', 'footer.admin': 'Staff area'
@@ -240,6 +240,15 @@
     var hours = document.getElementById('contactHours');
     if (hours) hours.textContent = t('contact.hours_daily') + ' · ' + cfg.hoursOpen + ' – ' + cfg.hoursClose;
     document.querySelectorAll('.js-tel').forEach(function (a) { if (cfg.phoneTel) a.href = 'tel:' + cfg.phoneTel; });
+    /* extra "цаг авах" numbers, each its own tap-to-call link */
+    var bp = document.getElementById('contactBookPhones');
+    if (bp) {
+      var nums = String(cfg.bookingPhones || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      bp.hidden = !nums.length;
+      bp.innerHTML = nums.length ? '<span>' + t('contact.book_phones') + ':</span> ' + nums.map(function (n) {
+        return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
+      }).join(', ') : '';
+    }
     ['contactPhone', 'footPhone'].forEach(function (id) { var p = document.getElementById(id); if (p && cfg.phoneDisplay) p.textContent = cfg.phoneDisplay; });
     ['contactEmail', 'footEmail'].forEach(function (id) {
       var e = document.getElementById(id);

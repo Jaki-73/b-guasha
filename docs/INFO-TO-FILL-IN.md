@@ -11,6 +11,13 @@ These were taken from facebook.com/profile.php?id=61589496517687 and are already
 
 Double-check they're correct (especially the English address spelling).
 
+Also from the page (added in September 2026):
+
+- **Booking phones** 91113859, 99083070, 96674700 (from a post) — shown on the website and in the app, editable in Админ → Тохиргоо. ⚠️ The post says **9111 3859** while the page's contact phone is **9111 3958** — check which is right.
+- **CL Medisys** (Korean clinical skincare + micro-needle device) — added to Products. There is no micro-needle *service* with a price yet; add one in Админ → Үйлчилгээ if you offer it.
+- **Men's treatments** (face, scalp, back/neck/shoulder gua sha and massage) — used in the FAQ answer for men.
+- **Hours:** the page says "Always open"; the app still uses 10:00–19:00.
+
 ## 🔴 Must change before real customers use it
 
 1. **Admin PIN** — `config.json` → `"adminPin": "1234"` → your own 4-8 digits.

@@ -1619,6 +1619,7 @@
         '<div class="field"><label>Address (EN)</label><textarea id="ctAddrEn" class="cell-input" rows="2" maxlength="300">' + esc(ct.addressEn) + '</textarea></div>' +
         '<div class="row"><div class="field grow"><label>Утас (харагдах)</label><input id="ctPhoneDisp" class="cell-input" maxlength="40" value="' + esc(ct.phoneDisplay) + '" placeholder="+976 9911-2233"></div>' +
         '<div class="field grow"><label>Утас (залгах, зөвхөн тоо)</label><input id="ctPhoneTel" class="cell-input" maxlength="16" value="' + esc(ct.phoneTel) + '" placeholder="+97699112233"></div></div>' +
+        '<div class="field"><label>Цаг авах утаснууд (таслалаар)</label><input id="ctBookPhones" class="cell-input" maxlength="120" value="' + esc(ct.bookingPhones || '') + '" placeholder="91113859, 99083070"></div>' +
         '<div class="row"><div class="field grow"><label>Имэйл</label><input id="ctEmail" class="cell-input" maxlength="120" value="' + esc(ct.email) + '"></div>' +
         '<div class="field grow"><label>Facebook холбоос</label><input id="ctFb" class="cell-input" maxlength="120" value="' + esc(ct.facebook) + '" placeholder="https://facebook.com/..."></div></div>' +
         '<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">' +
@@ -1672,6 +1673,7 @@
               addressEn: document.getElementById('ctAddrEn').value,
               phoneDisplay: document.getElementById('ctPhoneDisp').value,
               phoneTel: document.getElementById('ctPhoneTel').value,
+              bookingPhones: document.getElementById('ctBookPhones').value,
               email: document.getElementById('ctEmail').value,
               facebook: document.getElementById('ctFb').value
             }
