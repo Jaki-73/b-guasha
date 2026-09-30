@@ -80,7 +80,7 @@
 
       'contact.kicker': 'Холбоо барих',
       'contact.title': 'Биднийг олох',
-      'contact.addr_t': 'Хаяг', 'contact.map': 'Газрын зураг дээр харах ↗', 'contact.hours_t': 'Ажиллах цаг', 'contact.hours_daily': 'Өдөр бүр',
+      'contact.addr_t': 'Хаяг', 'contact.map': '🧭 Замаа олох ↗', 'contact.hours_t': 'Ажиллах цаг', 'contact.hours_daily': 'Өдөр бүр',
       'contact.call_t': 'Утас', 'contact.book_phones': 'Цаг авах', 'contact.email_t': 'Имэйл', 'contact.social_t': 'Сошиал',
       'contact.book_t': 'Цагаа одоо захиалаарай', 'contact.book_d': 'Бүртгүүлээд 1 минутад цагаа баталгаажуулна.', 'contact.book_btn': 'Цаг захиалах',
 
@@ -160,7 +160,7 @@
 
       'contact.kicker': 'Contact',
       'contact.title': 'Find us',
-      'contact.addr_t': 'Address', 'contact.map': 'Open in Google Maps ↗', 'contact.hours_t': 'Opening hours', 'contact.hours_daily': 'Every day',
+      'contact.addr_t': 'Address', 'contact.map': '🧭 Get directions ↗', 'contact.hours_t': 'Opening hours', 'contact.hours_daily': 'Every day',
       'contact.call_t': 'Phone', 'contact.book_phones': 'Bookings', 'contact.email_t': 'Email', 'contact.social_t': 'Social',
       'contact.book_t': 'Book your visit', 'contact.book_d': 'Register and confirm your time within a minute.', 'contact.book_btn': 'Book now',
 
@@ -235,8 +235,9 @@
     var addr = L(cfg, 'address');
     var el = document.getElementById('contactAddr');
     if (el) el.textContent = addr;
+    /* directions button only once the owner has set the real Google Maps link */
     var map = document.getElementById('contactMap');
-    if (map) map.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(cfg.addressEn || cfg.addressMn || "B's Gua Sha Ulaanbaatar");
+    if (map) { map.hidden = !cfg.mapUrl; if (cfg.mapUrl) map.href = cfg.mapUrl; }
     var hours = document.getElementById('contactHours');
     if (hours) hours.textContent = t('contact.hours_daily') + ' · ' + cfg.hoursOpen + ' – ' + cfg.hoursClose;
     document.querySelectorAll('.js-tel').forEach(function (a) { if (cfg.phoneTel) a.href = 'tel:' + cfg.phoneTel; });

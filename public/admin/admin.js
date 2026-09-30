@@ -1844,6 +1844,7 @@
         '<div class="field"><label>Address (EN)</label><textarea id="ctAddrEn" class="cell-input" rows="2" maxlength="300">' + esc(ct.addressEn) + '</textarea></div>' +
         '<div class="row"><div class="field grow"><label>Утас (харагдах)</label><input id="ctPhoneDisp" class="cell-input" maxlength="40" value="' + esc(ct.phoneDisplay) + '" placeholder="+976 9911-2233"></div>' +
         '<div class="field grow"><label>Утас (залгах, зөвхөн тоо)</label><input id="ctPhoneTel" class="cell-input" maxlength="16" value="' + esc(ct.phoneTel) + '" placeholder="+97699112233"></div></div>' +
+        '<div class="field"><label>Google Maps холбоос (заавал биш)</label><input id="ctMap" class="cell-input" maxlength="120" value="' + esc(ct.mapUrl || '') + '" placeholder="https://maps.app.goo.gl/..."><span class="muted small">Google Business Profile үүссэний дараа "Share" холбоосыг энд тавина. Хоосон бол "Замаа олох" товч харагдахгүй.</span></div>' +
         '<div class="field"><label>Цаг авах утаснууд (таслалаар)</label><input id="ctBookPhones" class="cell-input" maxlength="120" value="' + esc(ct.bookingPhones || '') + '" placeholder="91113859, 99083070"></div>' +
         '<div class="row"><div class="field grow"><label>Имэйл</label><input id="ctEmail" class="cell-input" maxlength="120" value="' + esc(ct.email) + '"></div>' +
         '<div class="field grow"><label>Facebook холбоос</label><input id="ctFb" class="cell-input" maxlength="120" value="' + esc(ct.facebook) + '" placeholder="https://facebook.com/..."></div></div>' +
@@ -1899,6 +1900,7 @@
               phoneDisplay: document.getElementById('ctPhoneDisp').value,
               phoneTel: document.getElementById('ctPhoneTel').value,
               bookingPhones: document.getElementById('ctBookPhones').value,
+              mapUrl: document.getElementById('ctMap').value,
               email: document.getElementById('ctEmail').value,
               facebook: document.getElementById('ctFb').value
             }
@@ -1912,7 +1914,7 @@
         })
           .catch(function (e) {
             var msg = 'Алдаа — утгуудаа шалгана уу';
-            if (e && e.error === 'bad_url') msg = 'Facebook холбоос https:// -ээр эхлэх ёстой';
+            if (e && e.error === 'bad_url') msg = 'Facebook / Maps холбоос https:// -ээр эхлэх ёстой';
             if (e && e.error === 'bad_email') msg = 'Имэйл буруу байна';
             if (e && e.error === 'bad_phone') msg = 'Залгах утас зөвхөн тоо (+976...)';
             toast(msg, 'err');

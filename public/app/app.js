@@ -347,6 +347,7 @@
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
+      (cfg.mapUrl ? '<div class="list-row"><span class="lbl">' + t('prof.map') + '</span><a href="' + esc(cfg.mapUrl) + '" target="_blank" rel="noopener">' + t('prof.map_go') + '</a></div>' : '') +
       (cfg.bookingPhones ? '<div class="list-row"><span class="lbl">' + t('prof.book_phones') + '</span><span>' + String(cfg.bookingPhones).split(',').map(function (n) {
         n = n.trim(); return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
       }).join(', ') + '</span></div>' : '') +
@@ -1295,6 +1296,7 @@
       '<div class="card">' +
       '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
+      (cfg.mapUrl ? '<div class="list-row"><span class="lbl">' + t('prof.map') + '</span><a href="' + esc(cfg.mapUrl) + '" target="_blank" rel="noopener">' + t('prof.map_go') + '</a></div>' : '') +
       (cfg.bookingPhones ? '<div class="list-row"><span class="lbl">' + t('prof.book_phones') + '</span><span>' + String(cfg.bookingPhones).split(',').map(function (n) {
         n = n.trim(); return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
       }).join(', ') + '</span></div>' : '') +

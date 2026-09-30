@@ -38,6 +38,7 @@ const DEFAULT_CONFIG = {
   phoneDisplay: '+976 9111-3958',
   phoneTel: '+97691113958',
   bookingPhones: '99083070, 96674700',
+  mapUrl: '',
   email: 'bolormaa.b.b@gmail.com',
   addressEn: '2nd floor, Khas Munkh center, Engels street, Naran khoroolol, Bayangol district, 26th khoroo, Ulaanbaatar 16020',
   addressMn: 'Баянгол дүүрэг, 26-р хороо, Нарны хороолол, Энгельсийн гудамж — Хас Мөнх төвийн 2 давхарт, Улаанбаатар 16020',
@@ -71,7 +72,7 @@ function cfg() { return db && db.settings ? { ...config, ...db.settings } : conf
    Wallet off = no balance, top-up, bundles, gift cards or promo codes anywhere.
    Nothing is deleted: existing balances stay in the db and come back when re-enabled. */
 /* salon texts the owner edits in Admin → Тохиргоо (stored in db.settings, override config.json) */
-const CONTACT_FIELDS = ['addressMn', 'addressEn', 'phoneDisplay', 'phoneTel', 'bookingPhones', 'email', 'facebook'];
+const CONTACT_FIELDS = ['addressMn', 'addressEn', 'phoneDisplay', 'phoneTel', 'bookingPhones', 'mapUrl', 'email', 'facebook'];
 function walletOn() { return cfg().featureWallet === true; }
 
 /* ---------------- image guards ----------------
@@ -733,7 +734,7 @@ async function handleApi(req, res, pathname, q) {
   if (route === 'GET /api/config') {
     return json(res, 200, {
       salonName: c.salonName, sloganMn: c.sloganMn, sloganEn: c.sloganEn,
-      phoneDisplay: c.phoneDisplay, phoneTel: c.phoneTel, bookingPhones: c.bookingPhones || '', email: c.email,
+      phoneDisplay: c.phoneDisplay, phoneTel: c.phoneTel, bookingPhones: c.bookingPhones || '', mapUrl: c.mapUrl || '', email: c.email,
       addressEn: c.addressEn, addressMn: c.addressMn,
       facebook: c.facebook, instagram: c.instagram,
       hoursOpen: c.hoursOpen, hoursClose: c.hoursClose,
@@ -2118,7 +2119,7 @@ async function handleApi(req, res, pathname, q) {
         for (const k of CONTACT_FIELDS) {
           if (b.contact[k] === undefined) continue;
           const v = String(b.contact[k]).trim().slice(0, k.startsWith('address') ? 300 : 120);
-          if (k === 'facebook' && v && !/^https:\/\//.test(v)) return fail(res, 400, 'bad_url');
+          if ((k === 'facebook' || k === 'mapUrl') && v && !/^https:\/\//.test(v)) return fail(res, 400, 'bad_url');
           if (k === 'email' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return fail(res, 400, 'bad_email');
           if (k === 'phoneTel' && v && !/^\+?\d{6,15}$/.test(v)) return fail(res, 400, 'bad_phone');
           if (k === 'bookingPhones' && v && !/^[\d\s+,\-]{6,120}$/.test(v)) return fail(res, 400, 'bad_phone');
@@ -2351,10 +2352,53 @@ function publicBase(req) {
   return proto + '://' + (req.headers['x-forwarded-host'] || req.headers.host || 'localhost');
 }
 
-function serveStatic(res, pathname) {
+/* ---------------- share previews + search data for the home page ----------------
+   Facebook, Messenger and Google read these from the raw HTML, so they are
+   injected by the server (from the live settings) instead of by site.js. */
+function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function homeHead(req) {
+  const c = cfg();
+  const base = publicBase(req);
+  const title = c.salonName + ' — Гуаша гоо сайхны студи · Улаанбаатар';
+  const desc = 'Нүүр ба биеийн гуаша эмчилгээ, Баянгол дүүрэг. ' + (c.sloganMn || '') + '. Цаг авах: ' + (c.phoneDisplay || '');
+  const image = base + '/app/icons/icon-512.png';
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].filter((d, i) => !(c.closedWeekdays || []).includes(i));
+  const postal = (String(c.addressMn || '').match(/\b\d{5}\b/) || [])[0];
+  const ld = {
+    '@context': 'https://schema.org', '@type': 'BeautySalon',
+    name: c.salonName, url: base + '/', image, logo: image, description: c.sloganEn || c.sloganMn,
+    telephone: c.phoneTel || undefined, email: c.email || undefined,
+    address: { '@type': 'PostalAddress', streetAddress: c.addressMn, addressLocality: 'Улаанбаатар', postalCode: postal, addressCountry: 'MN' },
+    openingHoursSpecification: [{ '@type': 'OpeningHoursSpecification', dayOfWeek: days, opens: c.hoursOpen, closes: c.hoursClose }],
+    hasMap: c.mapUrl || undefined,
+    sameAs: [c.facebook, c.instagram].filter(Boolean)
+  };
+  return [
+    '<meta property="og:type" content="website">',
+    '<meta property="og:site_name" content="' + escAttr(c.salonName) + '">',
+    '<meta property="og:title" content="' + escAttr(title) + '">',
+    '<meta property="og:description" content="' + escAttr(desc) + '">',
+    '<meta property="og:url" content="' + escAttr(base + '/') + '">',
+    '<meta property="og:image" content="' + escAttr(image) + '">',
+    '<meta property="og:image:width" content="512"><meta property="og:image:height" content="512">',
+    '<meta property="og:locale" content="mn_MN"><meta property="og:locale:alternate" content="en_US">',
+    '<meta name="twitter:card" content="summary">',
+    '<link rel="canonical" href="' + escAttr(base + '/') + '">',
+    /* "<" is escaped so no value can close the script tag */
+    '<script type="application/ld+json">' + JSON.stringify(ld).replace(/</g, '\\u003c') + '</script>'
+  ].join('\n');
+}
+
+function serveStatic(res, pathname, req) {
   let p;
   try { p = decodeURIComponent(pathname); } catch (e) { p = pathname; }
-  if (p === '/') p = '/index.html';
+  if (p === '/' || p === '/index.html') {
+    return fs.readFile(path.join(PUB, 'index.html'), 'utf8', (err, html) => {
+      if (err) { res.writeHead(500); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(html.replace('</head>', homeHead(req) + '\n</head>'));
+    });
+  }
   if (p === '/app' || p === '/app/') p = '/app/index.html';
   if (p === '/admin' || p === '/admin/') p = '/admin/index.html';
   const full = path.normalize(path.join(PUB, p));
@@ -2387,7 +2431,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(req.method === 'HEAD' ? undefined : body);
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
-    return serveStatic(res, pathname);
+    return serveStatic(res, pathname, req);
   } catch (e) {
     if (e.message === 'bad_json') return fail(res, 400, 'bad_json');
     if (e.message === 'too_large') return fail(res, 413, 'too_large');

@@ -251,6 +251,33 @@
         "Old link 404 after reset; unknown token 404",
         "Staff get no salon-wide link"
       ]
+    },
+    {
+      "id": 11,
+      "date": "2026-09-30",
+      "author": "Claude (Claude Code session)",
+      "summary": "Directions button from a mapUrl setting, and share previews (OpenGraph + LocalBusiness data) on the home page",
+      "why": "Links shared on Facebook/Messenger should render with an image and description, and Google should understand the page as a local beauty salon. A directions button is only useful once the real Google Business Profile link exists.",
+      "changes": [
+        "New mapUrl setting (config.json default empty, owner-editable in Админ → Тохиргоо, https only). The website's '🧭 Замаа олох' link and the app's Location row render only when it is set; the old address-search link is gone.",
+        "The server injects og:* tags, a canonical link and schema.org BeautySalon JSON-LD (address, phone, email, opening hours from the settings, map link, Facebook) into the home page head, built from the live settings and the request's public host.",
+        "og:image uses the 512px app icon for now; a 1200×630 photo would give a larger preview."
+      ],
+      "data_impact": "None.",
+      "files": [
+        "server.js",
+        "config.json",
+        "public/index.html",
+        "public/site.js",
+        "public/admin/admin.js",
+        "public/app/app.js",
+        "public/app/i18n.js"
+      ],
+      "verified": [
+        "Home HTML carries og tags with https://bguasha.com URLs behind a proxy",
+        "JSON-LD parses and includes postalCode 16020",
+        "Directions hidden until mapUrl is saved; javascript: URL rejected"
+      ]
     }
   ]
 }

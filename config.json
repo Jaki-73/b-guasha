@@ -5,6 +5,8 @@
   "phoneDisplay": "+976 9111-3958",
   "phoneTel": "+97691113958",
   "bookingPhones": "99083070, 96674700",
+  "_mapUrl": "Google Maps link of the salon (Google Business Profile → Share). Leave empty until the profile exists; the directions button only appears once it is set. The owner can also set it in Admin -> Tohirgoo.",
+  "mapUrl": "",
   "email": "bolormaa.b.b@gmail.com",
   "addressMn": "Баянгол дүүрэг, 26-р хороо, Нарны хороолол, Энгельсийн гудамж — Хас Мөнх төвийн 2 давхарт, Улаанбаатар 16020",
   "addressEn": "2nd floor, Khas Munkh center, Engels street, Naran khoroolol, Bayangol district, Ulaanbaatar 16020",
