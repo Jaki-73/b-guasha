@@ -226,6 +226,31 @@
       "verified": [
         "At 16:59 UTC the server treats 2026-10-01 as today and rejects 2026-09-30 as past"
       ]
+    },
+    {
+      "id": 10,
+      "date": "2026-09-30",
+      "author": "Claude (Claude Code session)",
+      "summary": "Private Google Calendar subscription link per staff member (and a salon-wide one for the owner)",
+      "why": "Staff already live in Google Calendar. Instead of asking them to switch, bookings made here appear in the calendar they check.",
+      "changes": [
+        "GET /cal/<40-hex token>.ics serves an iCalendar feed: confirmed and done bookings from 60 days back to 180 days ahead, plus blocked times; times in UTC (Ulaanbaatar is fixed UTC+8), RFC 5545 escaping and 75-octet folding.",
+        "Event title is client — service (plus therapist on the salon-wide feed); description carries the phone, price and the staff description of the client.",
+        "GET /api/admin/calfeed creates the caller's links on first use; POST /api/admin/calfeed/reset replaces them. Links are re-checked on every fetch, so blocked accounts lose theirs immediately.",
+        "Admin header button 📅 Google shows the links, copy buttons, the three setup steps and the refresh-lag caveat."
+      ],
+      "data_impact": "Adds db.calFeeds (token → user, scope). Nothing else changes.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "README.md"
+      ],
+      "verified": [
+        "Booking at 14:00 appears as DTSTART 06:00Z",
+        "No line over 75 octets, CRLF only, commas/semicolons escaped",
+        "Old link 404 after reset; unknown token 404",
+        "Staff get no salon-wide link"
+      ]
     }
   ]
 }

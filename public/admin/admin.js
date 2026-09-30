@@ -125,6 +125,7 @@
       '<div class="spacer" style="flex:1"></div>' +
       (isOwner ? '<a class="icon-btn" href="/api/admin/export?token=' + encodeURIComponent(token) + '" download>⬇ Backup</a>' : '') +
       '<button class="btn btn-primary btn-sm" id="quickBtn" title="Утсаар ирсэн захиалга (N)">📞 Захиалга</button>' +
+      '<button class="icon-btn" id="calFeedBtn" title="Google Calendar-т харуулах">📅 Google</button>' +
       '<button class="icon-btn" id="themeBtn">' + (theme === 'dark' ? '☀️' : '🌙') + '</button>' +
       '<button class="icon-btn" id="outBtn">Гарах</button></div>' +
       '<div class="admin-tabs">' + tabs.map(function (x) {
@@ -133,6 +134,7 @@
       '<div id="content"><div class="skeleton"></div></div>';
 
     document.getElementById('quickBtn').onclick = function () { openQuickBook(); };
+    document.getElementById('calFeedBtn').onclick = function () { openCalFeed(false); };
     document.getElementById('themeBtn').onclick = function () {
       theme = theme === 'dark' ? 'light' : 'dark';
       localStorage.setItem('bg_theme', theme);
@@ -330,6 +332,47 @@
           .catch(function () { toast('Алдаа гарлаа', 'err'); });
       };
     };
+  }
+
+  /* ================= Google Calendar subscription ================= */
+  function openCalFeed(reset) {
+    api('/api/admin/calfeed' + (reset ? '/reset' : ''), { method: reset ? 'POST' : 'GET' }).then(function (d) {
+      function box(title, url) {
+        return '<div class="field"><label>' + title + '</label><div class="row">' +
+          '<input class="cell-input" readonly value="' + esc(url) + '" onclick="this.select()">' +
+          '<button type="button" class="mini-btn" data-copyurl="' + esc(url) + '">Хуулах</button></div></div>';
+      }
+      var m = openModal(
+        '<h3>📅 Google Calendar-т харуулах</h3>' +
+        '<p class="small muted" style="margin-bottom:12px">Энэ системд орсон захиалгууд таны өдөр бүр хардаг Google Calendar дээр автоматаар гарна. Нэг удаа тохируулахад болно.</p>' +
+        (d.mine ? box('Миний захиалгууд', d.mine) : '') +
+        (d.all ? box('Салоны бүх захиалга (эзэмшигч)', d.all) : '') +
+        (!d.mine && !d.all ? '<p class="small">Танд эмчилгээ хийдэг ажилтны профайл алга тул хувийн календарь байхгүй.</p>' : '') +
+        '<ol class="small" style="padding-left:18px;margin:10px 0;display:grid;gap:4px">' +
+        '<li>Компьютерээс <b>calendar.google.com</b> нээнэ (утасны аппаас энэ тохиргоо байхгүй).</li>' +
+        '<li>Зүүн талд <b>Бусад календарь ＋</b> → <b>URL-аас</b> (Other calendars → From URL).</li>' +
+        '<li>Дээрх холбоосыг буулгаад <b>Календарь нэмэх</b>. Утсан дээрх Google Calendar-т өөрөө гарч ирнэ.</li></ol>' +
+        '<p class="small" style="background:var(--brand-soft);border-radius:10px;padding:10px 12px">⏱ Google энэ календарийг өөрийн хуваариар (заримдаа хэдэн цагаар хоцорч) шинэчилдэг. ' +
+        'Өдөр дотор өөрчлөгдсөн захиалгыг энэ системийн <b>Календарь</b> хэсгээс шалгаарай — үнэн мэдээлэл тэнд байна.</p>' +
+        '<p class="small muted" style="margin-top:10px">🔒 Холбоос нь нууц түлхүүр. Хэн нэгэнд санамсаргүй өгсөн бол доороос шинэчилнэ үү — хуучин холбоос ажиллахаа болино.</p>' +
+        '<div class="modal-actions"><button class="btn btn-ghost" id="cfReset">Холбоос шинэчлэх</button>' +
+        '<button class="btn btn-primary" id="cfClose">Хаах</button></div>'
+      );
+      m.querySelector('#cfClose').onclick = closeModal;
+      m.querySelector('#cfReset').onclick = function () {
+        confirmDlg('Шинэ холбоос үүсгэх үү? Google Calendar-т нэмсэн хуучин холбоос ажиллахаа болино.').then(function (yes) {
+          if (yes) openCalFeed(true);
+        });
+      };
+      m.querySelectorAll('[data-copyurl]').forEach(function (b) {
+        b.onclick = function () {
+          var url = b.getAttribute('data-copyurl');
+          var done = function () { toast('Хуулагдлаа ✓', 'ok'); };
+          if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(url).then(done, function () { b.previousSibling.select(); });
+          else { b.previousSibling.select(); document.execCommand('copy'); done(); }
+        };
+      });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
 
   /* ================= fast phone booking =================

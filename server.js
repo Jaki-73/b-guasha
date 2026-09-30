@@ -347,7 +347,8 @@ function seedDb() {
     notes: [],
     blocks: [],
     edu: seedEdu(),
-    faq: seedFaq()
+    faq: seedFaq(),
+    calFeeds: {}
   };
 }
 
@@ -1402,6 +1403,32 @@ async function handleApi(req, res, pathname, q) {
       return json(res, 200, { ...adminBookingOut(booking), customerCreated: created });
     }
 
+    /* ----- calendar subscription links ----- */
+    if (route === 'GET /api/admin/calfeed' || route === 'POST /api/admin/calfeed/reset') {
+      const me = db.users.find((x) => x.id === sess.userId);
+      if (!me) return fail(res, 403, 'forbidden');
+      if (route === 'POST /api/admin/calfeed/reset') {
+        for (const [t, f] of Object.entries(db.calFeeds)) if (f.userId === me.id) delete db.calFeeds[t];
+      }
+      const want = [];
+      if (me.staff) want.push('mine');
+      if (isOwner) want.push('all');
+      const have = calFeedTokens(me.id);
+      for (const scope of want) {
+        if (!have[scope]) {
+          const t = crypto.randomBytes(20).toString('hex');
+          db.calFeeds[t] = { userId: me.id, scope, createdAt: nowIso() };
+          have[scope] = t;
+        }
+      }
+      saveDb();
+      const base = publicBase(req);
+      return json(res, 200, {
+        mine: have.mine && want.includes('mine') ? base + '/cal/' + have.mine + '.ics' : null,
+        all: have.all && want.includes('all') ? base + '/cal/' + have.all + '.ics' : null
+      });
+    }
+
     /* ----- fast phone booking helpers ----- */
     /* type-ahead by phone (4+ digits) or name (2+ letters): newest visits first */
     if (route === 'GET /api/admin/lookup') {
@@ -2248,6 +2275,82 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2'
 };
 
+/* ---------------- calendar subscription feed (.ics) ----------------
+   Each admin-side user gets a secret link that Google Calendar (or Apple/Outlook)
+   subscribes to, so bookings made here show up in the calendar staff already use.
+   Google refreshes subscriptions on its own schedule (often hours), so the admin
+   day view stays the source of truth for same-day changes. */
+const UB_OFFSET_H = 8; /* Ulaanbaatar is UTC+8 all year (no DST since 2017) */
+function icsUtc(dateStr, minutes) {
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  const t = new Date(Date.UTC(y, mo - 1, d, 0, minutes) - UB_OFFSET_H * 3600000);
+  return t.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+function icsText(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+/* RFC 5545: lines longer than 75 octets are folded; never split a UTF-8 character */
+function icsFold(line) {
+  const out = [];
+  let cur = '', bytes = 0;
+  for (const ch of line) {
+    const n = Buffer.byteLength(ch);
+    if (bytes + n > (out.length ? 74 : 75)) { out.push(cur); cur = ''; bytes = 0; }
+    cur += ch; bytes += n;
+  }
+  out.push(cur);
+  return out.join('\r\n ');
+}
+function calFeedFor(feed) {
+  const u = db.users.find((x) => x.id === feed.userId);
+  if (!u || u.disabled || !ADMIN_ROLES.includes(u.role)) return null;
+  const all = feed.scope === 'all';
+  if (all && u.role !== 'owner' && u.role !== 'superadmin') return null;
+  if (!all && !u.staff) return null;
+  const c = cfg();
+  const from = localDateStr(new Date(Date.now() - 60 * 86400000));
+  const to = localDateStr(new Date(Date.now() + 180 * 86400000));
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//B\'s Gua Sha//Bookings//MN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'X-WR-CALNAME:' + icsText("B's Gua Sha — " + (all ? 'бүх захиалга' : u.name)),
+    'X-WR-TIMEZONE:Asia/Ulaanbaatar', 'REFRESH-INTERVAL;VALUE=DURATION:PT30M', 'X-PUBLISHED-TTL:PT30M'
+  ];
+  const bks = db.bookings.filter((b) => (b.status === 'confirmed' || b.status === 'done') && b.date >= from && b.date <= to && (all || b.staffId === u.id));
+  for (const b of bks) {
+    const svc = db.services.find((x) => x.id === b.serviceId);
+    const cu = b.userId ? db.users.find((x) => x.id === b.userId) : null;
+    const name = cu ? cu.name : (b.walkName || 'Зочин');
+    const phone = cu ? cu.phone : (b.walkPhone || '');
+    const st = all && b.staffId ? staffById(b.staffId) : null;
+    const start = toMin(b.time);
+    const desc = [phone ? '📞 ' + phone : '', svc ? svc.nameMn + ' · ' + (b.minutes || svc.minutes) + ' мин · ' + (b.amount || svc.price).toLocaleString('en-US') + '₮' : '',
+      b.status === 'done' ? '✓ Болсон' : '', cu && cu.staffDesc ? '📋 ' + cu.staffDesc : ''].filter(Boolean).join('\n');
+    lines.push('BEGIN:VEVENT', 'UID:' + b.id + '@bguasha', 'DTSTAMP:' + stamp,
+      'DTSTART:' + icsUtc(b.date, start), 'DTEND:' + icsUtc(b.date, start + (b.minutes || (svc && svc.minutes) || 60)),
+      'SUMMARY:' + icsText(name + ' — ' + (svc ? svc.nameMn : 'Үйлчилгээ') + (st ? ' (' + firstName(st.name) + ')' : '')),
+      'DESCRIPTION:' + icsText(desc), 'LOCATION:' + icsText(c.addressMn || ''), 'STATUS:CONFIRMED', 'END:VEVENT');
+  }
+  /* blocked time (breaks, errands) so the calendar shows the day as it really is */
+  for (const bl of db.blocks.filter((x) => x.date >= from && x.date <= to && (all || x.staffId === u.id))) {
+    const start = toMin(bl.time);
+    lines.push('BEGIN:VEVENT', 'UID:' + bl.id + '@bguasha', 'DTSTAMP:' + stamp,
+      'DTSTART:' + icsUtc(bl.date, start), 'DTEND:' + icsUtc(bl.date, start + (c.slotMinutes || 60)),
+      'SUMMARY:' + icsText('🚫 ' + (bl.note || 'Хаасан цаг')), 'TRANSP:OPAQUE', 'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+function calFeedTokens(userId) {
+  const mine = {};
+  for (const [t, f] of Object.entries(db.calFeeds)) if (f.userId === userId) mine[f.scope] = t;
+  return mine;
+}
+function publicBase(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || 'http';
+  return proto + '://' + (req.headers['x-forwarded-host'] || req.headers.host || 'localhost');
+}
+
 function serveStatic(res, pathname) {
   let p;
   try { p = decodeURIComponent(pathname); } catch (e) { p = pathname; }
@@ -2275,6 +2378,14 @@ const server = http.createServer(async (req, res) => {
   const pathname = u.pathname;
   try {
     if (pathname.startsWith('/api/')) return await handleApi(req, res, pathname, u.searchParams);
+    const cm = pathname.match(/^\/cal\/([a-f0-9]{40})\.ics$/);
+    if (cm && (req.method === 'GET' || req.method === 'HEAD')) {
+      const feed = db.calFeeds[cm[1]];
+      const body = feed ? calFeedFor(feed) : null;
+      if (!body) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('not found'); }
+      res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Disposition': 'inline; filename="bguasha.ics"' });
+      return res.end(req.method === 'HEAD' ? undefined : body);
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
     return serveStatic(res, pathname);
   } catch (e) {

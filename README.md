@@ -41,6 +41,12 @@ Every "Book" button on the website opens the app on that service's booking step 
 
 Clicking an empty cell in the calendar opens the same screen with that time and therapist filled in.
 
+## Bookings in Google Calendar
+
+**📅 Google** in the admin header gives each person a private link (therapists: their own bookings; owner: also the whole salon). Add it once on a computer at calendar.google.com → Other calendars ＋ → From URL; it then shows on the phone too. Blocked times appear as 🚫 events.
+
+Google refreshes subscribed calendars on its own schedule and can lag by hours — for same-day changes the admin **Календарь** is the truth. The link is a secret; "Холбоос шинэчлэх" makes a new one and the old stops working. Blocked or deactivated accounts' links stop working at once.
+
 ## Customer records (staff)
 
 In **Админ → 👤 Үйлчлүүлэгч** every admin-side user (staff included) can:
