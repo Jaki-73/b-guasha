@@ -1366,21 +1366,75 @@ async function handleApi(req, res, pathname, q) {
         if (overlaps(staffBusy(su.id, b.date), s0, s0 + svc.minutes)) return fail(res, 409, 'slot_taken');
       }
       const phone = String(b.phone || '').trim();
-      const existing = b.customerId
+      let existing = b.customerId
         ? db.users.find((u) => u.id === b.customerId && u.role === 'customer')
         : (phone ? db.users.find((u) => u.phone === phone) : null);
       if (b.customerId && !existing) return fail(res, 404, 'not_found');
+      /* an unknown number becomes a client record, so the customer list builds
+         itself out of ordinary phone bookings */
+      let created = false;
+      if (!existing && PHONE_RE.test(phone)) {
+        existing = makeUser(String(b.name || '').trim().slice(0, 60) || 'Үйлчлүүлэгч ' + phone.slice(-4), phone, crypto.randomBytes(18).toString('hex'));
+        existing.noLogin = true;
+        existing.createdBy = sess.userId || 'admin';
+        db.users.push(existing);
+        created = true;
+      }
       const booking = {
         id: uid('bk'), userId: existing ? existing.id : null,
         walkName: existing ? '' : String(b.name || phone || 'Walk-in').trim().slice(0, 60),
         walkPhone: existing ? '' : phone,
         serviceId: svc.id, staffId: su.id, date: b.date, time: b.time, minutes: svc.minutes,
         status: b.date < today || (b.done === true && b.date === today) ? 'done' : 'confirmed', paid: 'salon', amount: svc.price,
-        createdBy: 'admin', createdAt: nowIso()
+        createdBy: b.via === 'phone' ? 'phone' : 'admin', createdAt: nowIso()
       };
       db.bookings.push(booking);
+      const noteText = String(b.note || '').trim().slice(0, 500);
+      if (noteText && existing && sess.userId) {
+        db.notes.push({ id: uid('nt'), staffUserId: sess.userId, customerId: existing.id, text: noteText, shared: true, createdAt: nowIso(), updatedAt: nowIso() });
+      }
       saveDb();
-      return json(res, 200, adminBookingOut(booking));
+      return json(res, 200, { ...adminBookingOut(booking), customerCreated: created });
+    }
+
+    /* ----- fast phone booking helpers ----- */
+    /* type-ahead by phone (4+ digits) or name (2+ letters): newest visits first */
+    if (route === 'GET /api/admin/lookup') {
+      const qq = String(q.get('q') || '').trim().toLowerCase();
+      const digits = qq.replace(/\D/g, '');
+      if (digits.length < 4 && (/\d/.test(qq) || qq.length < 2)) return json(res, 200, []);
+      const hits = db.users.filter((u) => u.role === 'customer' && (digits.length >= 4 ? u.phone.includes(digits) : u.name.toLowerCase().includes(qq)));
+      return json(res, 200, hits.slice(0, 50).map((u) => {
+        const bks = db.bookings.filter((x) => x.userId === u.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+        const lastDone = bks.find((x) => x.status === 'done');
+        const next = bks.filter((x) => x.status === 'confirmed' && x.date >= localDateStr(new Date())).pop();
+        /* the service to suggest: whatever they booked most recently, done or upcoming */
+        const lastAny = bks.find((x) => x.status === 'done' || x.status === 'confirmed');
+        const svc = lastAny ? db.services.find((x) => x.id === lastAny.serviceId) : null;
+        return {
+          id: u.id, name: u.name, phone: u.phone, desc: (u.staffDesc || '').slice(0, 140), noLogin: !!u.noLogin,
+          visits: bks.filter((x) => x.status === 'done').length,
+          lastVisit: lastDone ? lastDone.date : '', lastServiceId: svc ? svc.id : '', lastServiceName: svc ? svc.nameMn : '',
+          nextBooking: next ? next.date + ' ' + next.time : ''
+        };
+      }).sort((a, b) => (b.lastVisit || '').localeCompare(a.lastVisit || '')).slice(0, 6));
+    }
+    /* free start times for one therapist, service and day (staff only see their own) */
+    if (route === 'GET /api/admin/free') {
+      const date = q.get('date') || '';
+      if (!DATE_RE.test(date)) return fail(res, 400, 'bad_date');
+      const svc = db.services.find((x) => x.id === q.get('serviceId'));
+      if (!svc) return fail(res, 400, 'bad_service');
+      const su = staffById(q.get('staffId') || sess.staffUserId || '');
+      if (!su) return fail(res, 400, 'bad_staff');
+      if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      if (salonClosed(date) || !staffWindow(su, date)) return json(res, 200, { date, closed: true, slots: [] });
+      const today = localDateStr(new Date());
+      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+      return json(res, 200, {
+        date, closed: false,
+        slots: slotTimes().map((time) => ({ time, free: slotFreeFor(su, date, time, svc.minutes) && !(date === today && toMin(time) < nowMin - 30) }))
+      });
     }
 
     /* ----- bookings management ----- */

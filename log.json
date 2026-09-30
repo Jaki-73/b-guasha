@@ -182,6 +182,33 @@
       "verified": [
         "config.json parses; /api/config returns the new list"
       ]
+    },
+    {
+      "id": 8,
+      "date": "2026-09-30",
+      "author": "Claude (Claude Code session)",
+      "summary": "Fast phone booking: number → service → time, and unknown numbers create the client",
+      "why": "Orders arrive by phone and staff keep them in Google Calendar. The system is only worth switching to if taking a phone booking is faster than typing a calendar event, and the client list should build itself from that work.",
+      "changes": [
+        "Admin header button 📞 Захиалга and the N key open a three-step booking dialog; the empty-cell calendar action opens the same dialog prefilled.",
+        "Phone field searches as you type (4+ digits); an exact 8-digit match picks the client and preselects the service they booked most recently.",
+        "GET /api/admin/lookup (phone or name type-ahead) and GET /api/admin/free (free start times per therapist/service/day; staff only their own).",
+        "POST /api/admin/walkin now turns an unknown 8-digit number into a client record (noLogin) and accepts an optional note, saved as a shared client note.",
+        "Bookings created this way are marked createdBy 'phone'."
+      ],
+      "data_impact": "New client records appear for every new phone number booked. Existing data unchanged.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "public/admin/index.html",
+        "README.md"
+      ],
+      "verified": [
+        "Staff books a new number in 5 inputs; the client record is created with noLogin",
+        "Typing a known number auto-selects the client and their last service",
+        "Calendar cell keeps its preset time and therapist; Enter submits",
+        "Staff calling /api/admin/free for another therapist gets 403"
+      ]
     }
   ]
 }

@@ -124,6 +124,7 @@
       '<span class="pill">' + (ROLE_LABEL[role] || ROLE_LABEL.staff) + (meName ? ' · ' + esc(meName) : '') + '</span>' +
       '<div class="spacer" style="flex:1"></div>' +
       (isOwner ? '<a class="icon-btn" href="/api/admin/export?token=' + encodeURIComponent(token) + '" download>⬇ Backup</a>' : '') +
+      '<button class="btn btn-primary btn-sm" id="quickBtn" title="Утсаар ирсэн захиалга (N)">📞 Захиалга</button>' +
       '<button class="icon-btn" id="themeBtn">' + (theme === 'dark' ? '☀️' : '🌙') + '</button>' +
       '<button class="icon-btn" id="outBtn">Гарах</button></div>' +
       '<div class="admin-tabs">' + tabs.map(function (x) {
@@ -131,6 +132,7 @@
       }).join('') + '</div>' +
       '<div id="content"><div class="skeleton"></div></div>';
 
+    document.getElementById('quickBtn').onclick = function () { openQuickBook(); };
     document.getElementById('themeBtn').onclick = function () {
       theme = theme === 'dark' ? 'light' : 'dark';
       localStorage.setItem('bg_theme', theme);
@@ -312,7 +314,7 @@
       '<button class="btn btn-primary" id="cmAdd">➕ Захиалга нэмэх (утсаар/ирсэн)</button>' +
       '<button class="btn btn-ghost" id="cmBlock">🚫 Энэ цагийг хаах</button></div>'
     );
-    m.querySelector('#cmAdd').onclick = function () { closeModal(); openWalkin(staffId, time); };
+    m.querySelector('#cmAdd').onclick = function () { closeModal(); openQuickBook({ date: calDate, time: time, staffId: staffId }); };
     m.querySelector('#cmBlock').onclick = function () {
       closeModal();
       var m2 = openModal(
@@ -330,28 +332,208 @@
     };
   }
 
-  function openWalkin(staffId, time) {
-    var svcOpts = (servicesCache || []).filter(function (s) { return s.active; }).map(function (s) {
-      return '<option value="' + esc(s.id) + '">' + esc(s.nameMn) + ' · ' + money(s.price) + '</option>';
-    }).join('');
-    var m = openModal(
-      '<h3>➕ Захиалга нэмэх — ' + calDate + ' ' + time + '</h3>' +
-      '<div class="field"><label>Утасны дугаар (бүртгэлтэй бол автоматаар холбоно)</label><input id="wiPhone" inputmode="numeric" maxlength="8"></div>' +
-      '<div class="field"><label>Нэр (бүртгэлгүй зочинд)</label><input id="wiName" maxlength="60"></div>' +
-      '<div class="field"><label>Үйлчилгээ</label><select id="wiSvc">' + svcOpts + '</select></div>' +
-      '<div class="modal-actions"><button class="btn btn-ghost" id="wiCancel">Болих</button>' +
-      '<button class="btn btn-primary" id="wiOk">Нэмэх</button></div>'
-    );
-    m.querySelector('#wiCancel').onclick = closeModal;
-    m.querySelector('#wiOk').onclick = function () {
-      var btn = this;
-      btn.disabled = true;
-      api('/api/admin/walkin', {
-        method: 'POST',
-        body: { date: calDate, time: time, staffId: staffId, serviceId: m.querySelector('#wiSvc').value, phone: m.querySelector('#wiPhone').value.trim(), name: m.querySelector('#wiName').value.trim() }
-      }).then(function () { closeModal(); toast('Захиалга нэмэгдлээ ✓', 'ok'); loadCalendar(); })
-        .catch(function (e) { toast(e && e.error === 'slot_taken' ? 'Энэ цаг давхцаж байна' : 'Алдаа гарлаа', 'err'); btn.disabled = false; });
+  /* ================= fast phone booking =================
+     Three steps while the caller is still on the line: number → service → time.
+     A number we don't know becomes a client record automatically. The bar to
+     clear is "faster than typing a Google Calendar event". */
+  function openQuickBook(opts) {
+    opts = opts || {};
+    var st = {
+      client: null, newName: '', phone: '', serviceId: null,
+      date: opts.date || todayStr(), time: opts.time || null,
+      staffId: opts.staffId || meStaffId || '', staffList: [], slots: null, matches: []
     };
+    var lookupTimer = null, lookupSeq = 0;
+    var m = openModal('<div id="qb"></div>');
+    m.style.maxWidth = '640px';
+    var host = m.querySelector('#qb');
+
+    function dayChips() {
+      var out = '', d0 = new Date();
+      for (var i = 0; i < 14; i++) {
+        var d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i);
+        var ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        var lbl = i === 0 ? 'Өнөөдөр' : (i === 1 ? 'Маргааш' : ['Ня', 'Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя'][d.getDay()] + ' ' + d.getDate());
+        out += '<button type="button" class="qb-chip' + (ds === st.date ? ' on' : '') + '" data-day="' + ds + '">' + lbl + '</button>';
+      }
+      /* a date picked from the calendar may lie outside the two-week strip */
+      if (st.date < todayStr() || out.indexOf(st.date) < 0) out = '<button type="button" class="qb-chip on" data-day="' + st.date + '">' + st.date + '</button>' + out;
+      return out;
+    }
+    function svcName(id) { var s = (servicesCache || []).find(function (x) { return x.id === id; }); return s ? s.nameMn : ''; }
+    function ready() { return (st.client || st.phone.length === 8 || st.newName.trim()) && st.serviceId && st.staffId && st.time; }
+
+    function draw() {
+      var svcs = (servicesCache || []).filter(function (s) { return s.active; });
+      var c = st.client;
+      var who;
+      if (c) {
+        who = '<div class="qb-client"><div><b>' + esc(c.name) + '</b> <span class="muted small">' + esc(c.phone) + '</span>' +
+          '<br><span class="muted small">' + (c.visits ? c.visits + ' удаа ирсэн' + (c.lastVisit ? ' · сүүлд ' + esc(c.lastVisit) + (c.lastServiceName ? ' ' + esc(c.lastServiceName) : '') : '') : 'Анх удаа') +
+          (c.nextBooking ? ' · 📅 ' + esc(c.nextBooking) : '') + '</span>' +
+          (c.desc ? '<div class="small" style="margin-top:4px">📋 ' + esc(c.desc) + '</div>' : '') + '</div>' +
+          '<button type="button" class="mini-btn" id="qbChange">Солих</button></div>';
+      } else {
+        who = '<input id="qbPhone" class="qb-phone" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Утасны дугаар" value="' + esc(st.phone) + '">' +
+          '<div id="qbMatches">' + st.matches.map(function (x, i) {
+            return '<button type="button" class="qb-match" data-match="' + i + '"><b>' + esc(x.name) + '</b> <span class="muted">' + esc(x.phone) + '</span>' +
+              (x.lastVisit ? '<span class="muted small"> · сүүлд ' + esc(x.lastVisit) + '</span>' : '') + '</button>';
+          }).join('') + '</div>' +
+          (st.phone.length === 8 && !st.matches.some(function (x) { return x.phone === st.phone; })
+            ? '<div class="qb-new">✨ Шинэ дугаар — үйлчлүүлэгч автоматаар бүртгэгдэнэ<input id="qbName" class="cell-input" maxlength="60" placeholder="Нэр (заавал биш)" value="' + esc(st.newName) + '"></div>' : '') +
+          (!st.phone ? '<button type="button" class="linklike" id="qbNoPhone">Утасгүй зочин (зөвхөн нэр)</button>' : '');
+      }
+      var noPhoneMode = !c && st.phone === '' && host.dataset.nophone === '1';
+      if (noPhoneMode) who = '<input id="qbName" class="qb-phone" maxlength="60" placeholder="Зочны нэр" value="' + esc(st.newName) + '"><button type="button" class="linklike" id="qbBackPhone">← Утсаар хайх</button>';
+
+      var staffSel = isOwnerRole() && st.staffList.length > 1
+        ? '<select id="qbStaff" class="cell-input" style="max-width:220px">' + st.staffList.map(function (s) {
+            return '<option value="' + esc(s.id) + '"' + (s.id === st.staffId ? ' selected' : '') + (s.working ? '' : ' disabled') + '>' + esc(s.name) + (s.working ? '' : ' (амарна)') + '</option>';
+          }).join('') + '</select>' : '';
+
+      var slotsHtml;
+      if (!st.serviceId) slotsHtml = '<p class="muted small">Эхлээд үйлчилгээгээ сонгоно уу.</p>';
+      else if (!st.slots) slotsHtml = '<p class="muted small">Ачаалж байна…</p>';
+      else if (st.slots.closed) slotsHtml = '<p class="muted small">🌙 Энэ өдөр амарна.</p>';
+      else slotsHtml = '<div class="qb-slots">' + st.slots.slots.map(function (x) {
+        return '<button type="button" class="qb-slot' + (x.time === st.time ? ' on' : '') + '"' + (x.free || x.time === st.time ? '' : ' disabled') + ' data-time="' + x.time + '">' + x.time + '</button>';
+      }).join('') + '</div>';
+
+      /* slots and lookups redraw while the caller is typing: keep the cursor where it was */
+      var act = document.activeElement;
+      var keep = act && host.contains(act) && act.id ? { id: act.id, pos: act.selectionStart } : null;
+      host.innerHTML =
+        '<h3 style="margin-bottom:10px">📞 Утасны захиалга</h3>' +
+        '<div class="qb-step"><span class="qb-n">1</span><div class="qb-body">' + who + '</div></div>' +
+        '<div class="qb-step"><span class="qb-n">2</span><div class="qb-body"><div class="qb-svcs">' + svcs.map(function (s) {
+          var prev = c && c.lastServiceId === s.id;
+          return '<button type="button" class="qb-svc' + (s.id === st.serviceId ? ' on' : '') + '" data-svc="' + esc(s.id) + '">' +
+            esc(s.emoji || '🌿') + ' ' + esc(s.nameMn) + '<small>' + s.minutes + 'мин · ' + money(s.price) + (prev ? ' · өмнөх' : '') + '</small></button>';
+        }).join('') + '</div></div></div>' +
+        '<div class="qb-step"><span class="qb-n">3</span><div class="qb-body">' +
+        '<div class="row" style="flex-wrap:wrap;margin-bottom:8px">' + staffSel + '</div>' +
+        '<div class="qb-days">' + dayChips() + '</div>' + slotsHtml + '</div></div>' +
+        '<details class="qb-more"' + (host.dataset.note ? ' open' : '') + '><summary>+ Тэмдэглэл</summary><input id="qbNote" class="cell-input" maxlength="500" placeholder="ж: анх удаа ирнэ, хүзүү өвддөг" value="' + esc(host.dataset.note || '') + '"></details>' +
+        '<div class="modal-actions"><button type="button" class="btn btn-ghost" id="qbCancel">Болих</button>' +
+        '<button type="button" class="btn btn-primary" id="qbOk"' + (ready() ? '' : ' disabled') + '>' +
+        (ready() ? 'Захиалах · ' + esc(st.time) + ' · ' + esc(svcName(st.serviceId)) : 'Захиалах') + '</button></div>';
+      bind();
+      if (keep) {
+        var el = host.querySelector('#' + keep.id);
+        if (el) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (e) { /* not a text field */ } }
+      }
+    }
+
+    function loadSlots() {
+      st.slots = null;
+      if (!st.serviceId || !st.staffId) { draw(); return; }
+      var key = st.date + st.serviceId + st.staffId;
+      draw();
+      api('/api/admin/free?date=' + st.date + '&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId))
+        .then(function (d) {
+          if (key !== st.date + st.serviceId + st.staffId) return;
+          st.slots = d;
+          if (st.time && !d.slots.some(function (x) { return x.time === st.time && x.free; })) st.time = null;
+          draw();
+        })
+        .catch(function () { st.slots = { closed: false, slots: [] }; draw(); });
+    }
+    function loadStaff() {
+      api('/api/admin/calendar?date=' + st.date).then(function (cal) {
+        st.staffList = cal.staff;
+        var cur = cal.staff.find(function (s) { return s.id === st.staffId; });
+        if (!cur || !cur.working) {
+          var w = cal.staff.find(function (s) { return s.working; }) || cal.staff[0];
+          st.staffId = w ? w.id : '';
+        }
+        loadSlots();
+      }).catch(function () { draw(); });
+    }
+    function lookup(qv) {
+      clearTimeout(lookupTimer);
+      var seq = ++lookupSeq;
+      if (qv.length < 4) { st.matches = []; draw(); focusPhone(); return; }
+      lookupTimer = setTimeout(function () {
+        api('/api/admin/lookup?q=' + encodeURIComponent(qv)).then(function (list) {
+          if (seq !== lookupSeq) return;
+          st.matches = list;
+          var exact = qv.length === 8 && list.find(function (x) { return x.phone === qv; });
+          if (exact) pick(exact); else { draw(); focusPhone(); }
+        }).catch(function () {});
+      }, 180);
+    }
+    function focusPhone() {
+      var p = host.querySelector('#qbPhone');
+      if (p) { p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
+    }
+    function pick(c) {
+      st.client = c; st.matches = [];
+      if (!st.serviceId && c.lastServiceId && (servicesCache || []).some(function (s) { return s.id === c.lastServiceId && s.active; })) st.serviceId = c.lastServiceId;
+      loadSlots();
+    }
+
+    function bind() {
+      var ph = host.querySelector('#qbPhone');
+      if (ph) ph.oninput = function () { st.phone = ph.value.replace(/\D/g, '').slice(0, 8); lookup(st.phone); };
+      var nm = host.querySelector('#qbName');
+      if (nm) nm.oninput = function () {
+        st.newName = nm.value;
+        var ok = host.querySelector('#qbOk');
+        ok.disabled = !ready();
+      };
+      host.querySelectorAll('[data-match]').forEach(function (b) {
+        b.onclick = function () { pick(st.matches[Number(b.getAttribute('data-match'))]); };
+      });
+      var ch = host.querySelector('#qbChange');
+      if (ch) ch.onclick = function () { st.client = null; st.phone = ''; draw(); focusPhone(); };
+      var np = host.querySelector('#qbNoPhone');
+      if (np) np.onclick = function () { host.dataset.nophone = '1'; draw(); var n = host.querySelector('#qbName'); if (n) n.focus(); };
+      var bp = host.querySelector('#qbBackPhone');
+      if (bp) bp.onclick = function () { host.dataset.nophone = ''; st.newName = ''; draw(); focusPhone(); };
+      host.querySelectorAll('[data-svc]').forEach(function (b) {
+        b.onclick = function () { st.serviceId = b.getAttribute('data-svc'); loadSlots(); };
+      });
+      var sf = host.querySelector('#qbStaff');
+      if (sf) sf.onchange = function () { st.staffId = sf.value; loadSlots(); };
+      host.querySelectorAll('[data-day]').forEach(function (b) {
+        b.onclick = function () { st.date = b.getAttribute('data-day'); st.time = null; loadStaff(); };
+      });
+      host.querySelectorAll('[data-time]').forEach(function (b) {
+        b.onclick = function () { st.time = b.getAttribute('data-time'); draw(); };
+      });
+      var note = host.querySelector('#qbNote');
+      if (note) note.oninput = function () { host.dataset.note = note.value; };
+      host.querySelector('#qbCancel').onclick = closeModal;
+      host.querySelector('#qbOk').onclick = submit;
+    }
+    function submit() {
+      if (!ready()) return;
+      var btn = host.querySelector('#qbOk');
+      btn.disabled = true;
+      var body = { serviceId: st.serviceId, staffId: st.staffId, date: st.date, time: st.time, via: 'phone', note: host.dataset.note || '' };
+      if (st.client) body.customerId = st.client.id;
+      else { body.phone = st.phone; body.name = st.newName.trim(); }
+      api('/api/admin/walkin', { method: 'POST', body: body }).then(function (d) {
+        closeModal();
+        toast('Захиалга нэмэгдлээ ✓ ' + st.time + (d.customerCreated ? ' — шинэ үйлчлүүлэгч бүртгэгдлээ' : ''), 'ok');
+        if (tab === 'cal') { calDate = st.date; loadCalendar(); }
+        else if (tab === 'bookings') loadBookings();
+        else if (tab === 'users') loadUsers();
+      }).catch(function (e) {
+        var map = { slot_taken: 'Энэ цаг дөнгөж сая авагдлаа — өөр цаг сонгоно уу', date_out_of_range: 'Огноо захиалгын хугацаанаас хол байна', bad_time: 'Цаг сонгоно уу' };
+        toast((e && map[e.error]) || 'Алдаа гарлаа', 'err');
+        btn.disabled = false;
+        if (e && e.error === 'slot_taken') { st.time = null; loadSlots(); }
+      });
+    }
+
+    /* Enter books from anywhere in the dialog (focus often sits on a clicked button) */
+    function onKey(e) {
+      if (!document.contains(host)) { document.removeEventListener('keydown', onKey); return; }
+      if (e.key === 'Enter' && e.target.id !== 'qbNote' && ready()) { e.preventDefault(); submit(); }
+    }
+    document.addEventListener('keydown', onKey);
+    ensureServices().then(function () { draw(); focusPhone(); loadStaff(); });
   }
 
   function openBookingModal(bk, after) {
@@ -1695,6 +1877,12 @@
       };
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
+
+  document.addEventListener('keydown', function (e) {
+    if (!token || modalHost.innerHTML || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^(input|textarea|select)$/i.test((e.target.tagName || ''))) return;
+    if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { e.preventDefault(); openQuickBook(); }
+  });
 
   fetch('/api/config')
     .then(function (r) { return r.json(); })

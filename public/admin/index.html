@@ -52,6 +52,33 @@
   .cal-cell .sub { display: block; font-weight: 400; font-size: 0.7rem; opacity: 0.9; }
   .staff-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
 
+  /* fast phone booking */
+  .qb-step { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .qb-n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; }
+  [data-theme="dark"] .qb-n { color: #1c1610; }
+  .qb-body { flex: 1; min-width: 0; }
+  .qb-phone { width: 100%; font-size: 1.35rem; letter-spacing: 0.08em; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); }
+  .qb-phone:focus { border-color: var(--brand); outline: none; }
+  .qb-match { display: block; width: 100%; text-align: left; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); cursor: pointer; font-size: 0.9rem; }
+  .qb-match:hover { border-color: var(--brand); }
+  .qb-new { margin-top: 8px; font-size: 0.85rem; color: var(--brand-deep); display: grid; gap: 6px; }
+  .qb-client { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; background: var(--brand-soft); border-radius: 10px; padding: 10px 12px; }
+  .qb-svcs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+  .qb-svc, .qb-chip, .qb-slot { border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+  .qb-svc { text-align: left; padding: 8px 10px; }
+  .qb-svc small { display: block; color: var(--muted); font-weight: 500; font-size: 0.74rem; }
+  .qb-days { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
+  .qb-chip { flex: 0 0 auto; padding: 6px 10px; }
+  .qb-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; }
+  .qb-slot { padding: 8px 0; }
+  .qb-slot[disabled] { opacity: 0.3; text-decoration: line-through; cursor: not-allowed; }
+  .qb-svc.on, .qb-chip.on, .qb-slot.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .qb-svc.on small { color: rgba(255,255,255,0.85); }
+  [data-theme="dark"] .qb-svc.on, [data-theme="dark"] .qb-chip.on, [data-theme="dark"] .qb-slot.on { color: #1c1610; }
+  .qb-more { margin-top: 10px; font-size: 0.88rem; }
+  .qb-more summary { cursor: pointer; color: var(--brand); font-weight: 600; margin-bottom: 6px; }
+  .linklike { background: none; border: none; color: var(--brand); font-weight: 600; cursor: pointer; font-size: 0.85rem; margin-top: 8px; padding: 0; }
+
   /* chat admin */
   .chat-cols { display: grid; grid-template-columns: 280px 1fr; gap: 14px; }
   @media (max-width: 720px) { .chat-cols { grid-template-columns: 1fr; } }

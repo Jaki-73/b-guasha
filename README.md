@@ -31,6 +31,16 @@ Both the website and the app have two layouts that switch automatically by scree
 
 Every "Book" button on the website opens the app on that service's booking step (`/app#book=<serviceId>`); if the visitor isn't logged in, it continues right after login.
 
+## Phone booking (staff)
+
+**📞 Захиалга** in the admin header (or press **N**) — three steps while the caller is on the line:
+
+1. **Number** — type it; after 4 digits matching clients appear, at 8 digits a known client is picked automatically with their last service preselected. An unknown number becomes a client record by itself (name optional).
+2. **Service** — one tap.
+3. **Time** — day chips and free slots for the therapist; staff book for themselves, the owner can pick anyone. **Enter** books.
+
+Clicking an empty cell in the calendar opens the same screen with that time and therapist filled in.
+
 ## Customer records (staff)
 
 In **Админ → 👤 Үйлчлүүлэгч** every admin-side user (staff included) can:
