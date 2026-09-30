@@ -7,8 +7,9 @@
 1. Push this folder to a **private** GitHub repository (`setup-git.bat` already prepared git; ask me when you're ready).
 2. https://render.com → New → **Web Service** → connect the repo.
 3. Settings: Build Command — *(leave empty)*; Start Command — `node server.js`. Render sets `PORT` automatically (the server reads it).
-4. **Important — data**: add a **Persistent Disk** (Starter plan, ~$7/mo) mounted at the project's `data/` path, otherwise `data/` (your bookings, accounts, photos) is erased on every restart. The free tier is demo-only for this reason.
-5. Add your domain under Settings → Custom Domains; HTTPS is automatic.
+4. **Secrets**: in Render → Environment add `ADMIN_PIN` (replaces the public `1234` from config.json) and, *before the first start with this version*, `SUPER_ADMIN_PASSWORD` (the super admin's first password instead of `super123`).
+5. **Important — data**: add a **Persistent Disk** (Starter plan, ~$7/mo) mounted at `/opt/render/project/src/data` (the project's `data/` folder), otherwise `data/` (your bookings, accounts, photos) is erased on every restart. The free tier is demo-only for this reason.
+6. Add your domain under Settings → Custom Domains; HTTPS is automatic.
 
 ## Alternatives
 

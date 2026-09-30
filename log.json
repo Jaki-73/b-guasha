@@ -278,6 +278,33 @@
         "JSON-LD parses and includes postalCode 16020",
         "Directions hidden until mapUrl is saved; javascript: URL rejected"
       ]
+    },
+    {
+      "id": 12,
+      "date": "2026-09-30",
+      "author": "Claude (Claude Code session)",
+      "summary": "Setup-health warnings for the owner: missing persistent disk and default credentials",
+      "why": "It is unconfirmed whether Render has a persistent disk; without one every account and booking is wiped on deploy or idle restart. Default credentials (PIN 1234, owner123, super123, demo and example accounts) are still live and the PIN sits in a public config file.",
+      "changes": [
+        "The server records the database creation time and a boot counter, and detects whether data/ sits on a different device than the app (a mounted disk) when running on Render.",
+        "GET /api/admin/health (owner/super admin) returns storage info and warnings: no_disk, default_pin, default_super, default_owner, example_staff, demo_customer.",
+        "A warning card at the top of the admin panel lists each item with the exact fix, until it is fixed.",
+        "ADMIN_PIN environment variable overrides the config.json PIN; SUPER_ADMIN_PASSWORD sets the super admin's first password.",
+        "HOSTING-GUIDE.md: secrets step and the exact disk mount path /opt/render/project/src/data."
+      ],
+      "data_impact": "Adds db.meta.createdAt, boots and lastBoot. For databases created before this change createdAt is the first start with this version.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "public/admin/index.html",
+        "docs/HOSTING-GUIDE.md"
+      ],
+      "verified": [
+        "RENDER=true without a mounted disk shows all six warnings",
+        "With ADMIN_PIN and SUPER_ADMIN_PASSWORD set, PIN 1234 is rejected and only three warnings remain",
+        "Boot counter increments and createdAt is kept across restarts",
+        "Staff get 403 on /api/admin/health"
+      ]
     }
   ]
 }

@@ -64,6 +64,8 @@ try {
 } catch (e) {
   console.warn('config.json missing or invalid — using defaults');
 }
+/* config.json is in git, so its PIN is public; on a host set ADMIN_PIN instead */
+if (process.env.ADMIN_PIN) config.adminPin = String(process.env.ADMIN_PIN);
 
 /* effective config = config.json + owner-edited settings stored in the db */
 function cfg() { return db && db.settings ? { ...config, ...db.settings } : config; }
@@ -317,7 +319,8 @@ function seedStaffUsers() {
 /* Super admin — the platform account. Not a therapist (no staff profile, never
    booked). Controls feature switches and creates / edits every account. */
 const SUPER_PHONE = '80000000';
-const SUPER_PASSWORD = 'super123';
+/* first-start password; set SUPER_ADMIN_PASSWORD on the host so production never uses the default */
+const SUPER_PASSWORD = process.env.SUPER_ADMIN_PASSWORD || 'super123';
 function seedSuperAdmin() {
   const su = makeUser('Супер админ', SUPER_PHONE, SUPER_PASSWORD);
   su.role = 'superadmin';
@@ -329,7 +332,7 @@ function seedDb() {
   demo.balance = 50000;
   demo.isDemo = true;
   return {
-    meta: { version: 3, contentVersion: 3 },
+    meta: { version: 3, contentVersion: 3, createdAt: nowIso() },
     settings: {},
     services: seedServices(),
     users: [demo, ...seedStaffUsers(), seedSuperAdmin()],
@@ -422,6 +425,40 @@ function loadDb() {
   }
   db = seedDb();
   saveDb();
+}
+
+/* Boot record for the "is the data surviving restarts?" check. If the database
+   creation time keeps matching the latest start, the host is wiping data/. */
+function recordBoot() {
+  if (!db.meta.createdAt) { db.meta.createdAt = nowIso(); db.meta.createdAtIsFirstSeen = true; }
+  db.meta.boots = (db.meta.boots || 0) + 1;
+  db.meta.lastBoot = nowIso();
+  saveDb();
+}
+function storageInfo() {
+  let separateDisk = null;
+  try { separateDisk = fs.statSync(DATA).dev !== fs.statSync(ROOT).dev; } catch (e) { /* unknown */ }
+  return {
+    onRender: !!process.env.RENDER, separateDisk,
+    dbCreatedAt: db.meta.createdAt, createdAtIsFirstSeen: !!db.meta.createdAtIsFirstSeen,
+    boots: db.meta.boots || 1, lastBoot: db.meta.lastBoot
+  };
+}
+/* things the owner should fix before real customers arrive */
+function safetyWarnings() {
+  const w = [];
+  const st = storageInfo();
+  if (st.onRender && st.separateDisk === false) w.push('no_disk');
+  if (String(cfg().adminPin) === '1234') w.push('default_pin');
+  const find = (phone, role) => db.users.find((u) => u.phone === phone && u.role === role && !u.disabled);
+  const sa = db.users.find((u) => u.role === 'superadmin' && !u.disabled);
+  if (sa && checkPassword(sa, 'super123')) w.push('default_super');
+  const ow = find('91113958', 'owner');
+  if (ow && checkPassword(ow, 'owner123')) w.push('default_owner');
+  const ex = find('88000001', 'staff');
+  if (ex && ex.staff && ex.staff.active !== false && checkPassword(ex, 'staff123')) w.push('example_staff');
+  if (db.users.some((u) => u.isDemo && !u.disabled)) w.push('demo_customer');
+  return w;
 }
 
 function saveDb() {
@@ -1402,6 +1439,12 @@ async function handleApi(req, res, pathname, q) {
       }
       saveDb();
       return json(res, 200, { ...adminBookingOut(booking), customerCreated: created });
+    }
+
+    /* ----- setup health (owner / super admin) ----- */
+    if (route === 'GET /api/admin/health') {
+      if (!isOwner) return ownerOnly();
+      return json(res, 200, { storage: storageInfo(), warnings: safetyWarnings() });
     }
 
     /* ----- calendar subscription links ----- */
@@ -2416,6 +2459,7 @@ function serveStatic(res, pathname, req) {
 
 /* ---------------- server ---------------- */
 loadDb();
+recordBoot();
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');

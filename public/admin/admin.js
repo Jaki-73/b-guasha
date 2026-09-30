@@ -131,8 +131,10 @@
       '<div class="admin-tabs">' + tabs.map(function (x) {
         return '<button data-tab="' + x[0] + '" class="' + (tab === x[0] ? 'active' : '') + '">' + x[1] + '</button>';
       }).join('') + '</div>' +
+      '<div id="healthHost"></div>' +
       '<div id="content"><div class="skeleton"></div></div>';
 
+    if (isOwner) loadHealth();
     document.getElementById('quickBtn').onclick = function () { openQuickBook(); };
     document.getElementById('calFeedBtn').onclick = function () { openCalFeed(false); };
     document.getElementById('themeBtn').onclick = function () {
@@ -332,6 +334,32 @@
           .catch(function () { toast('Алдаа гарлаа', 'err'); });
       };
     };
+  }
+
+  /* ================= setup health =================
+     Stays on screen for the owner and super admin until each item is fixed. */
+  var HEALTH_TEXT = {
+    no_disk: '💾 <b>Өгөгдөл байнгын дискэн дээр биш.</b> Render дахин асах эсвэл шинэ хувилбар гарах бүрт бүртгэл, захиалга, зураг устана. Render → энэ сервис → <b>Disks → Add Disk</b>, Mount path: <code>/opt/render/project/src/data</code>. Бодит ажилтан, үйлчлүүлэгч нэмэхээс өмнө заавал.',
+    default_pin: '🔑 Супер админы <b>PIN 1234</b> хэвээр (GitHub дээр ил харагддаг). Render → Environment → <code>ADMIN_PIN</code> нэмээд өөр тоо өгнө үү.',
+    default_super: '🔑 Супер админы нууц үг анхных (<code>super123</code>). Супер админ: 🔐 Бүртгэл → Супер админ → шинэ нууц үг.',
+    default_owner: '🔑 Эзэмшигчийн нууц үг анхных (<code>owner123</code>). Супер админ: 🔐 Бүртгэл → эзэмшигч → шинэ нууц үг.',
+    example_staff: '👤 Жишээ ажилтан (88000001 / staff123) идэвхтэй. Жинхэнэ ажилтнаар сольж эсвэл хаана уу (🔐 Бүртгэл).',
+    demo_customer: '🙂 Demo үйлчлүүлэгч (99000000 / demo123) идэвхтэй. Туршилт дууссаны дараа 🔐 Бүртгэл хэсгээс хаана уу.'
+  };
+  var healthCache = null;
+  function loadHealth() {
+    var draw = function (h) {
+      var host = document.getElementById('healthHost');
+      if (!host || !h || !h.warnings.length) { if (host) host.innerHTML = ''; return; }
+      var st = h.storage;
+      host.innerHTML = '<div class="card health-card"><b>⚠️ Бодит ашиглалтын өмнө засах зүйлс</b><ul>' +
+        h.warnings.map(function (k) { return '<li>' + (HEALTH_TEXT[k] || k) + '</li>'; }).join('') + '</ul>' +
+        '<p class="muted small">Өгөгдлийн сан үүссэн: ' + (st.dbCreatedAt ? fmtShort(st.dbCreatedAt) : '—') +
+        ' · сервер ' + st.boots + ' удаа асжээ · сүүлд ' + (st.lastBoot ? fmtShort(st.lastBoot) : '—') +
+        (st.separateDisk === true ? ' · 💾 тусдаа диск ✓' : '') + '</p></div>';
+    };
+    if (healthCache) draw(healthCache);
+    api('/api/admin/health').then(function (h) { healthCache = h; draw(h); }).catch(function () {});
   }
 
   /* ================= Google Calendar subscription ================= */
