@@ -209,6 +209,23 @@
         "Calendar cell keeps its preset time and therapist; Enter submits",
         "Staff calling /api/admin/free for another therapist gets 403"
       ]
+    },
+    {
+      "id": 9,
+      "date": "2026-09-30",
+      "author": "Claude (Claude Code session)",
+      "summary": "Server clock pinned to Ulaanbaatar time",
+      "why": "Render runs in UTC, so between midnight and 08:00 Ulaanbaatar time the server still thought it was the previous day, and 'past slot' checks were 8 hours off.",
+      "changes": [
+        "process.env.TZ defaults to Asia/Ulaanbaatar at the top of server.js, before any Date is created; an explicit TZ environment variable still overrides it."
+      ],
+      "data_impact": "None. Stored dates were always Ulaanbaatar wall-clock strings; only 'today/now' comparisons change.",
+      "files": [
+        "server.js"
+      ],
+      "verified": [
+        "At 16:59 UTC the server treats 2026-10-01 as today and rejects 2026-09-30 as past"
+      ]
     }
   ]
 }

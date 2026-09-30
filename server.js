@@ -12,6 +12,11 @@
  */
 'use strict';
 
+/* All dates and slot times are Ulaanbaatar wall-clock time. Hosts such as Render
+   run in UTC, which would put "today" and "now" 8 hours off, so pin the zone
+   before any Date is created. An explicit TZ in the environment still wins. */
+process.env.TZ = process.env.TZ || 'Asia/Ulaanbaatar';
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
