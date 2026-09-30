@@ -32,7 +32,7 @@ const DEFAULT_CONFIG = {
   sloganEn: 'Naturally, Healthy and Beautiful',
   phoneDisplay: '+976 9111-3958',
   phoneTel: '+97691113958',
-  bookingPhones: '91113859, 99083070, 96674700',
+  bookingPhones: '99083070, 96674700',
   email: 'bolormaa.b.b@gmail.com',
   addressEn: '2nd floor, Khas Munkh center, Engels street, Naran khoroolol, Bayangol district, 26th khoroo, Ulaanbaatar 16020',
   addressMn: 'Баянгол дүүрэг, 26-р хороо, Нарны хороолол, Энгельсийн гудамж — Хас Мөнх төвийн 2 давхарт, Улаанбаатар 16020',

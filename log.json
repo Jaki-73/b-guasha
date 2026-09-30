@@ -18,7 +18,15 @@
         "Website copy switches to wallet-free wording via _nw i18n variants, and wallet-only sections carry data-wallet so they stay hidden."
       ],
       "data_impact": "None. Balances, bundles and gift cards stay in data/db.json when the flag is off and reappear when it is switched back on.",
-      "files": ["server.js", "config.json", "public/app/app.js", "public/admin/admin.js", "public/site.js", "public/index.html", "README.md"],
+      "files": [
+        "server.js",
+        "config.json",
+        "public/app/app.js",
+        "public/admin/admin.js",
+        "public/site.js",
+        "public/index.html",
+        "README.md"
+      ],
       "verified": [
         "Wallet off: booking requesting payWith=balance recorded as salon, balance untouched",
         "Wallet off: POST /api/topup and /api/redeem return 403, GET /api/transactions returns []",
@@ -42,12 +50,137 @@
         "Added err.image_too_large and err.feature_disabled strings in Mongolian and English."
       ],
       "data_impact": "None. Existing stored photos are untouched; the limits apply to new uploads only.",
-      "files": ["public/assets/imgtools.js", "public/app/app.js", "public/app/index.html", "public/admin/index.html", "public/app/i18n.js", "server.js"],
+      "files": [
+        "public/assets/imgtools.js",
+        "public/app/app.js",
+        "public/app/index.html",
+        "public/admin/index.html",
+        "public/app/i18n.js",
+        "server.js"
+      ],
       "verified": [
         "JPEG 800x600 accepted (200), JPEG 2400x1200 rejected (413)",
         "PNG 100x100 accepted (200), PNG 1999x1999 accepted at the boundary (200), PNG 3000x200 rejected (413)",
         "2.2 MB payload rejected (413)",
         "/assets/imgtools.js served, and referenced by both /app and /admin"
+      ]
+    },
+    {
+      "id": 3,
+      "date": "2026-09-29",
+      "author": "Claude (Claude Code session)",
+      "summary": "Super admin role, account management and owner-editable contact details",
+      "why": "The owner should run the salon (services, products, texts) while one separate account controls feature switches and every login.",
+      "changes": [
+        "New superadmin role (default 80000000 / super123; the config.json PIN also opens it). Only it toggles the wallet and creates, edits, re-roles, resets or blocks accounts.",
+        "Owner edits address, phones, email and Facebook link in Админ → Тохиргоо; values are stored in db.settings and override config.json.",
+        "Admin sessions are re-checked against the account on every request, so role changes and blocks apply immediately.",
+        "New Products tab for the 'What we use' items."
+      ],
+      "data_impact": "Adds a superadmin user to existing databases on first start. Nothing is removed.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "config.json",
+        "README.md"
+      ],
+      "verified": [
+        "Owner gets 403 on accounts and the wallet switch",
+        "Blocked staff session returns 401 at once",
+        "Existing db gains the super admin on restart"
+      ]
+    },
+    {
+      "id": 4,
+      "date": "2026-09-29",
+      "author": "Claude (Claude Code session)",
+      "summary": "Website and app redesigned for phone and desktop; FAQ, products and reviews refreshed",
+      "why": "The app only had a phone layout and the website buried reviews and FAQ at the bottom.",
+      "changes": [
+        "Website: reviews moved right after services; phone gets a burger menu, a Call/Book bar and swipeable rows; desktop gets grids and sticky side panels.",
+        "App: sidebar and two-column layouts from 1024px; booking stepper; split login screen; FAQ view; /app#book=<serviceId> deep link.",
+        "FAQ moved into the database (16 answers, owner-editable in Админ → ❓ Асуулт).",
+        "Products gained a short benefit label; public reviews expose a star distribution and a booked-in-app badge.",
+        "Fixed the hidden tab bar and wallet tab still showing."
+      ],
+      "data_impact": "Adds db.faq. Refreshes default product texts only where the owner never edited them.",
+      "files": [
+        "server.js",
+        "public/index.html",
+        "public/site.css",
+        "public/site.js",
+        "public/app/*",
+        "public/admin/admin.js"
+      ],
+      "verified": [
+        "No horizontal scroll at 390/820/1366px",
+        "Booking completed end to end on phone and desktop",
+        "Edited product text survives the migration"
+      ]
+    },
+    {
+      "id": 5,
+      "date": "2026-09-29",
+      "author": "Claude (Claude Code session)",
+      "summary": "Staff create customer records with description, repeat-service plans and shared notes",
+      "why": "Customers mostly call; staff need to record who they served without the customer installing the app.",
+      "changes": [
+        "Create a customer by name + phone, no password. Registering later with that phone claims the record and its history.",
+        "Staff-only description, record-a-visit, repeat plans every N days with due/overdue flags, notes shared with the team by default."
+      ],
+      "data_impact": "New optional fields on customer users (staffDesc, noLogin, plans) and on notes (shared). Existing notes stay private.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "README.md"
+      ],
+      "verified": [
+        "Owner sees shared notes but not private ones",
+        "Customer claims record by registering and sees their visit",
+        "Customer never receives staffDesc"
+      ]
+    },
+    {
+      "id": 6,
+      "date": "2026-09-29",
+      "author": "Claude (Claude Code session)",
+      "summary": "Details from the Facebook page: booking phones, CL Medisys items, men's FAQ",
+      "why": "The owner asked to use what is already published on the salon's Facebook page.",
+      "changes": [
+        "bookingPhones setting shown as tap-to-call links on the website and in the app.",
+        "CL Medisys skincare and micro-needle device added to Products.",
+        "Men's FAQ answer mentions face, scalp and back gua sha and massage."
+      ],
+      "data_impact": "Adds the two products and refreshes the men's answer once, only if still default.",
+      "files": [
+        "server.js",
+        "config.json",
+        "public/site.js",
+        "public/app/app.js",
+        "public/admin/admin.js"
+      ],
+      "verified": [
+        "Items and answer appear on an existing database after restart"
+      ]
+    },
+    {
+      "id": 7,
+      "date": "2026-09-30",
+      "author": "Claude (Claude Code session)",
+      "summary": "Booking phones list no longer contains the mistyped 91113859",
+      "why": "The Facebook post swapped two digits of the main number; the correct number is 9111 3958, which is already the main phone.",
+      "changes": [
+        "Default bookingPhones is now 99083070, 96674700.",
+        "INFO-TO-FILL-IN.md links the post that carries the typo and records that hours stay 10:00–19:00."
+      ],
+      "data_impact": "None unless the owner had already saved bookingPhones in Settings; a saved value still wins.",
+      "files": [
+        "server.js",
+        "config.json",
+        "docs/INFO-TO-FILL-IN.md"
+      ],
+      "verified": [
+        "config.json parses; /api/config returns the new list"
       ]
     }
   ]
