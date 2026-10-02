@@ -399,6 +399,46 @@
         "npm test: a session last used 59 days ago still works and one last used 61 days ago gets 401",
         "npm test: after logout that token gets 401 while the same person's other session still works"
       ]
+    },
+    {
+      "id": 17,
+      "date": "2026-10-02",
+      "author": "Claude (Claude Code session)",
+      "summary": "Phone-first admin: My day, booking sheet with only free times, blocking time, machine board, machine usage per service, Add to Home Screen",
+      "why": "Staff take bookings on their phone while the caller is on the line and must never be offered a time a machine or they themselves can't do; they also need their own day at a glance and a shared view of when machines are busy.",
+      "changes": [
+        "Staff land on 🙋 Миний өдөр: their own bookings and blocks for one day, big ‹ › day buttons, tap a booking to mark done / no-show / cancel (cancel asks first). The owner keeps the calendar and also gets My day when they are a therapist.",
+        "Booking sheet (📞 button bottom-right on a phone, header button / N on a computer): full screen on a phone, number → service → time with big buttons and no dropdowns; the time step lists only the start times /api/admin/free returns (therapist and every machine free); scrolls to the next step after each pick; starts on the day being viewed; a refused booking explains whether the machine or the therapist was taken and reloads the times.",
+        "🚫 Цаг хаах sheet: choose a length and a start; starts that clash with your own bookings are greyed out; the block holds only you, never a machine. The owner can block any therapist from the calendar.",
+        "🔧 Машин tab: the shared, anonymous machine board — a day timeline per machine with busy windows, units in use and cleaning time.",
+        "Админ → 🌿 Үйлчилгээ: a Машин column and a 🔧 Машин editor (machine, from which minute, for how long); saving a shorter duration that would cut a machine window explains why it was refused.",
+        "Calendar grid shows bookings and blocks that start off the hour or span several rows (it used to show exact row starts only); the + button offers the first free start in that row; 🔧 marks bookings that use a machine.",
+        "Booking dialog: time range, machine windows, big status buttons, staff chips instead of a dropdown for reassigning.",
+        "Client card: 📅 Цаг товлох books the next visit through the same sheet; ✅ records only past or today's visits.",
+        "All dates on the panel are Ulaanbaatar dates whatever the phone's time zone.",
+        "The login is kept in localStorage (moved over once from sessionStorage) so the home-screen app stays signed in; Гарах also calls POST /api/admin/logout.",
+        "Add to Home Screen: /admin/manifest.webmanifest (standalone, own scope /admin/) plus theme-color and Apple home-screen tags.",
+        "README: machines, My day / blocks / board, staff phones, tests. INFO-TO-FILL-IN: replace the PLACEHOLDER machines."
+      ],
+      "data_impact": "None. Browsers that were signed in keep their login (moved from sessionStorage to localStorage).",
+      "files": [
+        "public/admin/admin.js",
+        "public/admin/index.html",
+        "public/admin/manifest.webmanifest",
+        "README.md",
+        "docs/INFO-TO-FILL-IN.md"
+      ],
+      "verified": [
+        "Playwright, phone 390×844 as staff and desktop 1280×860 as owner, browser time zone America/Los_Angeles, no console errors, no horizontal overflow on phone",
+        "Staff land on My day showing the UB date; tabs are My day, Machines, Bookings, Clients, Chat; the owner's bookings and blocks never appear",
+        "With the owner's 10:15 booking holding the single HIFU 10:30–11:00 and a service using the HIFU from minute 15, the sheet offers 10:45 and 11:00 but not 10:00–10:30; booking 11:00 for a new number creates the client",
+        "Block sheet greys out starts that clash with own bookings; a 30-minute block at 16:00 appears in My day",
+        "Board shows busy windows and unit counts, no names or phone numbers",
+        "Known number → client picked, last service preselected, keyboard dismissed, sheet scrolled to the times",
+        "Cancel from My day asks for confirmation, then the booking shows as cancelled",
+        "Owner calendar shows 10:15, 12:30 and 13:00 starts and a 15:00–17:30 block; the owner blocks the other therapist's 14:00–14:30 from the calendar",
+        "Reload keeps the login; manifest served as application/manifest+json"
+      ]
     }
   ]
 }

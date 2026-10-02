@@ -2,11 +2,26 @@
 (function () {
   'use strict';
 
-  var token = sessionStorage.getItem('bg_admin') || null;
-  var role = sessionStorage.getItem('bg_admin_role') || '';
-  var meName = sessionStorage.getItem('bg_admin_name') || '';
-  var meStaffId = sessionStorage.getItem('bg_admin_sid') || '';
-  var tab = 'cal';
+  /* The login lives in localStorage so the panel added to a phone's home screen stays
+     signed in for weeks (the server slides each session's 60-day expiry). A login kept
+     in sessionStorage by the previous version moves over once. */
+  var AUTH_KEYS = ['bg_admin', 'bg_admin_role', 'bg_admin_name', 'bg_admin_sid'];
+  function sget(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function sset(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage blocked: this tab only */ } }
+  function sdel(k) {
+    try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(k); } catch (e) { /* ignore */ }
+  }
+  try {
+    if (!sget('bg_admin') && sessionStorage.getItem('bg_admin')) {
+      AUTH_KEYS.forEach(function (k) { var v = sessionStorage.getItem(k); if (v !== null) sset(k, v); sessionStorage.removeItem(k); });
+    }
+  } catch (e) { /* storage blocked */ }
+  var token = sget('bg_admin') || null;
+  var role = sget('bg_admin_role') || '';
+  var meName = sget('bg_admin_name') || '';
+  var meStaffId = sget('bg_admin_sid') || '';
+  var tab = '';
   var root = document.getElementById('root');
   var modalHost = document.getElementById('modalHost');
   var theme = localStorage.getItem('bg_theme') || 'light';
@@ -19,9 +34,33 @@
   var chatThreads = null, chatOpen = null, chatPoll = null;
   var featureWallet = false; /* mirrored from /api/config, owner toggles it in Тохиргоо */
 
-  function todayStr() {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  /* Dates on this panel are Ulaanbaatar dates (UTC+08:00, no DST) whatever the phone's
+     own time zone, and date strings are stepped in UTC so no local offset can shift them. */
+  function todayStr() { return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10); }
+  function nowHm() { return new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16); }
+  function addDays(ds, n) { return new Date(Date.parse(ds + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
+  function weekday(ds) { return new Date(ds + 'T12:00:00Z').getUTCDay(); }
+  function toMinutes(t) { var p = String(t).split(':').map(Number); return p[0] * 60 + (p[1] || 0); }
+  function addMinutes(time, mins) { var t = toMinutes(time) + mins; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); }
+  var WD_SHORT = ['Ня', 'Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя'];
+  var WD_LONG = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
+  function dayLabel(ds) {
+    var t = todayStr();
+    if (ds === t) return 'Өнөөдөр';
+    if (ds === addDays(t, 1)) return 'Маргааш';
+    if (ds === addDays(t, -1)) return 'Өчигдөр';
+    return WD_SHORT[weekday(ds)] + ' ' + Number(ds.slice(5, 7)) + '/' + Number(ds.slice(8, 10));
+  }
+  /* two weeks of day buttons from today; a date outside that strip comes first */
+  function dayChips(sel, attr) {
+    var t = todayStr(), out = '', seen = false;
+    for (var i = 0; i < 14; i++) {
+      var ds = addDays(t, i);
+      if (ds === sel) seen = true;
+      out += '<button type="button" class="qb-chip' + (ds === sel ? ' on' : '') + '" ' + attr + '="' + ds + '">' + esc(dayLabel(ds)) + '</button>';
+    }
+    if (!seen) out = '<button type="button" class="qb-chip on" ' + attr + '="' + sel + '">' + esc(dayLabel(sel)) + '</button>' + out;
+    return out;
   }
   function toast(msg, kind) {
     var host = document.getElementById('toastHost');
@@ -39,8 +78,8 @@
   }
   function stars(n) { var o = ''; for (var i = 1; i <= 5; i++) o += i <= n ? '★' : '☆'; return o; }
   function fmtShort(iso) {
-    var d = new Date(iso);
-    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    var d = new Date(Date.parse(iso) + 8 * 3600000); /* shown in Ulaanbaatar time */
+    return (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
   }
 
   function openModal(html) {
@@ -50,6 +89,22 @@
     return back.querySelector('.modal');
   }
   function closeModal() { modalHost.innerHTML = ''; }
+  /* Full screen on a phone, a wide dialog on a computer. It shares the modal host,
+     so closeModal() closes it too. */
+  function openSheet(html) {
+    modalHost.innerHTML = '<div class="modal-back sheet-back"><div class="sheet">' + html + '</div></div>';
+    var back = modalHost.firstChild;
+    back.addEventListener('click', function (e) { if (e.target === back) closeModal(); });
+    return back.querySelector('.sheet');
+  }
+
+  var machinesCache = null;
+  function ensureMachines() {
+    if (machinesCache) return Promise.resolve(machinesCache);
+    return api('/api/admin/machines').then(function (list) { machinesCache = list; return list; }).catch(function () { return []; });
+  }
+  function machineName(id) { var m = (machinesCache || []).find(function (x) { return x.id === id; }); return m ? m.name : id; }
+  var salonHours = { open: '10:00', close: '19:00' }; /* replaced from /api/config at start */
   function confirmDlg(msg) {
     return new Promise(function (resolve) {
       var m = openModal('<p>' + esc(msg) + '</p><div class="modal-actions">' +
@@ -76,17 +131,26 @@
       });
   }
   function doLogout() {
-    token = null; role = ''; meName = ''; meStaffId = '';
-    sessionStorage.removeItem('bg_admin');
-    sessionStorage.removeItem('bg_admin_role');
-    sessionStorage.removeItem('bg_admin_name');
-    sessionStorage.removeItem('bg_admin_sid');
+    token = null; role = ''; meName = ''; meStaffId = ''; tab = '';
+    AUTH_KEYS.forEach(sdel);
     if (chatPoll) { clearInterval(chatPoll); chatPoll = null; }
     render();
+  }
+  /* Гарах also ends the session on the server; it would otherwise stay valid for weeks */
+  function signOut() {
+    var t = token;
+    doLogout();
+    if (t) fetch('/api/admin/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + t } }).catch(function () {});
   }
 
   function isSuperRole() { return role === 'superadmin'; }
   function isOwnerRole() { return role === 'superadmin' || role === 'owner'; }
+  function defaultTab() { return isOwnerRole() ? 'cal' : 'myday'; }
+  /* the booking button starts on the day being looked at, never a past one */
+  function viewDate() {
+    var d = tab === 'cal' ? calDate : (tab === 'myday' ? myDate : (tab === 'machines' ? boardDate : todayStr()));
+    return d < todayStr() ? todayStr() : d;
+  }
   var ROLE_LABEL = { superadmin: '🛡 Супер админ', owner: '👑 Эзэмшигч', staff: '👤 Ажилтан', customer: '🙂 Үйлчлүүлэгч' };
 
   var ST_LABEL = { confirmed: 'Баталгаажсан', done: 'Болсон ✓', cancelled: 'Цуцалсан', noshow: 'Ирээгүй' };
@@ -99,6 +163,8 @@
     var isOwner = isOwnerRole();
     var tabs = isOwner ? [
       ['cal', '🗓 Календарь'],
+      ['myday', '🙋 Миний өдөр'],
+      ['machines', '🔧 Машин'],
       ['bookings', '📋 Захиалга'],
       ['users', '👤 Үйлчлүүлэгч'],
       ['chat', '💬 Чат'],
@@ -111,16 +177,21 @@
       ['stats', '📊 Тайлан'],
       ['settings', '⚙️ Тохиргоо']
     ] : [
-      ['cal', '🗓 Календарь'],
+      ['myday', '🙋 Миний өдөр'],
+      ['machines', '🔧 Машин'],
       ['bookings', '📋 Захиалга'],
       ['users', '👤 Үйлчлүүлэгч'],
       ['chat', '💬 Чат']
     ];
     if (isSuperRole()) tabs.push(['accounts', '🔐 Бүртгэл']);
-    tabs = tabs.filter(function (x) { return x[0] !== 'offers' || featureWallet; });
-    if (!tabs.some(function (x) { return x[0] === tab; })) tab = 'cal';
+    tabs = tabs.filter(function (x) {
+      if (x[0] === 'offers') return featureWallet;
+      if (x[0] === 'myday') return !isOwner || !!meStaffId; /* an owner who does not treat clients has no day of their own */
+      return true;
+    });
+    if (!tabs.some(function (x) { return x[0] === tab; })) tab = defaultTab();
     root.innerHTML =
-      '<div class="row" style="gap:12px;flex-wrap:wrap"><h2 style="font-family:\'Playfair Display\',serif">B\'s Gua Sha — Удирдлага</h2>' +
+      '<div class="row admin-head" style="gap:12px;flex-wrap:wrap"><h2 style="font-family:\'Playfair Display\',serif">B\'s Gua Sha<span class="hide-phone"> — Удирдлага</span></h2>' +
       '<span class="pill">' + (ROLE_LABEL[role] || ROLE_LABEL.staff) + (meName ? ' · ' + esc(meName) : '') + '</span>' +
       '<div class="spacer" style="flex:1"></div>' +
       (isOwner ? '<a class="icon-btn" href="/api/admin/export?token=' + encodeURIComponent(token) + '" download>⬇ Backup</a>' : '') +
@@ -132,10 +203,12 @@
         return '<button data-tab="' + x[0] + '" class="' + (tab === x[0] ? 'active' : '') + '">' + x[1] + '</button>';
       }).join('') + '</div>' +
       '<div id="healthHost"></div>' +
-      '<div id="content"><div class="skeleton"></div></div>';
+      '<div id="content"><div class="skeleton"></div></div>' +
+      '<button type="button" class="fab" id="fabBtn" aria-label="Утасны захиалга">📞</button>';
 
     if (isOwner) loadHealth();
-    document.getElementById('quickBtn').onclick = function () { openQuickBook(); };
+    document.getElementById('quickBtn').onclick = function () { openQuickBook({ date: viewDate() }); };
+    document.getElementById('fabBtn').onclick = function () { openQuickBook({ date: viewDate() }); };
     document.getElementById('calFeedBtn').onclick = function () { openCalFeed(false); };
     document.getElementById('themeBtn').onclick = function () {
       theme = theme === 'dark' ? 'light' : 'dark';
@@ -143,12 +216,16 @@
       document.documentElement.setAttribute('data-theme', theme);
       render();
     };
-    document.getElementById('outBtn').onclick = doLogout;
+    document.getElementById('outBtn').onclick = signOut;
     root.querySelectorAll('[data-tab]').forEach(function (b) {
       b.onclick = function () { tab = b.getAttribute('data-tab'); render(); };
     });
 
-    ({ cal: loadCalendar, bookings: loadBookings, users: loadUsers, chat: loadChat, reviews: loadReviews, services: loadServices, products: loadProducts, faq: loadFaqAdmin, offers: loadOffers, staff: loadStaff, stats: loadStats, settings: loadSettings, accounts: loadAccounts }[tab] || loadCalendar)();
+    var views = {
+      cal: loadCalendar, myday: loadMyDay, machines: loadBoard, bookings: loadBookings, users: loadUsers, chat: loadChat, reviews: loadReviews,
+      services: loadServices, products: loadProducts, faq: loadFaqAdmin, offers: loadOffers, staff: loadStaff, stats: loadStats, settings: loadSettings, accounts: loadAccounts
+    };
+    (views[tab] || views[defaultTab()])();
   }
 
   function renderLogin() {
@@ -191,20 +268,16 @@
   }
   function afterLogin(d) {
     token = d.token; role = d.role; meName = d.name || ''; meStaffId = d.staffUserId || '';
-    sessionStorage.setItem('bg_admin', token);
-    sessionStorage.setItem('bg_admin_role', role);
-    sessionStorage.setItem('bg_admin_name', meName);
-    sessionStorage.setItem('bg_admin_sid', meStaffId);
-    tab = 'cal';
+    sset('bg_admin', token);
+    sset('bg_admin_role', role);
+    sset('bg_admin_name', meName);
+    sset('bg_admin_sid', meStaffId);
+    tab = defaultTab();
     render();
   }
 
   /* ================= calendar ================= */
-  function shiftDate(days) {
-    var p = calDate.split('-').map(Number);
-    var d = new Date(p[0], p[1] - 1, p[2] + days);
-    calDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  }
+  function shiftDate(days) { calDate = addDays(calDate, days); }
 
   function loadCalendar() {
     api('/api/admin/calendar?date=' + calDate).then(function (d) {
@@ -221,7 +294,7 @@
     var c = document.getElementById('content');
     if (!c || !calCache) return;
     var d = calCache;
-    var wd = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'][new Date(calDate + 'T12:00:00').getDay()];
+    var wd = WD_LONG[weekday(calDate)];
 
     var head = '<div class="cal-head">' +
       '<button class="icon-btn" id="calPrev">←</button>' +
@@ -235,51 +308,52 @@
         return '<span class="small"><span class="staff-dot" style="background:' + esc(s.color) + '"></span>' + esc(s.name) + (s.working ? '' : ' <span class="muted">(амарна)</span>') + '</span>';
       }).join(' ') + '</div>';
 
-    var bkByKey = {};
-    d.bookings.forEach(function (b) { if (b.status === 'confirmed' || b.status === 'done') bkByKey[b.staffId + '|' + b.time] = b; });
-    var blByKey = {};
-    d.blocks.forEach(function (b) { blByKey[b.staffId + '|' + b.time] = b; });
-    function toMin(t) { var p = t.split(':').map(Number); return p[0] * 60 + p[1]; }
+    /* Everything that holds a therapist's time that day, in minutes from midnight. A row
+       lists whatever overlaps it, so a 10:15 start, a 90-minute treatment or a three-hour
+       block all show up (the grid used to show exact row starts only). */
+    var held = d.bookings.filter(function (b) { return b.status === 'confirmed' || b.status === 'done'; }).map(function (b) {
+      return { bk: b, staffId: b.staffId, s: toMinutes(b.time), e: toMinutes(b.time) + b.minutes };
+    }).concat(d.blocks.map(function (bl) {
+      return { bl: bl, staffId: bl.staffId, s: toMinutes(bl.time), e: toMinutes(bl.time) + bl.minutes };
+    }));
+    var step = d.step || 15;
 
     var grid = '<div class="cal-grid"><table><tr><th></th>' +
       d.staff.map(function (s) { return '<th><span class="staff-dot" style="background:' + esc(s.color) + '"></span>' + esc(s.name) + '</th>'; }).join('') + '</tr>';
     d.slots.forEach(function (time) {
+      var r0 = toMinutes(time), r1 = r0 + d.slotMinutes;
       grid += '<tr><td class="timecol">' + time + '</td>';
       d.staff.forEach(function (s) {
-        var key = s.id + '|' + time;
-        var bk = bkByKey[key];
-        var bl = blByKey[key];
-        var tMin = toMin(time);
-        // a longer booking earlier may cover this slot
-        if (!bk) {
-          for (var i = 0; i < d.bookings.length; i++) {
-            var b2 = d.bookings[i];
-            if (b2.staffId === s.id && (b2.status === 'confirmed' || b2.status === 'done')) {
-              var st = toMin(b2.time), en = st + (b2.minutes || d.slotMinutes);
-              if (tMin > st && tMin < en) { bk = b2; break; }
-            }
+        var here = held.filter(function (x) { return x.staffId === s.id && x.s < r1 && r0 < x.e; }).sort(function (a, b) { return a.s - b.s; });
+        /* first free start in this row, inside working hours, for the + button */
+        var free = null;
+        if (s.working && !d.closed) {
+          for (var t = Math.max(r0, s.open); t < Math.min(r1, s.close) && free === null; t += step) {
+            if (!here.some(function (x) { return x.s <= t && t < x.e; })) free = t;
           }
         }
-        if (bk) {
-          var cont = toMin(bk.time) !== tMin;
-          grid += '<td><div class="cal-cell busy" style="background:' + esc(s.color) + (cont ? ';opacity:0.55' : '') + '" data-bk="' + esc(bk.id) + '">' +
-            (cont ? '⋯' : esc(bk.user.name)) +
-            (cont ? '' : '<span class="sub">' + esc(bk.service ? bk.service.nameMn : '') + (bk.status === 'done' ? ' ✓' : '') + '</span>') +
-            '</div></td>';
-        } else if (bl) {
-          grid += '<td><div class="cal-cell blocked" data-bl="' + esc(bl.id) + '">🚫 ' + esc(bl.note || 'Хаасан') + '</div></td>';
-        } else if (!s.working || d.closed || tMin < s.open || tMin + d.slotMinutes > s.close) {
-          grid += '<td><div class="cal-cell off"></div></td>';
-        } else {
-          grid += '<td><div class="cal-cell empty" data-free="' + esc(s.id) + '|' + time + '">+</div></td>';
-        }
+        var items = here.map(function (x) {
+          var cont = x.s < r0; /* began in an earlier row */
+          if (x.bl) {
+            return '<div class="cal-item blocked' + (cont ? ' cont' : '') + '" data-bl="' + esc(x.bl.id) + '">🚫 ' +
+              (cont ? '⋯' : esc(x.bl.time) + '–' + esc(x.bl.until) + ' ' + esc(x.bl.note || 'Хаасан')) + '</div>';
+          }
+          var b = x.bk;
+          return '<div class="cal-item busy' + (cont ? ' cont' : '') + '" style="background:' + esc(s.color) + '" data-bk="' + esc(b.id) + '">' +
+            (cont ? '⋯ ' + esc(b.user.name)
+              : '<b>' + esc(b.time) + '</b> ' + esc(b.user.name) + '<span class="sub">' + esc(b.service ? b.service.nameMn : '') + ' · ' + b.minutes + ' мин' +
+                (b.machines && b.machines.length ? ' · 🔧' : '') + (b.status === 'done' ? ' ✓' : '') + '</span>') + '</div>';
+        }).join('');
+        var add = free !== null
+          ? '<div class="cal-item add" data-free="' + esc(s.id) + '|' + addMinutes('00:00', free) + '">+' + (here.length ? ' ' + addMinutes('00:00', free) : '') + '</div>' : '';
+        grid += '<td>' + (items || add ? '<div class="cal-stack">' + items + add + '</div>' : '<div class="cal-cell off"></div>') + '</td>';
       });
       grid += '</tr>';
     });
     grid += '</table></div>';
 
     c.innerHTML = head + grid +
-      '<p class="muted small" style="margin-top:10px">Хоосон нүд дарж захиалга нэмэх эсвэл цаг хаана. Захиалга дарж төлөв солино. 🚫 дарж хаалтыг болиулна.</p>';
+      '<p class="muted small" style="margin-top:10px">+ дарж захиалга нэмэх эсвэл цаг хаана. Захиалга дарж төлөв солино. 🚫 дарж хаалтыг болиулна. 🔧 = машин ашиглана.</p>';
 
     document.getElementById('calPrev').onclick = function () { shiftDate(-1); loadCalendar(); };
     document.getElementById('calNext').onclick = function () { shiftDate(1); loadCalendar(); };
@@ -313,27 +387,13 @@
   function openCellMenu(staffId, time) {
     var st = calCache.staff.find(function (s) { return s.id === staffId; }) || {};
     var m = openModal(
-      '<h3>' + calDate + ' · ' + time + ' — ' + esc(st.name || '') + '</h3>' +
+      '<h3>' + esc(dayLabel(calDate)) + ' · ' + time + ' — ' + esc(st.name || '') + '</h3>' +
       '<div class="modal-actions" style="flex-direction:column">' +
-      '<button class="btn btn-primary" id="cmAdd">➕ Захиалга нэмэх (утсаар/ирсэн)</button>' +
-      '<button class="btn btn-ghost" id="cmBlock">🚫 Энэ цагийг хаах</button></div>'
+      '<button class="btn btn-primary big-btn" id="cmAdd">📞 Захиалга нэмэх</button>' +
+      '<button class="btn btn-ghost big-btn" id="cmBlock">🚫 Цаг хаах</button></div>'
     );
     m.querySelector('#cmAdd').onclick = function () { closeModal(); openQuickBook({ date: calDate, time: time, staffId: staffId }); };
-    m.querySelector('#cmBlock').onclick = function () {
-      closeModal();
-      var m2 = openModal(
-        '<h3>🚫 Цаг хаах — ' + time + '</h3>' +
-        '<div class="field"><label>Шалтгаан (заавал биш)</label><input id="blNote" maxlength="100" placeholder="ж: цайны цаг, завсарлага…"></div>' +
-        '<div class="modal-actions"><button class="btn btn-ghost" id="blCancel">Болих</button>' +
-        '<button class="btn btn-primary" id="blOk">Хаах</button></div>'
-      );
-      m2.querySelector('#blCancel').onclick = closeModal;
-      m2.querySelector('#blOk').onclick = function () {
-        api('/api/admin/blocks', { method: 'POST', body: { date: calDate, time: time, staffId: staffId, note: m2.querySelector('#blNote').value } })
-          .then(function () { closeModal(); toast('Цаг хаагдлаа ✓', 'ok'); loadCalendar(); })
-          .catch(function () { toast('Алдаа гарлаа', 'err'); });
-      };
-    };
+    m.querySelector('#cmBlock').onclick = function () { closeModal(); openBlockSheet({ date: calDate, staffId: staffId, from: time }); };
   }
 
   /* ================= setup health =================
@@ -344,7 +404,9 @@
     default_super: '🔑 Супер админы нууц үг анхных (<code>super123</code>). Супер админ: 🔐 Бүртгэл → Супер админ → шинэ нууц үг.',
     default_owner: '🔑 Эзэмшигчийн нууц үг анхных (<code>owner123</code>). Супер админ: 🔐 Бүртгэл → эзэмшигч → шинэ нууц үг.',
     example_staff: '👤 Жишээ ажилтан (88000001 / staff123) идэвхтэй. Жинхэнэ ажилтнаар сольж эсвэл хаана уу (🔐 Бүртгэл).',
-    demo_customer: '🙂 Demo үйлчлүүлэгч (99000000 / demo123) идэвхтэй. Туршилт дууссаны дараа 🔐 Бүртгэл хэсгээс хаана уу.'
+    demo_customer: '🙂 Demo үйлчлүүлэгч (99000000 / demo123) идэвхтэй. Туршилт дууссаны дараа 🔐 Бүртгэл хэсгээс хаана уу.',
+    machines_placeholder: '🔧 <b>Машины жагсаалт жишээ (PLACEHOLDER) хэвээр.</b> <code>config.json</code> → <code>machines</code>-д салоны жинхэнэ машин бүрийг (нэр, хэдэн ширхэг, цэвэрлэгээний минут) бичээд <code>"placeholder": true</code>-г устгана. Дараа нь 🌿 Үйлчилгээ → 🔧 Машин-аар үйлчилгээ бүр аль машиныг хэдээс хэдэн минут ашиглахыг тохируулна.',
+    service_machine_problem: '🔧 Зарим үйлчилгээ <code>config.json</code>-д байхгүй машин, эсвэл үйлчилгээний хугацаанаас хэтэрсэн машины цагтай байна — тэдгээрийг захиалах боломжгүй. 🌿 Үйлчилгээ → 🔧 Машин-аар засна уу.'
   };
   var healthCache = null;
   function loadHealth() {
@@ -405,93 +467,121 @@
 
   /* ================= fast phone booking =================
      Three steps while the caller is still on the line: number → service → time.
-     A number we don't know becomes a client record automatically. The bar to
-     clear is "faster than typing a Google Calendar event". */
+     Phone-first: a full-screen sheet, big tap targets, no dropdowns, and the time
+     step lists only start times the server says are free for the staff member AND
+     every machine the service needs — a clash cannot be picked. A number we don't
+     know becomes a client record when the booking is saved. */
   function openQuickBook(opts) {
     opts = opts || {};
     var st = {
-      client: null, newName: '', phone: '', serviceId: null,
+      client: opts.client || null, newName: '', phone: '', serviceId: opts.serviceId || null,
       date: opts.date || todayStr(), time: opts.time || null,
-      staffId: opts.staffId || meStaffId || '', staffList: [], slots: null, matches: []
+      staffId: opts.staffId || meStaffId || '', staffList: [], slots: null, slotInfo: {}, matches: [], noPhone: false, note: '', jump: null
     };
     var lookupTimer = null, lookupSeq = 0;
-    var m = openModal('<div id="qb"></div>');
-    m.style.maxWidth = '640px';
-    var host = m.querySelector('#qb');
+    var host = openSheet('<div id="qb" class="sheet-inner"></div>').querySelector('#qb');
 
-    function dayChips() {
-      var out = '', d0 = new Date();
-      for (var i = 0; i < 14; i++) {
-        var d = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i);
-        var ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-        var lbl = i === 0 ? 'Өнөөдөр' : (i === 1 ? 'Маргааш' : ['Ня', 'Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя'][d.getDay()] + ' ' + d.getDate());
-        out += '<button type="button" class="qb-chip' + (ds === st.date ? ' on' : '') + '" data-day="' + ds + '">' + lbl + '</button>';
-      }
-      /* a date picked from the calendar may lie outside the two-week strip */
-      if (st.date < todayStr() || out.indexOf(st.date) < 0) out = '<button type="button" class="qb-chip on" data-day="' + st.date + '">' + st.date + '</button>' + out;
-      return out;
+    function svcById(id) { return (servicesCache || []).find(function (x) { return x.id === id; }); }
+    function hasWho() { return !!(st.client || st.phone.length === 8 || st.newName.trim()); }
+    function ready() { return hasWho() && !!st.serviceId && !!st.staffId && !!st.time; }
+    function missing() {
+      if (!hasWho()) return '1 · Утасны дугаар оруулна уу';
+      if (!st.serviceId) return '2 · Үйлчилгээ сонгоно уу';
+      if (!st.time) return '3 · Цаг сонгоно уу';
+      return '';
     }
-    function svcName(id) { var s = (servicesCache || []).find(function (x) { return x.id === id; }); return s ? s.nameMn : ''; }
-    function ready() { return (st.client || st.phone.length === 8 || st.newName.trim()) && st.serviceId && st.staffId && st.time; }
+    function okLabel() {
+      var svc = svcById(st.serviceId);
+      return ready() ? 'Захиалах · ' + dayLabel(st.date) + ' ' + st.time + ' · ' + (svc ? svc.nameMn : '') : missing();
+    }
 
-    function draw() {
-      var svcs = (servicesCache || []).filter(function (s) { return s.active; });
+    function whoHtml() {
       var c = st.client;
-      var who;
       if (c) {
-        who = '<div class="qb-client"><div><b>' + esc(c.name) + '</b> <span class="muted small">' + esc(c.phone) + '</span>' +
+        return '<div class="qb-client"><div><b>' + esc(c.name) + '</b> <span class="muted small">' + esc(c.phone) + '</span>' +
           '<br><span class="muted small">' + (c.visits ? c.visits + ' удаа ирсэн' + (c.lastVisit ? ' · сүүлд ' + esc(c.lastVisit) + (c.lastServiceName ? ' ' + esc(c.lastServiceName) : '') : '') : 'Анх удаа') +
           (c.nextBooking ? ' · 📅 ' + esc(c.nextBooking) : '') + '</span>' +
           (c.desc ? '<div class="small" style="margin-top:4px">📋 ' + esc(c.desc) + '</div>' : '') + '</div>' +
-          '<button type="button" class="mini-btn" id="qbChange">Солих</button></div>';
-      } else {
-        who = '<input id="qbPhone" class="qb-phone" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Утасны дугаар" value="' + esc(st.phone) + '">' +
-          '<div id="qbMatches">' + st.matches.map(function (x, i) {
-            return '<button type="button" class="qb-match" data-match="' + i + '"><b>' + esc(x.name) + '</b> <span class="muted">' + esc(x.phone) + '</span>' +
-              (x.lastVisit ? '<span class="muted small"> · сүүлд ' + esc(x.lastVisit) + '</span>' : '') + '</button>';
-          }).join('') + '</div>' +
-          (st.phone.length === 8 && !st.matches.some(function (x) { return x.phone === st.phone; })
-            ? '<div class="qb-new">✨ Шинэ дугаар — үйлчлүүлэгч автоматаар бүртгэгдэнэ<input id="qbName" class="cell-input" maxlength="60" placeholder="Нэр (заавал биш)" value="' + esc(st.newName) + '"></div>' : '') +
-          (!st.phone ? '<button type="button" class="linklike" id="qbNoPhone">Утасгүй зочин (зөвхөн нэр)</button>' : '');
+          '<button type="button" class="qb-link" id="qbChange">Солих</button></div>';
       }
-      var noPhoneMode = !c && st.phone === '' && host.dataset.nophone === '1';
-      if (noPhoneMode) who = '<input id="qbName" class="qb-phone" maxlength="60" placeholder="Зочны нэр" value="' + esc(st.newName) + '"><button type="button" class="linklike" id="qbBackPhone">← Утсаар хайх</button>';
+      if (st.noPhone) {
+        return '<input id="qbName" class="qb-phone" maxlength="60" autocomplete="off" placeholder="Зочны нэр" value="' + esc(st.newName) + '">' +
+          '<button type="button" class="qb-link" id="qbBackPhone">← Утсаар хайх</button>';
+      }
+      var isNew = st.phone.length === 8 && !st.matches.some(function (x) { return x.phone === st.phone; });
+      return '<input id="qbPhone" class="qb-phone" type="tel" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Утасны дугаар" value="' + esc(st.phone) + '">' +
+        st.matches.map(function (x, i) {
+          return '<button type="button" class="qb-match" data-match="' + i + '"><b>' + esc(x.name) + '</b> <span class="muted">' + esc(x.phone) + '</span>' +
+            (x.lastVisit ? '<span class="muted small"> · сүүлд ' + esc(x.lastVisit) + '</span>' : '') + '</button>';
+        }).join('') +
+        (isNew ? '<div class="qb-new">✨ Шинэ дугаар — захиалгатай хамт үйлчлүүлэгч бүртгэгдэнэ' +
+          '<input id="qbName" class="cell-input big-input" maxlength="60" autocomplete="off" placeholder="Нэр (заавал биш)" value="' + esc(st.newName) + '"></div>' : '') +
+        (!st.phone ? '<button type="button" class="qb-link" id="qbNoPhone">Утасгүй зочин</button>' : '');
+    }
 
-      var staffSel = isOwnerRole() && st.staffList.length > 1
-        ? '<select id="qbStaff" class="cell-input" style="max-width:220px">' + st.staffList.map(function (s) {
-            return '<option value="' + esc(s.id) + '"' + (s.id === st.staffId ? ' selected' : '') + (s.working ? '' : ' disabled') + '>' + esc(s.name) + (s.working ? '' : ' (амарна)') + '</option>';
-          }).join('') + '</select>' : '';
-
-      var slotsHtml;
-      if (!st.serviceId) slotsHtml = '<p class="muted small">Эхлээд үйлчилгээгээ сонгоно уу.</p>';
-      else if (!st.slots) slotsHtml = '<p class="muted small">Ачаалж байна…</p>';
-      else if (st.slots.closed) slotsHtml = '<p class="muted small">🌙 Энэ өдөр амарна.</p>';
-      else slotsHtml = '<div class="qb-slots">' + st.slots.slots.map(function (x) {
-        return '<button type="button" class="qb-slot' + (x.time === st.time ? ' on' : '') + '"' + (x.free || x.time === st.time ? '' : ' disabled') + ' data-time="' + x.time + '">' + x.time + '</button>';
+    function servicesHtml() {
+      return '<div class="qb-svcs">' + (servicesCache || []).filter(function (s) { return s.active; }).map(function (s) {
+        var prev = st.client && st.client.lastServiceId === s.id;
+        var mach = (s.uses || []).map(function (u) { return machineName(u.machine); }).join(', ');
+        return '<button type="button" class="qb-svc' + (s.id === st.serviceId ? ' on' : '') + '" data-svc="' + esc(s.id) + '">' +
+          '<span class="qb-svc-name">' + esc(s.emoji || '🌿') + ' ' + esc(s.nameMn) + '</span>' +
+          '<small>' + s.minutes + ' мин · ' + money(s.price) + (prev ? ' · өмнөх' : '') + '</small>' +
+          (mach ? '<small class="qb-mach">🔧 ' + esc(mach) + '</small>' : '') + '</button>';
       }).join('') + '</div>';
+    }
 
-      /* slots and lookups redraw while the caller is typing: keep the cursor where it was */
+    function timesHtml() {
+      var staffChips = isOwnerRole() && st.staffList.length > 1
+        ? '<div class="qb-row wrap">' + st.staffList.map(function (s) {
+            return '<button type="button" class="qb-chip' + (s.id === st.staffId ? ' on' : '') + '" data-staff="' + esc(s.id) + '"' + (s.working ? '' : ' disabled') + '>' +
+              esc(s.name) + (s.working ? '' : ' · амарна') + '</button>';
+          }).join('') + '</div>' : '';
+      var days = '<div class="qb-row qb-days">' + dayChips(st.date, 'data-day') + '</div>';
+      var body;
+      if (!st.serviceId) body = '<p class="muted small">Эхлээд үйлчилгээгээ сонгоно уу.</p>';
+      else if (!st.staffId) body = '<p class="qb-warn">Энэ өдөр ажиллах ажилтан алга.</p>';
+      else if (!st.slots) body = '<p class="muted small">Чөлөөтэй цаг хайж байна…</p>';
+      else if (st.slotInfo.problem) body = '<p class="qb-warn">Энэ үйлчилгээний машины тохиргоо буруу байна — эзэмшигчид хэлнэ үү.</p>';
+      else if (st.slotInfo.closed) body = '<p class="qb-warn">🌙 Энэ өдөр амарна.</p>';
+      else if (!st.slots.length) body = '<p class="qb-warn">Энэ өдөр чөлөөтэй цаг алга — өөр өдөр сонгоно уу.</p>';
+      else {
+        var byHour = {};
+        st.slots.forEach(function (t) { (byHour[t.slice(0, 2)] = byHour[t.slice(0, 2)] || []).push(t); });
+        body = Object.keys(byHour).sort().map(function (h) {
+          return '<div class="qb-hour"><span class="qb-h">' + h + '</span><div class="qb-slots">' + byHour[h].map(function (t) {
+            return '<button type="button" class="qb-slot' + (t === st.time ? ' on' : '') + '" data-time="' + t + '">' + t + '</button>';
+          }).join('') + '</div></div>';
+        }).join('');
+      }
+      return staffChips + days + body;
+    }
+
+    function draw() {
+      /* lookups and slot loads redraw while the caller is typing: keep the cursor where it was */
       var act = document.activeElement;
       var keep = act && host.contains(act) && act.id ? { id: act.id, pos: act.selectionStart } : null;
-      host.innerHTML =
-        '<h3 style="margin-bottom:10px">📞 Утасны захиалга</h3>' +
-        '<div class="qb-step"><span class="qb-n">1</span><div class="qb-body">' + who + '</div></div>' +
-        '<div class="qb-step"><span class="qb-n">2</span><div class="qb-body"><div class="qb-svcs">' + svcs.map(function (s) {
-          var prev = c && c.lastServiceId === s.id;
-          return '<button type="button" class="qb-svc' + (s.id === st.serviceId ? ' on' : '') + '" data-svc="' + esc(s.id) + '">' +
-            esc(s.emoji || '🌿') + ' ' + esc(s.nameMn) + '<small>' + s.minutes + 'мин · ' + money(s.price) + (prev ? ' · өмнөх' : '') + '</small></button>';
-        }).join('') + '</div></div></div>' +
-        '<div class="qb-step"><span class="qb-n">3</span><div class="qb-body">' +
-        '<div class="row" style="flex-wrap:wrap;margin-bottom:8px">' + staffSel + '</div>' +
-        '<div class="qb-days">' + dayChips() + '</div>' + slotsHtml + '</div></div>' +
-        '<details class="qb-more"' + (host.dataset.note ? ' open' : '') + '><summary>+ Тэмдэглэл</summary><input id="qbNote" class="cell-input" maxlength="500" placeholder="ж: анх удаа ирнэ, хүзүү өвддөг" value="' + esc(host.dataset.note || '') + '"></details>' +
-        '<div class="modal-actions"><button type="button" class="btn btn-ghost" id="qbCancel">Болих</button>' +
-        '<button type="button" class="btn btn-primary" id="qbOk"' + (ready() ? '' : ' disabled') + '>' +
-        (ready() ? 'Захиалах · ' + esc(st.time) + ' · ' + esc(svcName(st.serviceId)) : 'Захиалах') + '</button></div>';
+      keepPlace(host, function () {
+        host.innerHTML =
+          '<div class="sheet-head"><b>📞 Утасны захиалга</b><button type="button" class="sheet-x" id="qbCancel" aria-label="Хаах">✕</button></div>' +
+          '<div class="sheet-body">' +
+          '<div class="qb-step" id="qbS1"><span class="qb-n">1</span><div class="qb-body">' + whoHtml() + '</div></div>' +
+          '<div class="qb-step" id="qbS2"><span class="qb-n">2</span><div class="qb-body">' + servicesHtml() + '</div></div>' +
+          '<div class="qb-step" id="qbS3"><span class="qb-n">3</span><div class="qb-body">' + timesHtml() + '</div></div>' +
+          '<details class="qb-more"' + (st.note ? ' open' : '') + '><summary>+ Тэмдэглэл</summary><input id="qbNote" class="cell-input big-input" maxlength="500" placeholder="ж: анх удаа ирнэ, хүзүү өвддөг" value="' + esc(st.note) + '"></details>' +
+          '</div>' +
+          '<div class="sheet-foot"><button type="button" class="btn btn-primary btn-block big-btn" id="qbOk"' + (ready() ? '' : ' disabled') + '>' + esc(okLabel()) + '</button></div>';
+      });
       bind();
       if (keep) {
         var el = host.querySelector('#' + keep.id);
         if (el) { el.focus(); try { el.setSelectionRange(keep.pos, keep.pos); } catch (e) { /* not a text field */ } }
+      }
+      /* after a pick, bring the next step into view (one thumb, no hunting) — for the times,
+         once they have loaded, so the redraw that shows them cannot cut the scroll short */
+      if (st.jump && (st.jump !== 'qbS3' || st.slots !== null || !st.serviceId || !st.staffId)) {
+        var j = host.querySelector('#' + st.jump);
+        st.jump = null;
+        if (j && j.scrollIntoView) j.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }
 
@@ -503,11 +593,12 @@
       api('/api/admin/free?date=' + st.date + '&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId))
         .then(function (d) {
           if (key !== st.date + st.serviceId + st.staffId) return;
-          st.slots = d;
-          if (st.time && !d.slots.some(function (x) { return x.time === st.time && x.free; })) st.time = null;
+          st.slots = d.slots;
+          st.slotInfo = { closed: d.closed, problem: d.problem };
+          if (st.time && d.slots.indexOf(st.time) < 0) st.time = null;
           draw();
         })
-        .catch(function () { st.slots = { closed: false, slots: [] }; draw(); });
+        .catch(function () { st.slots = []; st.slotInfo = {}; draw(); });
     }
     function loadStaff() {
       api('/api/admin/calendar?date=' + st.date).then(function (cal) {
@@ -523,23 +614,22 @@
     function lookup(qv) {
       clearTimeout(lookupTimer);
       var seq = ++lookupSeq;
-      if (qv.length < 4) { st.matches = []; draw(); focusPhone(); return; }
+      if (qv.length < 4) { st.matches = []; draw(); return; }
       lookupTimer = setTimeout(function () {
         api('/api/admin/lookup?q=' + encodeURIComponent(qv)).then(function (list) {
           if (seq !== lookupSeq) return;
           st.matches = list;
           var exact = qv.length === 8 && list.find(function (x) { return x.phone === qv; });
-          if (exact) pick(exact); else { draw(); focusPhone(); }
+          if (exact) pick(exact); else draw();
         }).catch(function () {});
       }, 180);
-    }
-    function focusPhone() {
-      var p = host.querySelector('#qbPhone');
-      if (p) { p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
     }
     function pick(c) {
       st.client = c; st.matches = [];
       if (!st.serviceId && c.lastServiceId && (servicesCache || []).some(function (s) { return s.id === c.lastServiceId && s.active; })) st.serviceId = c.lastServiceId;
+      /* the number is complete: drop the keyboard and move on */
+      if (document.activeElement && host.contains(document.activeElement)) document.activeElement.blur();
+      st.jump = st.serviceId ? 'qbS3' : 'qbS2';
       loadSlots();
     }
 
@@ -551,6 +641,7 @@
         st.newName = nm.value;
         var ok = host.querySelector('#qbOk');
         ok.disabled = !ready();
+        ok.textContent = okLabel();
       };
       host.querySelectorAll('[data-match]').forEach(function (b) {
         b.onclick = function () { pick(st.matches[Number(b.getAttribute('data-match'))]); };
@@ -558,14 +649,15 @@
       var ch = host.querySelector('#qbChange');
       if (ch) ch.onclick = function () { st.client = null; st.phone = ''; draw(); focusPhone(); };
       var np = host.querySelector('#qbNoPhone');
-      if (np) np.onclick = function () { host.dataset.nophone = '1'; draw(); var n = host.querySelector('#qbName'); if (n) n.focus(); };
+      if (np) np.onclick = function () { st.noPhone = true; draw(); var n = host.querySelector('#qbName'); if (n) n.focus(); };
       var bp = host.querySelector('#qbBackPhone');
-      if (bp) bp.onclick = function () { host.dataset.nophone = ''; st.newName = ''; draw(); focusPhone(); };
+      if (bp) bp.onclick = function () { st.noPhone = false; st.newName = ''; draw(); focusPhone(); };
       host.querySelectorAll('[data-svc]').forEach(function (b) {
-        b.onclick = function () { st.serviceId = b.getAttribute('data-svc'); loadSlots(); };
+        b.onclick = function () { st.serviceId = b.getAttribute('data-svc'); st.jump = 'qbS3'; loadSlots(); };
       });
-      var sf = host.querySelector('#qbStaff');
-      if (sf) sf.onchange = function () { st.staffId = sf.value; loadSlots(); };
+      host.querySelectorAll('[data-staff]').forEach(function (b) {
+        b.onclick = function () { st.staffId = b.getAttribute('data-staff'); st.time = null; loadSlots(); };
+      });
       host.querySelectorAll('[data-day]').forEach(function (b) {
         b.onclick = function () { st.date = b.getAttribute('data-day'); st.time = null; loadStaff(); };
       });
@@ -573,72 +665,318 @@
         b.onclick = function () { st.time = b.getAttribute('data-time'); draw(); };
       });
       var note = host.querySelector('#qbNote');
-      if (note) note.oninput = function () { host.dataset.note = note.value; };
+      if (note) note.oninput = function () { st.note = note.value; };
       host.querySelector('#qbCancel').onclick = closeModal;
       host.querySelector('#qbOk').onclick = submit;
+    }
+    function focusPhone() {
+      var p = host.querySelector('#qbPhone');
+      if (p) { p.focus(); p.setSelectionRange(p.value.length, p.value.length); }
     }
     function submit() {
       if (!ready()) return;
       var btn = host.querySelector('#qbOk');
       btn.disabled = true;
-      var body = { serviceId: st.serviceId, staffId: st.staffId, date: st.date, time: st.time, via: 'phone', note: host.dataset.note || '' };
+      var body = { serviceId: st.serviceId, staffId: st.staffId, date: st.date, time: st.time, via: 'phone', note: st.note };
       if (st.client) body.customerId = st.client.id;
       else { body.phone = st.phone; body.name = st.newName.trim(); }
       api('/api/admin/walkin', { method: 'POST', body: body }).then(function (d) {
         closeModal();
-        toast('Захиалга нэмэгдлээ ✓ ' + st.time + (d.customerCreated ? ' — шинэ үйлчлүүлэгч бүртгэгдлээ' : ''), 'ok');
-        if (tab === 'cal') { calDate = st.date; loadCalendar(); }
-        else if (tab === 'bookings') loadBookings();
-        else if (tab === 'users') loadUsers();
+        toast('Захиалга нэмэгдлээ ✓ ' + dayLabel(st.date) + ' ' + st.time + (d.customerCreated ? ' — шинэ үйлчлүүлэгч бүртгэгдлээ' : ''), 'ok');
+        refreshCurrent(st.date);
       }).catch(function (e) {
-        var map = { slot_taken: 'Энэ цаг дөнгөж сая авагдлаа — өөр цаг сонгоно уу', date_out_of_range: 'Огноо захиалгын хугацаанаас хол байна', bad_time: 'Цаг сонгоно уу' };
-        toast((e && map[e.error]) || 'Алдаа гарлаа', 'err');
+        toast(bookingError(e), 'err');
         btn.disabled = false;
         if (e && e.error === 'slot_taken') { st.time = null; loadSlots(); }
       });
     }
 
-    /* Enter books from anywhere in the dialog (focus often sits on a clicked button) */
+    /* Enter books from anywhere in the sheet (focus often sits on a tapped button) */
     function onKey(e) {
       if (!document.contains(host)) { document.removeEventListener('keydown', onKey); return; }
       if (e.key === 'Enter' && e.target.id !== 'qbNote' && ready()) { e.preventDefault(); submit(); }
     }
     document.addEventListener('keydown', onKey);
-    ensureServices().then(function () { draw(); focusPhone(); loadStaff(); });
+    Promise.all([ensureServices(), ensureMachines()]).then(function () {
+      draw();
+      if (!st.client) focusPhone();
+      loadStaff();
+    });
+  }
+
+  /* redraw a sheet without losing the user's place: its scroll and the day strip's position */
+  function keepPlace(host, fn) {
+    var body = host.querySelector('.sheet-body'), strip = host.querySelector('.qb-days');
+    var top = body ? body.scrollTop : 0, left = strip ? strip.scrollLeft : null;
+    fn();
+    body = host.querySelector('.sheet-body');
+    strip = host.querySelector('.qb-days');
+    if (body) body.scrollTop = top;
+    if (strip) {
+      if (left !== null) strip.scrollLeft = left;
+      else { var on = strip.querySelector('.on'); if (on) strip.scrollLeft = Math.max(0, on.offsetLeft - 60); }
+    }
+  }
+
+  function bookingError(e) {
+    var reason = e && e.reason;
+    if (reason === 'machine_busy') return 'Машин тэр цагт дөнгөж сая захиалагдлаа — өөр цаг сонгоно уу';
+    if (reason === 'staff_busy') return 'Тэр цагт ажилтан завгүй болсон байна — өөр цаг сонгоно уу';
+    var map = {
+      slot_taken: 'Энэ цаг дөнгөж сая авагдлаа — өөр цаг сонгоно уу', date_out_of_range: 'Огноо захиалгын хугацаанаас хол байна',
+      bad_time: 'Цаг сонгоно уу', bad_staff: 'Ажилтан сонгоно уу', outside_hours: 'Ажлын цагаас гадуур байна', staff_off: 'Ажилтан тэр өдөр амарна', closed: 'Салон тэр өдөр амарна',
+      machine_not_configured: 'Энэ үйлчилгээний машин тохируулагдаагүй байна', machine_window_outside_service: 'Үйлчилгээний машины цаг буруу тохируулагдсан'
+    };
+    return (e && map[e.error]) || 'Алдаа гарлаа';
+  }
+  /* reload whatever view is open after a booking / block change */
+  function refreshCurrent(date) {
+    if (tab === 'cal') { if (date) calDate = date; loadCalendar(); }
+    else if (tab === 'myday') { if (date) myDate = date; loadMyDay(); }
+    else if (tab === 'machines') { if (date) boardDate = date; loadBoard(); }
+    else if (tab === 'bookings') loadBookings();
+    else if (tab === 'users') loadUsers();
+  }
+
+  /* ================= my day (own bookings only — enforced by the server) ================= */
+  var myDate = todayStr();
+  function dateNavHtml(ds) {
+    return '<div class="day-nav"><button type="button" class="day-arrow" data-nav="-1" aria-label="Өмнөх өдөр">‹</button>' +
+      '<button type="button" class="day-title" data-nav="0"><b>' + esc(dayLabel(ds)) + '</b><small>' + esc(ds) + ' · ' + WD_LONG[weekday(ds)] + '</small></button>' +
+      '<button type="button" class="day-arrow" data-nav="1" aria-label="Дараагийн өдөр">›</button></div>';
+  }
+  function bindDateNav(c, get, set, reload) {
+    c.querySelectorAll('[data-nav]').forEach(function (b) {
+      b.onclick = function () {
+        var n = Number(b.getAttribute('data-nav'));
+        set(n === 0 ? todayStr() : addDays(get(), n));
+        reload();
+      };
+    });
+  }
+
+  function loadMyDay() {
+    var c = document.getElementById('content');
+    api('/api/admin/myday?date=' + myDate).then(function (d) {
+      var s = d.staff;
+      var meta = d.closed ? '<span class="chip cancelled">Салон амарна</span>'
+        : (s && s.working ? '🕙 ' + esc(s.open) + '–' + esc(s.close) + ' ажиллана' : (s ? '<span class="chip noshow">Та энэ өдөр амарна</span>' : '<span class="muted">Танд эмчилгээний хуваарь алга</span>'));
+      var list = d.items.length ? d.items.map(dayItemHtml).join('') : '<div class="empty-day">Энэ өдөр захиалга алга 🌿</div>';
+      c.innerHTML = dateNavHtml(myDate) + '<div class="day-meta">' + meta + '</div>' +
+        (s ? '<div class="big-actions"><button class="btn btn-primary big-btn" id="mdBook">📞 Захиалга нэмэх</button>' +
+          '<button class="btn btn-ghost big-btn" id="mdBlock">🚫 Цаг хаах</button></div>' : '') +
+        '<div class="day-list">' + list + '</div>';
+      bindDateNav(c, function () { return myDate; }, function (v) { myDate = v; }, loadMyDay);
+      var mb = document.getElementById('mdBook');
+      if (mb) mb.onclick = function () { openQuickBook({ date: myDate }); };
+      var mk = document.getElementById('mdBlock');
+      if (mk) mk.onclick = function () { openBlockSheet({ date: myDate, items: d.items, staff: s }); };
+      c.querySelectorAll('[data-item]').forEach(function (el) {
+        el.onclick = function (e) {
+          if (e.target.closest('a')) return; /* tapping the phone number calls */
+          var bk = d.items.find(function (x) { return x.id === el.getAttribute('data-item'); });
+          if (bk) openBookingModal(bk, loadMyDay);
+        };
+      });
+      c.querySelectorAll('[data-unblock]').forEach(function (b) {
+        b.onclick = function () {
+          confirmDlg('Энэ хаалтыг болиулах уу?').then(function (yes) {
+            if (!yes) return;
+            api('/api/admin/blocks/' + b.getAttribute('data-unblock'), { method: 'DELETE' })
+              .then(function () { toast('Нээгдлээ ✓', 'ok'); loadMyDay(); })
+              .catch(function () { toast('Алдаа гарлаа', 'err'); });
+          });
+        };
+      });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+  function dayItemHtml(x) {
+    if (x.kind === 'block') {
+      return '<div class="day-item is-block"><div class="di-time">' + esc(x.time) + '<small>' + esc(x.until) + '</small></div>' +
+        '<div class="di-body"><b>🚫 ' + esc(x.note || 'Хаасан цаг') + '</b><div class="muted small">Зөвхөн таны цаг — машин чөлөөтэй хэвээр</div></div>' +
+        '<button type="button" class="mini-btn di-act" data-unblock="' + esc(x.id) + '">Нээх</button></div>';
+    }
+    var dim = x.status === 'cancelled' || x.status === 'noshow';
+    return '<div class="day-item' + (dim ? ' is-dim' : '') + '" data-item="' + esc(x.id) + '" role="button" tabindex="0">' +
+      '<div class="di-time">' + esc(x.time) + '<small>' + esc(addMinutes(x.time, x.minutes)) + '</small></div>' +
+      '<div class="di-body"><b>' + esc(x.user.name) + '</b>' + (x.walkIn ? ' <span class="pill">зочин</span>' : '') +
+      (x.user.phone ? ' <a class="di-call" href="tel:' + esc(x.user.phone) + '">📞 ' + esc(x.user.phone) + '</a>' : '') +
+      '<div class="small">' + esc(x.service ? x.service.nameMn : '') + ' · ' + x.minutes + ' мин</div>' +
+      (x.machines && x.machines.length ? '<div class="di-mach">' + x.machines.map(function (h) {
+        return '<span>🔧 ' + esc(h.name) + ' ' + esc(h.from) + '–' + esc(h.to) + '</span>';
+      }).join('') + '</div>' : '') + '</div>' +
+      '<span class="chip ' + esc(x.status) + '">' + (ST_LABEL[x.status] || x.status) + '</span></div>';
+  }
+
+  /* ================= block time =================
+     A block makes only that staff member unavailable — every machine stays bookable
+     by the others. Staff block their own time; the owner can block anyone's. */
+  function openBlockSheet(opts) {
+    var st = { date: opts.date || myDate, staffId: opts.staffId || '', from: opts.from ? toMinutes(opts.from) : null, dur: 60, note: '', items: null, staff: null };
+    var host = openSheet('<div id="bs" class="sheet-inner"></div>').querySelector('#bs');
+    var DURS = [[30, '30 мин'], [60, '1 цаг'], [90, '1.5 цаг'], [120, '2 цаг'], [180, '3 цаг'], [0, 'Өдрийн үлдсэн хэсэг']];
+    function bounds() {
+      var s = st.staff;
+      return s && s.working ? [toMinutes(s.open), toMinutes(s.close)] : [toMinutes(salonHours.open), toMinutes(salonHours.close)];
+    }
+    function endOf(fromMin) { var b = bounds(); return st.dur ? fromMin + st.dur : Math.max(b[1], fromMin + 15); }
+    /* that day's bookings that still hold time, and earlier blocks */
+    function busy() {
+      return (st.items || []).filter(function (x) { return x.kind === 'block' || x.status === 'confirmed' || x.status === 'done'; })
+        .map(function (x) { var s0 = toMinutes(x.time); return [s0, s0 + x.minutes]; });
+    }
+    function clashes(fromMin) {
+      var e = endOf(fromMin);
+      return busy().some(function (b) { return fromMin < b[1] && b[0] < e; });
+    }
+    function draw() {
+      var b = bounds(), times = [];
+      for (var t = b[0]; t < b[1]; t += 15) times.push(t);
+      var byHour = {};
+      times.forEach(function (t) { var h = String(Math.floor(t / 60)).padStart(2, '0'); (byHour[h] = byHour[h] || []).push(t); });
+      var to = st.from !== null ? endOf(st.from) : null;
+      var who = st.staffId && st.staff ? ' — ' + esc(st.staff.name) : '';
+      keepPlace(host, function () {
+        host.innerHTML =
+          '<div class="sheet-head"><b>🚫 Цаг хаах' + who + '</b><button type="button" class="sheet-x" id="bsX" aria-label="Хаах">✕</button></div>' +
+          '<div class="sheet-body">' +
+          '<p class="muted small" style="margin:10px 0 8px">Зөвхөн ажилтныг завгүй болгоно — машиныг бусад ажилтан ашиглаж болно.</p>' +
+          '<div class="qb-row qb-days">' + dayChips(st.date, 'data-day') + '</div>' +
+          '<h4 class="bs-h">Хэр удаан</h4><div class="qb-row wrap">' + DURS.map(function (d) {
+            return '<button type="button" class="qb-chip' + (st.dur === d[0] ? ' on' : '') + '" data-dur="' + d[0] + '">' + d[1] + '</button>';
+          }).join('') + '</div>' +
+          '<h4 class="bs-h">Хэдээс</h4>' +
+          (st.items === null ? '<p class="muted small">Ачаалж байна…</p>' : Object.keys(byHour).sort().map(function (h) {
+            return '<div class="qb-hour"><span class="qb-h">' + h + '</span><div class="qb-slots">' + byHour[h].map(function (t) {
+              var bad = clashes(t);
+              return '<button type="button" class="qb-slot' + (st.from === t ? ' on' : '') + '" data-from="' + t + '"' + (bad ? ' disabled title="Захиалга эсвэл хаалттай давхцана"' : '') + '>' + addMinutes('00:00', t) + '</button>';
+            }).join('') + '</div></div>';
+          }).join('')) +
+          '<input id="bsNote" class="cell-input big-input" maxlength="100" placeholder="Шалтгаан (заавал биш): хувийн, эмч, завсарлага…" value="' + esc(st.note) + '">' +
+          '</div>' +
+          '<div class="sheet-foot"><button type="button" class="btn btn-primary btn-block big-btn" id="bsOk"' + (st.from !== null ? '' : ' disabled') + '>' +
+          (st.from !== null ? 'Хаах · ' + esc(dayLabel(st.date)) + ' ' + addMinutes('00:00', st.from) + '–' + addMinutes('00:00', to) : 'Эхлэх цагаа сонгоно уу') + '</button></div>';
+      });
+      host.querySelector('#bsX').onclick = closeModal;
+      host.querySelectorAll('[data-day]').forEach(function (x) {
+        x.onclick = function () { st.date = x.getAttribute('data-day'); st.from = null; st.items = null; draw(); reloadDay(); };
+      });
+      host.querySelectorAll('[data-from]').forEach(function (x) {
+        x.onclick = function () { st.from = Number(x.getAttribute('data-from')); draw(); };
+      });
+      host.querySelectorAll('[data-dur]').forEach(function (x) {
+        x.onclick = function () { st.dur = Number(x.getAttribute('data-dur')); if (st.from !== null && clashes(st.from)) st.from = null; draw(); };
+      });
+      host.querySelector('#bsNote').oninput = function (e) { st.note = e.target.value; };
+      host.querySelector('#bsOk').onclick = submit;
+    }
+    function reloadDay() {
+      api('/api/admin/myday?date=' + st.date + (st.staffId ? '&staffId=' + encodeURIComponent(st.staffId) : ''))
+        .then(function (d) { st.items = d.items; st.staff = d.staff; if (st.from !== null && clashes(st.from)) st.from = null; draw(); })
+        .catch(function () { st.items = []; draw(); });
+    }
+    function submit() {
+      if (st.from === null) return;
+      var btn = host.querySelector('#bsOk');
+      btn.disabled = true;
+      var to = endOf(st.from);
+      var body = { date: st.date, from: addMinutes('00:00', st.from), to: to >= 1440 ? '24:00' : addMinutes('00:00', to), note: st.note };
+      if (st.staffId) body.staffId = st.staffId;
+      api('/api/admin/blocks', { method: 'POST', body: body })
+        .then(function () { closeModal(); toast('Цаг хаагдлаа ✓', 'ok'); refreshCurrent(st.date); })
+        .catch(function (e) {
+          btn.disabled = false;
+          toast(e && e.error === 'staff_busy' ? 'Энэ хугацаанд захиалга эсвэл өөр хаалт байна' : 'Алдаа гарлаа', 'err');
+          if (e && e.error === 'staff_busy') reloadDay();
+        });
+    }
+    if (opts.items) {
+      st.items = opts.items; st.staff = opts.staff || null;
+      if (st.from !== null && clashes(st.from)) st.from = null;
+      draw();
+    } else { draw(); reloadDay(); }
+  }
+
+  /* ================= machine board (shared, anonymous) ================= */
+  var boardDate = todayStr();
+  function loadBoard() {
+    var c = document.getElementById('content');
+    api('/api/admin/machines/board?date=' + boardDate).then(function (d) {
+      var o = toMinutes(salonHours.open), cl = toMinutes(salonHours.close), span = Math.max(cl - o, 60);
+      function pct(t) { return Math.max(0, Math.min(100, ((toMinutes(t) - o) / span) * 100)); }
+      var ticks = '';
+      for (var h = Math.ceil(o / 60); h * 60 <= cl; h++) ticks += '<i style="left:' + pct(String(h).padStart(2, '0') + ':00') + '%"><span>' + h + '</span></i>';
+      var cards = d.machines.map(function (mc) {
+        var segs = mc.busy.map(function (x) {
+          var l = pct(x.from), w = Math.max(pct(x.to) - l, 0.8);
+          return '<b class="seg' + (x.full ? ' full' : '') + '" style="left:' + l + '%;width:' + w + '%" title="' + esc(x.from + '–' + x.to) + '"></b>';
+        }).join('');
+        return '<div class="card mboard">' +
+          '<div class="mb-head"><b>' + esc(mc.name) + '</b>' + (mc.placeholder ? ' <span class="chip noshow">PLACEHOLDER</span>' : '') +
+          '<span class="muted small">' + mc.units + ' ширхэг</span></div>' +
+          '<div class="mtrack">' + ticks + segs + '</div>' +
+          (mc.busy.length ? '<ul class="mlist">' + mc.busy.map(function (x) {
+            return '<li>' + (x.full ? '🔴' : '🟡') + ' ' + esc(mc.name) + ' — ашиглагдаж байна <b>' + esc(x.from) + '–' + esc(x.to) + '</b>' +
+              (mc.units > 1 ? ' <span class="muted">(' + x.inUse + '/' + mc.units + ')</span>' : '') + '</li>';
+          }).join('') + '</ul>' : '<p class="muted small">Өдөржин чөлөөтэй ✓</p>') +
+          (mc.cleaning.length ? '<p class="muted small">🧽 Цэвэрлэгээ: ' + mc.cleaning.map(function (x) { return esc(x.from) + '–' + esc(x.to); }).join(', ') + '</p>' : '') +
+          '</div>';
+      }).join('');
+      c.innerHTML = dateNavHtml(boardDate) +
+        '<p class="muted small" style="margin:6px 0 12px">Бүх ажилтанд харагдана. Хэн, ямар үйлчлүүлэгч гэдэг нь харагдахгүй — зөвхөн машин хэзээ завгүйг.</p>' +
+        (cards || '<p class="muted">Машин бүртгэгдээгүй байна (config.json → machines).</p>');
+      bindDateNav(c, function () { return boardDate; }, function (v) { boardDate = v; }, loadBoard);
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+
+  /* change a booking's status; cancelling asks first because it frees the time and machines at once */
+  function setStatus(id, status, after) {
+    var go = function () {
+      api('/api/admin/bookings/' + id + '/status', { method: 'POST', body: { status: status } })
+        .then(function () { toast(status === 'cancelled' ? 'Цуцлагдлаа — цаг, машин чөлөөлөгдлөө' : 'Хадгалагдлаа ✓', 'ok'); after(); })
+        .catch(function (e) { toast(bookingError(e), 'err'); after(); });
+    };
+    if (status !== 'cancelled') return go();
+    confirmDlg('Захиалгыг цуцлах уу? Цаг болон машин шууд чөлөөлөгдөнө.').then(function (yes) { if (yes) go(); });
   }
 
   function openBookingModal(bk, after) {
-    var staffOpts = (calCache ? calCache.staff : []).map(function (s) {
-      return '<option value="' + esc(s.id) + '"' + (bk.staffId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+    var staffList = isOwnerRole() && bk.status === 'confirmed' && calCache && calCache.date === bk.date ? calCache.staff : [];
+    var mach = (bk.machines || []).map(function (h) {
+      return '<div>🔧 ' + esc(h.name) + ' <b>' + esc(h.from) + '–' + esc(h.to) + '</b>' +
+        (h.until !== h.to ? ' <span class="muted">· цэвэрлэгээ ' + esc(h.until) + ' хүртэл</span>' : '') + '</div>';
     }).join('');
     var m = openModal(
       '<h3>' + esc(bk.user.name) + (bk.walkIn ? ' <span class="pill">зочин</span>' : '') + '</h3>' +
-      '<p class="small muted">' + esc(bk.service ? bk.service.nameMn : '') + ' · ' + bk.date + ' ' + bk.time + ' · ' + money(bk.amount) +
-      '<br>Төлбөр: ' + (PAID_LABEL[bk.paid] || bk.paid) + ' · Төлөв: ' + (ST_LABEL[bk.status] || bk.status) + '</p>' +
-      (bk.user.phone ? '<p><a href="tel:' + esc(bk.user.phone) + '">📞 ' + esc(bk.user.phone) + '</a></p>' : '') +
-      (isOwnerRole() && bk.status === 'confirmed' ? '<div class="field mt"><label>Ажилтан солих</label><select id="bmStaff">' + staffOpts + '</select></div>' : '') +
-      '<div class="bk-actions mt">' +
+      '<p class="small"><b>' + esc(dayLabel(bk.date)) + ' ' + esc(bk.time) + '–' + esc(addMinutes(bk.time, bk.minutes)) + '</b> · ' +
+      esc(bk.service ? bk.service.nameMn : '') + ' · ' + money(bk.amount) + '</p>' +
+      (mach ? '<div class="small bm-mach">' + mach + '</div>' : '') +
+      '<p class="small muted">Төлбөр: ' + (PAID_LABEL[bk.paid] || bk.paid) + ' · Төлөв: ' + (ST_LABEL[bk.status] || bk.status) + '</p>' +
+      (bk.user.phone ? '<a class="btn btn-ghost btn-block mt" href="tel:' + esc(bk.user.phone) + '">📞 ' + esc(bk.user.phone) + '</a>' : '') +
+      (staffList.length > 1 ? '<div class="field mt"><label>Ажилтан солих</label><div class="qb-row wrap">' + staffList.map(function (s) {
+        return '<button type="button" class="qb-chip' + (s.id === bk.staffId ? ' on' : '') + '" data-assign="' + esc(s.id) + '">' + esc(s.name) + '</button>';
+      }).join('') + '</div></div>' : '') +
+      '<div class="bm-actions mt">' +
       (bk.status === 'confirmed'
-        ? '<button data-st="done">Болсон ✓</button><button data-st="noshow">Ирээгүй</button><button data-st="cancelled">Цуцлах</button>'
-        : '<button data-st="confirmed">Сэргээх</button>') +
+        ? '<button class="btn btn-primary" data-st="done">Болсон ✓</button><button class="btn btn-ghost" data-st="noshow">Ирээгүй</button><button class="btn btn-danger" data-st="cancelled">Цуцлах</button>'
+        : '<button class="btn btn-ghost" data-st="confirmed">Сэргээх</button>') +
       '</div>' +
-      (bk.user.id ? '<button class="btn btn-ghost btn-block mt" id="bmProfile">👤 Үйлчлүүлэгчийн түүх үзэх</button>' : '') +
+      (bk.user.id ? '<button class="btn btn-ghost btn-block mt" id="bmProfile">👤 Үйлчлүүлэгчийн түүх</button>' : '') +
       '<div class="modal-actions"><button class="btn btn-ghost" id="bmClose">Хаах</button></div>'
     );
     m.querySelector('#bmClose').onclick = closeModal;
     m.querySelectorAll('[data-st]').forEach(function (btn) {
-      btn.onclick = function () {
-        api('/api/admin/bookings/' + bk.id + '/status', { method: 'POST', body: { status: btn.getAttribute('data-st') } })
-          .then(function () { closeModal(); toast('Хадгалагдлаа ✓', 'ok'); after(); })
-          .catch(function () { toast('Алдаа гарлаа', 'err'); });
+      btn.onclick = function () { closeModal(); setStatus(bk.id, btn.getAttribute('data-st'), after); };
+    });
+    m.querySelectorAll('[data-assign]').forEach(function (b) {
+      b.onclick = function () {
+        var sid = b.getAttribute('data-assign');
+        if (sid === bk.staffId) return;
+        api('/api/admin/bookings/' + bk.id + '/assign', { method: 'POST', body: { staffId: sid } })
+          .then(function () { closeModal(); toast('Ажилтан солигдлоо ✓', 'ok'); after(); })
+          .catch(function (e) { toast(e && e.reason === 'staff_busy' ? 'Тэр ажилтан тэр цагт завгүй байна' : bookingError(e), 'err'); });
       };
     });
-    var sel = m.querySelector('#bmStaff');
-    if (sel) sel.onchange = function () {
-      api('/api/admin/bookings/' + bk.id + '/assign', { method: 'POST', body: { staffId: sel.value } })
-        .then(function () { toast('Ажилтан солигдлоо ✓', 'ok'); after(); })
-        .catch(function (e) { toast(e && e.error === 'slot_taken' ? 'Тэр ажилтны цаг давхцаж байна' : 'Алдаа гарлаа', 'err'); });
-    };
     var pf = m.querySelector('#bmProfile');
     if (pf) pf.onclick = function () { closeModal(); openClientProfile(bk.user.id); };
   }
@@ -649,7 +987,7 @@
       var c = document.getElementById('content');
       var s = d.stats;
       function bkRow(b) {
-        return '<tr><td><b>' + esc(b.date) + '</b><br>' + esc(b.time) + '</td>' +
+        return '<tr><td><b>' + esc(b.date) + '</b><br>' + esc(b.time) + '–' + esc(addMinutes(b.time, b.minutes)) + '</td>' +
           '<td>' + esc(b.user.name) + (b.walkIn ? ' <span class="pill">зочин</span>' : '') + '<br>' +
           (b.user.phone ? '<a href="tel:' + esc(b.user.phone) + '" class="muted small">' + esc(b.user.phone) + '</a>' : '') + '</td>' +
           '<td>' + esc(b.service ? b.service.nameMn : '?') + '<br><span class="muted small">' + money(b.amount) + ' · ' + (PAID_LABEL[b.paid] || b.paid) + '</span></td>' +
@@ -671,11 +1009,7 @@
         '<div class="card"><h3 style="margin-bottom:10px">Өмнөх / бусад</h3>' +
         (d.past.length ? '<table><tr><th>Огноо</th><th>Үйлчлүүлэгч</th><th>Үйлчилгээ</th><th>Ажилтан</th><th>Төлөв</th></tr>' + d.past.map(bkRow).join('') + '</table>' : '<p class="muted">Хоосон.</p>') + '</div>';
       c.querySelectorAll('[data-st]').forEach(function (btn) {
-        btn.onclick = function () {
-          api('/api/admin/bookings/' + btn.getAttribute('data-id') + '/status', { method: 'POST', body: { status: btn.getAttribute('data-st') } })
-            .then(function () { toast('Хадгалагдлаа ✓', 'ok'); loadBookings(); })
-            .catch(function () { toast('Алдаа гарлаа', 'err'); });
-        };
+        btn.onclick = function () { setStatus(btn.getAttribute('data-id'), btn.getAttribute('data-st'), loadBookings); };
       });
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
@@ -775,9 +1109,9 @@
       }).join('');
       var m = openModal(
         '<h3>✅ Үйлчилгээ бүртгэх — ' + esc(u.name) + '</h3>' +
-        '<p class="muted small">Өнгөрсөн эсвэл өнөөдрийн огноо → "болсон" гэж бүртгэнэ. Ирэх огноо → шинэ захиалга болно.</p>' +
+        '<p class="muted small">Өнгөрсөн эсвэл өнөөдрийн үйлчилгээг "болсон" гэж бүртгэнэ. Ирэх цагийг 📅 Цаг товлох-оор захиална.</p>' +
         '<div class="field"><label>Үйлчилгээ</label><select id="rvSvc">' + svcOpts + '</select></div>' +
-        '<div class="row"><div class="field grow"><label>Огноо</label><input id="rvDate" type="date" value="' + date + '"></div>' +
+        '<div class="row"><div class="field grow"><label>Огноо</label><input id="rvDate" type="date" max="' + date + '" value="' + date + '"></div>' +
         '<div class="field grow"><label>Цаг</label><select id="rvTime"></select></div>' +
         '<div class="field grow"><label>Ажилтан</label><select id="rvStaff"></select></div></div>' +
         '<div class="field"><label>Тэмдэглэл (заавал биш — багтай хуваалцана)</label><input id="rvNote" maxlength="500" placeholder="ж: хүзүүнд анхаарсан, дараа удаа LED нэмэх"></div>' +
@@ -787,10 +1121,10 @@
       function fillSlots() {
         var d = m.querySelector('#rvDate').value;
         api('/api/admin/calendar?date=' + d).then(function (cal) {
-          var nowHm = new Date().toTimeString().slice(0, 5);
+          var hm = nowHm();
           var slots = cal.slots || [];
           /* default to the latest slot already started today, else the first one */
-          var pick = d === todayStr() ? (slots.filter(function (t) { return t <= nowHm; }).pop() || slots[0]) : slots[0];
+          var pick = d === todayStr() ? (slots.filter(function (t) { return t <= hm; }).pop() || slots[0]) : slots[0];
           m.querySelector('#rvTime').innerHTML = slots.map(function (t) { return '<option' + (t === pick ? ' selected' : '') + '>' + t + '</option>'; }).join('');
           var cur = m.querySelector('#rvStaff').value || meStaffId;
           m.querySelector('#rvStaff').innerHTML = cal.staff.map(function (s) {
@@ -805,6 +1139,7 @@
         var btn = this;
         var d = m.querySelector('#rvDate').value;
         var note = m.querySelector('#rvNote').value.trim();
+        if (d > todayStr()) { toast('Ирэх цагийг 📅 Цаг товлох-оор захиална уу', 'err'); return; }
         btn.disabled = true;
         api('/api/admin/walkin', {
           method: 'POST',
@@ -814,8 +1149,7 @@
         }).then(function () {
           closeModal(); toast(d <= todayStr() ? 'Үйлчилгээ бүртгэгдлээ ✓' : 'Захиалга нэмэгдлээ ✓', 'ok'); openClientProfile(u.id);
         }).catch(function (e) {
-          var map = { slot_taken: 'Энэ цаг давхцаж байна', date_out_of_range: 'Огноо хэт хол байна (60 хоногоос хуучин эсвэл захиалгын хугацаанаас хойш)', bad_staff: 'Ажилтан сонгоно уу', bad_time: 'Цаг сонгоно уу' };
-          toast((e && map[e.error]) || 'Алдаа гарлаа', 'err'); btn.disabled = false;
+          toast(e && e.error === 'date_out_of_range' ? 'Огноо хэт хуучин байна (60 хоногоос өмнөх)' : bookingError(e), 'err'); btn.disabled = false;
         });
       };
     });
@@ -886,7 +1220,8 @@
       var m = openModal(
         '<h3>' + esc(u.name) + ' <span class="muted small">' + esc(u.phone) + '</span>' + (d.noLogin ? ' <span class="pill">апп-гүй</span>' : '') + '</h3>' +
         '<div class="row" style="flex-wrap:wrap;margin:8px 0">' +
-        '<button class="btn btn-primary btn-sm" id="cpVisit">✅ Үйлчилгээ бүртгэх</button>' +
+        '<button class="btn btn-primary btn-sm" id="cpBook">📅 Цаг товлох</button>' +
+        '<button class="btn btn-ghost btn-sm" id="cpVisit">✅ Болсон үйлчилгээ бүртгэх</button>' +
         '<button class="btn btn-ghost btn-sm" id="cpPlan">🔁 Давтан үйлчилгээ</button>' +
         '<button class="btn btn-ghost btn-sm" id="cpEdit">✎ Мэдээлэл засах</button>' +
         '<a class="btn btn-ghost btn-sm" href="tel:' + esc(u.phone) + '">📞 Залгах</a></div>' +
@@ -925,12 +1260,17 @@
         '<div class="modal-actions"><button class="btn btn-ghost" id="cpClose">Хаах</button></div>'
       );
       m.querySelector('#cpClose').onclick = closeModal;
-      var cu = { id: userId, name: u.name, phone: u.phone, desc: d.desc, skinType: u.skinType, allergies: u.allergies, birthday: u.birthday };
+      var lastDone = d.bookings.find(function (b) { return b.status === 'done'; });
+      var cu = {
+        id: userId, name: u.name, phone: u.phone, desc: d.desc, skinType: u.skinType, allergies: u.allergies, birthday: u.birthday,
+        visits: d.stats.visits, lastVisit: lastDone ? lastDone.date : '', lastServiceName: lastDone && lastDone.service ? lastDone.service.nameMn : ''
+      };
+      m.querySelector('#cpBook').onclick = function () { closeModal(); openQuickBook({ client: cu }); };
       m.querySelector('#cpVisit').onclick = function () { closeModal(); openRecordVisit(cu); };
       m.querySelector('#cpPlan').onclick = function () { closeModal(); openAddPlan(cu); };
       m.querySelector('#cpEdit').onclick = function () { closeModal(); openCustomerForm(cu); };
       m.querySelectorAll('[data-plbook]').forEach(function (b) {
-        b.onclick = function () { closeModal(); openRecordVisit(cu, b.getAttribute('data-plbook')); };
+        b.onclick = function () { closeModal(); openQuickBook({ client: cu, serviceId: b.getAttribute('data-plbook') }); };
       });
       m.querySelectorAll('[data-pldel]').forEach(function (b) {
         b.onclick = function () {
@@ -1121,13 +1461,14 @@
   /* ================= services CRUD ================= */
   var GROUPS = { facial: 'Нүүр', body: 'Бие', other: 'Бусад' };
   function loadServices() {
-    api('/api/admin/services').then(function (list) {
+    Promise.all([api('/api/admin/services'), ensureMachines()]).then(function (res) {
+      var list = res[0];
       servicesCache = list;
       var c = document.getElementById('content');
       c.innerHTML =
         '<div class="row" style="margin-bottom:10px"><p class="muted small" style="flex:1">Шууд мөрөн дээр зас — "Хадгалах" дар. Идэвхгүй үйлчилгээ апп/сайтад харагдахгүй.</p>' +
         '<button class="btn btn-primary btn-sm" id="addSvc">＋ Шинэ үйлчилгээ</button></div>' +
-        '<div class="card"><table><tr><th></th><th>Нэр (МН / EN)</th><th>Бүлэг</th><th>Мин</th><th>Үнэ (₮)</th><th></th><th>Идэвхтэй</th></tr>' +
+        '<div class="card table-scroll"><table><tr><th></th><th>Нэр (МН / EN)</th><th>Бүлэг</th><th>Мин</th><th>Үнэ (₮)</th><th>Машин</th><th></th><th>Идэвхтэй</th></tr>' +
         list.map(function (s) {
           return '<tr data-row="' + s.id + '">' +
             '<td><input class="cell-input" style="width:46px" data-f="emoji" value="' + esc(s.emoji || '') + '"></td>' +
@@ -1137,6 +1478,7 @@
             }).join('') + '</select></td>' +
             '<td><input class="cell-input" style="width:64px" type="number" data-f="minutes" value="' + s.minutes + '" min="15" max="240" step="15"></td>' +
             '<td><input class="cell-input" style="width:100px" type="number" data-f="price" value="' + s.price + '" step="1000" min="0"></td>' +
+            '<td class="small" style="min-width:130px">' + usesSummary(s) + '<br><button class="mini-btn" data-mach="' + s.id + '" style="margin-top:4px">🔧 Машин</button></td>' +
             '<td><button class="mini-btn" data-save="' + s.id + '">Хадгалах</button><br><button class="mini-btn" data-desc="' + s.id + '" style="margin-top:4px">Тайлбар…</button></td>' +
             '<td><input type="checkbox" data-active="' + s.id + '"' + (s.active ? ' checked' : '') + ' style="width:18px;height:18px"></td></tr>';
         }).join('') + '</table></div>';
@@ -1155,7 +1497,9 @@
           var id = btn.getAttribute('data-save');
           api('/api/admin/services/' + id, { method: 'POST', body: collect(id) })
             .then(function () { toast('Хадгалагдлаа ✓', 'ok'); })
-            .catch(function () { toast('Алдаа гарлаа — талбаруудаа шалгана уу', 'err'); });
+            .catch(function (e) {
+              toast(e && e.error === 'machine_window_outside_service' ? 'Машины цаг энэ хугацаанаас хэтэрнэ — эхлээд 🔧 Машин тохиргоог засна уу' : 'Алдаа гарлаа — талбаруудаа шалгана уу', 'err');
+            });
         };
       });
       c.querySelectorAll('[data-active]').forEach(function (cb) {
@@ -1170,6 +1514,9 @@
           var s = servicesCache.find(function (x) { return x.id === btn.getAttribute('data-desc'); });
           openSvcDesc(s);
         };
+      });
+      c.querySelectorAll('[data-mach]').forEach(function (btn) {
+        btn.onclick = function () { openMachineUses(servicesCache.find(function (x) { return x.id === btn.getAttribute('data-mach'); })); };
       });
       document.getElementById('addSvc').onclick = openNewService;
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
@@ -1218,6 +1565,62 @@
       }).then(function () { closeModal(); toast('Нэмэгдлээ ✓', 'ok'); loadServices(); })
         .catch(function () { toast('Алдаа — нэр, минут, үнээ шалгана уу', 'err'); });
     };
+  }
+
+  /* ================= service machine usage (owner) =================
+     Which machines a service occupies and for which part of it: startOffset minutes
+     after the appointment starts, for `minutes`. The machine's own cleaning buffer
+     (config.json) is added after each window automatically. */
+  function usesSummary(s) {
+    var u = s.uses || [];
+    if (!u.length) return '<span class="muted">машингүй</span>';
+    return u.map(function (x) {
+      return esc(machineName(x.machine)) + ' <span class="muted">' + x.startOffset + '–' + (x.startOffset + x.minutes) + ' мин</span>';
+    }).join('<br>');
+  }
+  function openMachineUses(s) {
+    ensureMachines().then(function (machines) {
+      var rows = (s.uses || []).map(function (u) { return { machine: u.machine, minutes: u.minutes, startOffset: u.startOffset }; });
+      var host = openModal('<div id="mu"></div>').querySelector('#mu');
+      function draw() {
+        host.innerHTML = '<h3>🔧 ' + esc(s.nameMn) + ' — машин</h3>' +
+          '<p class="muted small">Үйлчилгээ нийт <b>' + s.minutes + ' мин</b>. Машиныг эхнээсээ хэдэн минутын дараа, хэр удаан эзлэхийг заана. ' +
+          'Жишээ: 90 мин үйлчилгээ, машин 15-р минутаас 60 мин → 15–75-р минут. Машингүй бол хоосон үлдээнэ — ажилтны цаг л эзэлнэ.</p>' +
+          (machines.length ? '' : '<p class="qb-warn">config.json-д машин алга.</p>') +
+          rows.map(function (r, i) {
+            return '<div class="mu-row"><div class="qb-row wrap">' + machines.map(function (mc) {
+              return '<button type="button" class="qb-chip' + (r.machine === mc.id ? ' on' : '') + '" data-mrow="' + i + '" data-mid="' + esc(mc.id) + '">' + esc(mc.name) + '</button>';
+            }).join('') + '</div>' +
+              '<div class="row"><label class="small">Хэддүгээр минутаас<input type="number" inputmode="numeric" min="0" step="5" class="cell-input" data-off="' + i + '" value="' + r.startOffset + '"></label>' +
+              '<label class="small">Хэдэн минут<input type="number" inputmode="numeric" min="5" step="5" class="cell-input" data-len="' + i + '" value="' + r.minutes + '"></label>' +
+              '<button type="button" class="mini-btn" data-del="' + i + '" aria-label="Хасах">🗑</button></div></div>';
+          }).join('') +
+          (machines.length && rows.length < 4 ? '<button type="button" class="btn btn-ghost btn-sm" id="muAdd">＋ Машин нэмэх</button>' : '') +
+          '<div class="modal-actions"><button class="btn btn-ghost" id="muCancel">Болих</button><button class="btn btn-primary" id="muSave">Хадгалах</button></div>';
+        host.querySelectorAll('[data-mrow]').forEach(function (b) {
+          b.onclick = function () { rows[Number(b.getAttribute('data-mrow'))].machine = b.getAttribute('data-mid'); draw(); };
+        });
+        host.querySelectorAll('[data-off]').forEach(function (inp) { inp.oninput = function () { rows[Number(inp.getAttribute('data-off'))].startOffset = Number(inp.value); }; });
+        host.querySelectorAll('[data-len]').forEach(function (inp) { inp.oninput = function () { rows[Number(inp.getAttribute('data-len'))].minutes = Number(inp.value); }; });
+        host.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { rows.splice(Number(b.getAttribute('data-del')), 1); draw(); }; });
+        var add = host.querySelector('#muAdd');
+        if (add) add.onclick = function () {
+          var free = machines.find(function (mc) { return !rows.some(function (r) { return r.machine === mc.id; }); });
+          rows.push({ machine: (free || machines[0]).id, minutes: s.minutes, startOffset: 0 });
+          draw();
+        };
+        host.querySelector('#muCancel').onclick = closeModal;
+        host.querySelector('#muSave').onclick = function () {
+          api('/api/admin/services/' + s.id, { method: 'POST', body: { uses: rows } })
+            .then(function () { closeModal(); toast('Хадгалагдлаа ✓', 'ok'); loadServices(); })
+            .catch(function (e) {
+              var map = { machine_window_outside_service: 'Машины цаг үйлчилгээний ' + s.minutes + ' минутаас хэтэрч байна', unknown_machine: 'Машин сонгоно уу', duplicate_machine: 'Нэг машиныг хоёр удаа сонгох боломжгүй', bad_uses: 'Утгаа шалгана уу' };
+              toast((e && map[e.error]) || 'Алдаа гарлаа', 'err');
+            });
+        };
+      }
+      draw();
+    });
   }
 
   /* ================= bundles / promos / giftcards ================= */
@@ -1795,7 +2198,7 @@
         .then(function () {
           closeModal(); toast('Хадгалагдлаа ✓', 'ok');
           staffCache = null;
-          if (u.isMe) { meName = body.name; sessionStorage.setItem('bg_admin_name', meName); }
+          if (u.isMe) { meName = body.name; sset('bg_admin_name', meName); }
           loadAccounts();
         })
         .catch(accountError);
@@ -1954,12 +2357,15 @@
   document.addEventListener('keydown', function (e) {
     if (!token || modalHost.innerHTML || e.ctrlKey || e.metaKey || e.altKey) return;
     if (/^(input|textarea|select)$/i.test((e.target.tagName || ''))) return;
-    if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { e.preventDefault(); openQuickBook(); }
+    if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { e.preventDefault(); openQuickBook({ date: viewDate() }); }
   });
 
   fetch('/api/config')
     .then(function (r) { return r.json(); })
-    .then(function (c) { featureWallet = c && c.featureWallet === true; })
+    .then(function (c) {
+      featureWallet = c && c.featureWallet === true;
+      if (c && c.hoursOpen && c.hoursClose) salonHours = { open: c.hoursOpen, close: c.hoursClose };
+    })
     .catch(function () {})
     .then(function () { render(); });
 })();

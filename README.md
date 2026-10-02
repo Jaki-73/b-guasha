@@ -33,13 +33,37 @@ Every "Book" button on the website opens the app on that service's booking step 
 
 ## Phone booking (staff)
 
-**📞 Захиалга** in the admin header (or press **N**) — three steps while the caller is on the line:
+**📞** (the round button bottom-right on a phone, **📞 Захиалга** in the header on a computer, or press **N**) — three steps while the caller is on the line, one-handed, full screen on a phone:
 
-1. **Number** — type it; after 4 digits matching clients appear, at 8 digits a known client is picked automatically with their last service preselected. An unknown number becomes a client record by itself (name optional).
-2. **Service** — one tap.
-3. **Time** — day chips and free slots for the therapist; staff book for themselves, the owner can pick anyone. **Enter** books.
+1. **Number** — type it; after 4 digits matching clients appear, at 8 digits a known client is picked automatically with their last service preselected. An unknown number becomes a client record when the booking is saved (name optional).
+2. **Service** — one tap. Services that use a machine show 🔧 and the machine's name.
+3. **Time** — day buttons and only the start times that are really free: the therapist is free **and** every machine the service needs has a unit free for the part of the treatment that uses it. A clash cannot be picked. Staff book for themselves; the owner taps a therapist. **Enter** books.
 
-Clicking an empty cell in the calendar opens the same screen with that time and therapist filled in.
+The sheet opens on the day you are looking at. The **+** in the calendar opens it with that time and therapist filled in, and **📅 Цаг товлох** on a client card opens it with the client (and a repeat plan's service) filled in. If someone else took the time a moment earlier, the booking is refused with a clear message and the free times reload.
+
+## Machines (one HIFU, two steamers…)
+
+The system is the source of truth for machines: two people can never book the same machine at overlapping times.
+
+1. **List the machines** in `config.json` → `machines`:
+   ```json
+   { "id": "hifu", "name": "HIFU", "units": 1, "bufferMinutes": 0 }
+   ```
+   `units` is how many of that machine the salon has; `bufferMinutes` (optional) keeps it busy for cleaning after every use. **The shipped list is a PLACEHOLDER** (`"placeholder": true`, names starting "PLACEHOLDER") — replace it with the salon's real machines and remove `placeholder`; the owner sees a warning until then. Restart the server after editing `config.json`.
+2. **Say which services use which machine**: Админ → 🌿 Үйлчилгээ → **🔧 Машин**. For each machine: from which minute of the treatment and for how long (e.g. a 90-minute facial uses the HIFU from minute 15 for 60 minutes). A service may use several machines, or none — a service without a machine still takes the therapist's time.
+
+How a booking is checked: it reserves its therapist for the whole appointment and each machine only for its own window (plus that machine's cleaning buffer). Times are half-open, so 14:00–15:00 and 15:00–16:00 do not clash. A booking is refused when any resource would exceed its units. The check runs again inside the save itself, one booking at a time, so two phones pressing "book" together can never both get the last unit. Cancelled and no-show bookings hold nothing; restoring one re-checks. All times are stored with an explicit `+08:00` (Ulaanbaatar) offset.
+
+## My day, blocking time, the machine board
+
+- **🙋 Миний өдөр** (staff land here) — your own bookings and blocks for one day, big ‹ › buttons, tap a booking to mark done / no-show / cancel (cancelling asks first and frees the time and machines at once). **📞 Захиалга нэмэх** and **🚫 Цаг хаах** are right there.
+- **🚫 Цаг хаах** — block your own time (personal, doctor, break): pick how long, then the start; times that clash with your bookings are greyed out. A block makes only you unavailable — the machines stay bookable by everyone else. The owner can block any therapist from the calendar's **+**.
+- **🔧 Машин** — the shared machine board, the same for everyone: each machine's busy windows ("HIFU — ашиглагдаж байна 14:00–15:00", how many units are taken, cleaning time). It never shows who, which client, phone or service.
+- **Privacy** — staff cannot see each other's schedules through any page or API call: the server filters every request (calendar, my day, booking lists, client cards, lookups, free times, status changes); someone else's booking id behaves like one that does not exist. The owner sees everything.
+
+## Staff phones: Add to Home Screen
+
+Open `/admin` on the phone → browser menu → **Add to Home Screen** (iPhone: Share → Add to Home Screen). It opens full screen like an app and stays signed in: a login lasts **60 days from its last use**, so anyone who opens it at least every two months never has to log in again. **Гарах** ends that login on the server too. Blocking an account or changing its role takes effect at once.
 
 ## Bookings in Google Calendar
 
@@ -53,7 +77,8 @@ In **Админ → 👤 Үйлчлүүлэгч** every admin-side user (staff i
 
 - **＋ Шинэ үйлчлүүлэгч** — create a customer by name + phone, no password needed. If that person later registers in the app with the same phone, the record (with its history) becomes their account. Such records show an "апп-гүй" tag until then.
 - **📋 Тайлбар** — a description every staff member sees (never shown to the customer).
-- **✅ Үйлчилгээ бүртгэх** — record a service given today or in the last 60 days (saved as done), or pick a future date to book the next visit.
+- **✅ Болсон үйлчилгээ бүртгэх** — record a service given today or in the last 60 days (saved as done).
+- **📅 Цаг товлох** — book the next visit through the booking sheet (only free times; the client is already filled in).
 - **🔁 Давтан үйлчилгээ** — "this customer comes for X every N days". The list shows ⏰ when it is due within 3 days or overdue; tick "Давтан үйлчилгээ ойртсон / хоцорсон" to see who to call.
 - **📝 Тэмдэглэл** — notes are shared with the team by default; untick "багтай хуваалцах" to keep one private.
 
@@ -63,7 +88,7 @@ In **Админ → 👤 Үйлчлүүлэгч** every admin-side user (staff i
 |---|---|---|
 | **Super admin** 🛡 | /admin (phone+password, or the PIN) | Everything the owner can, plus: turn features on/off (wallet), create/edit **every** account (customer, staff, owner), change roles, reset passwords, block accounts |
 | **Owner** 👑 | /admin | Services & prices, products ("What we use"), FAQ, address/phone/email/Facebook, opening hours & booking rules, staff schedules, bookings, reviews, reports, backup |
-| **Staff** 👤 | /admin | Only their own calendar, clients and chat |
+| **Staff** 👤 | /admin | Only their own day, bookings, clients and chat; block their own time; the shared (anonymous) machine board |
 | **Customer** 🙂 | /app | Book, profile, chat (and wallet when it is on) |
 
 The super admin is a separate account and is not a therapist (it never appears in the booking calendar).
@@ -102,6 +127,7 @@ public/admin/          Admin panel (owner + staff)
 public/assets/         Logo & favicon (gold brand)
 data/                  Created automatically — db.json + photos/ (your database; back it up!)
 docs/                  Guides (testing, publishing & costs, QPay, ideas, info to fill in)
+test/                  Scheduling tests — run `npm test` (Node's built-in test runner, nothing to install)
 legacy/                The old v1 site & app, kept for reference
 ```
 
@@ -122,6 +148,10 @@ Switching it off **deletes nothing** — balances, bundles and gift cards stay i
 the database, so it survives restarts and overrides `featureWallet` in `config.json`.
 
 Only the super admin can change this setting; the owner sees whether it is on or off, and staff accounts get 403.
+
+## Tests
+
+`npm test` starts the real server on a spare port with a throwaway database (your `data/` is never touched) and checks the machine scheduling end to end: the seven acceptance cases (HIFU at 14:00 blocks others until 15:00; two steamers allow two overlaps and refuse a third; back-to-back windows; a machine window that starts 15 minutes in; cancelling frees the time; a block stops only that therapist; staff cannot reach another's booking by changing an id or URL), plus cleaning buffers, services with two machines or none, simultaneous bookings racing for the last unit, `+08:00` storage, upgrading an old database, session expiry and sign-out. The server runs under a non-Mongolian time zone during the tests to prove the phone's or server's own zone never matters.
 
 ## Demo vs real payments
 

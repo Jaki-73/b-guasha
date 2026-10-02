@@ -31,6 +31,7 @@ Also from the page (added in September 2026):
 9. **Products ("Бидний хэрэглэдэг зүйлс")** — default descriptions of stones/oil/clay mask/LED etc., each with a short benefit label. Review and adjust to the products you actually use (brands welcome): Админ → 🛍 Бүтээгдэхүүн.
 10. **Sample reviews** (Номин, Анужин, Сүврэг) — visible on the website now so it doesn't look empty. They are not real customers: hide/delete them before launch or as soon as real reviews come in: Админ → Сэтгэгдэл (they're marked "жишээ"). Real reviews written after an app booking get a "✓ Апп-аар захиалсан" badge on the website.
 11. **FAQ policies** — Админ → ❓ Асуулт. The answers are written as sensible defaults; check the ones that state salon policy (who shouldn't be treated, payment, cancellation, aftercare) and change anything that doesn't match how you work.
+12. **Machines (PLACEHOLDER)** — `config.json` → `"machines"` ships with two made-up entries (a HIFU and two steamers) so the scheduling can be tried out. Replace them with the machines the salon really has — a short `id`, the name staff will see, how many of each (`units`) and any cleaning time after each use (`bufferMinutes`) — and delete `"placeholder": true`. Then, for every service that uses a machine: Админ → 🌿 Үйлчилгээ → 🔧 Машин → which machine, from which minute, for how long. Until this is done the owner sees a warning, and no booking is checked against a machine it doesn't know it uses.
 
 ## 🟡 When you're ready for real money
 
