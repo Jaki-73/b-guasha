@@ -25,6 +25,25 @@
   "paymentsDemo": true,
   "_featureWallet": "Wallet / top-up / bundles / gift cards / promo codes. The super admin turns this on and off in Admin -> Tohirgoo; that choice is stored in data/db.json and overrides the value below.",
   "featureWallet": false,
+  "_machines": "PLACEHOLDER machine list — replace with the salon's real machines before relying on it. id: short lowercase key used by services (never change it once bookings use it); name: shown to staff; units: how many of that machine the salon owns; bufferMinutes: optional cleaning/turnaround time after each use. A machine only constrains bookings once a service lists it in Admin -> Uilchilgee -> machine usage.",
+  "machines": [
+    {
+      "id": "hifu",
+      "name": "PLACEHOLDER — HIFU",
+      "units": 1,
+      "bufferMinutes": 0,
+      "placeholder": true
+    },
+    {
+      "id": "steamer",
+      "name": "PLACEHOLDER — Steamer",
+      "units": 2,
+      "bufferMinutes": 10,
+      "placeholder": true
+    }
+  ],
+  "_bookingStepMinutes": "Start-time grid for staff bookings and blocks (5, 10, 15, 20, 30 or 60). The customer app keeps its own grid (slotMinutes).",
+  "bookingStepMinutes": 15,
   "qpay": {
     "comment": "Fill these after signing a QPay merchant contract (see docs/PAYMENTS-QPAY.md), then set paymentsDemo to false.",
     "baseUrl": "https://merchant-sandbox.qpay.mn",

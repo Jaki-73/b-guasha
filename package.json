@@ -4,7 +4,8 @@
   "private": true,
   "description": "B's Gua Sha — website + mobile booking app with staff, reviews, bundles, gift cards & chat (zero-dependency Node server)",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"

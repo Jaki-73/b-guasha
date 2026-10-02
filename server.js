@@ -25,7 +25,9 @@ const os = require('os');
 
 const ROOT = __dirname;
 const PUB = path.join(ROOT, 'public');
-const DATA = path.join(ROOT, 'data');
+/* BG_DATA_DIR / BG_CONFIG point a test run at a throwaway data folder and config */
+const DATA = process.env.BG_DATA_DIR ? path.resolve(process.env.BG_DATA_DIR) : path.join(ROOT, 'data');
+const CONFIG_FILE = process.env.BG_CONFIG ? path.resolve(process.env.BG_CONFIG) : path.join(ROOT, 'config.json');
 const PHOTOS_DIR = path.join(DATA, 'photos');
 const DB_FILE = path.join(DATA, 'db.json');
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -56,11 +58,13 @@ const DEFAULT_CONFIG = {
   adminPin: '1234',
   paymentsDemo: true,
   featureWallet: false,
+  machines: [],
+  bookingStepMinutes: 15,
   qpay: { baseUrl: 'https://merchant-sandbox.qpay.mn', username: '', password: '', invoiceCode: '', callbackBaseUrl: '' }
 };
 let config = { ...DEFAULT_CONFIG };
 try {
-  config = { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8')) };
+  config = { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
 } catch (e) {
   console.warn('config.json missing or invalid — using defaults');
 }
@@ -332,7 +336,7 @@ function seedDb() {
   demo.balance = 50000;
   demo.isDemo = true;
   return {
-    meta: { version: 3, contentVersion: 3, createdAt: nowIso() },
+    meta: { version: 3, contentVersion: 3, scheduleVersion: 1, createdAt: nowIso() },
     settings: {},
     services: seedServices(),
     users: [demo, ...seedStaffUsers(), seedSuperAdmin()],
@@ -377,8 +381,40 @@ function migrateDb() {
   const firstStaff = db.users.find((u) => u.role === 'owner' && u.staff) || db.users.find((u) => u.role === 'staff' && u.staff);
   db.bookings.forEach((b) => {
     if (!b.staffId) b.staffId = firstStaff ? firstStaff.id : null;
-    if (!b.minutes) { const s = db.services.find((x) => x.id === b.serviceId); b.minutes = (s && s.minutes) || 60; }
   });
+  /* schedule v1: bookings and blocks used to store a bare local date + time. They now
+     store startsAt/endsAt with an explicit +08:00 offset, and bookings carry a snapshot
+     of the machine windows they hold (none for bookings made before machines existed). */
+  if ((db.meta.scheduleVersion || 0) < 1) {
+    let n = 0;
+    for (const b of db.bookings) {
+      if (!b.startsAt && b.date && b.time) {
+        const svc = db.services.find((x) => x.id === b.serviceId);
+        const s0 = ubMs(b.date, b.time);
+        b.startsAt = ubIso(s0);
+        b.endsAt = ubIso(s0 + (b.minutes || (svc && svc.minutes) || 60) * MIN_MS);
+        n++;
+      }
+      if (!Array.isArray(b.machines)) b.machines = [];
+      delete b.date; delete b.time; delete b.minutes;
+    }
+    for (const bl of db.blocks) {
+      if (!bl.startsAt && bl.date && bl.time) {
+        const s0 = ubMs(bl.date, bl.time);
+        bl.startsAt = ubIso(s0);
+        bl.endsAt = ubIso(s0 + (cfg().slotMinutes || 60) * MIN_MS);
+        n++;
+      }
+      delete bl.date; delete bl.time;
+    }
+    db.services.forEach((sv) => { if (!Array.isArray(sv.uses)) sv.uses = []; });
+    db.meta.scheduleVersion = 1;
+    if (n) console.log('Migrated ' + n + ' bookings/blocks to +08:00 timestamps');
+  }
+  /* sessions expire after SESSION_TTL_MS without use; existing ones start their clock now */
+  for (const map of [db.sessions, db.adminSessions]) {
+    for (const s0 of Object.values(map)) if (!s0.lastSeenAt) s0.lastSeenAt = nowIso();
+  }
   db.services.forEach((s) => { if (s.group === 'package') s.active = false; });
   if (!db.bundles.length) db.bundles = seedBundles();
   if (!db.edu.length) db.edu = seedEdu();
@@ -458,6 +494,8 @@ function safetyWarnings() {
   const ex = find('88000001', 'staff');
   if (ex && ex.staff && ex.staff.active !== false && checkPassword(ex, 'staff123')) w.push('example_staff');
   if (db.users.some((u) => u.isDemo && !u.disabled)) w.push('demo_customer');
+  if (machineList().some((m) => m.placeholder)) w.push('machines_placeholder');
+  if (db.services.some((sv) => sv.active && serviceMachineProblem(sv))) w.push('service_machine_problem');
   return w;
 }
 
@@ -526,10 +564,21 @@ function tokenFrom(req, q) {
   if (q && q.get('token')) return q.get('token');
   return null;
 }
+/* Sessions last SESSION_TTL_MS after their last use (sliding), so staff stay signed in
+   on their phone for weeks; lastSeenAt is written at most once an hour per session. */
+const SESSION_TTL_MS = 60 * 86400000;
+function liveSession(map, t) {
+  const s = map[t];
+  if (!s) return null;
+  const last = Date.parse(s.lastSeenAt || s.createdAt);
+  if (!(Date.now() - last < SESSION_TTL_MS)) { delete map[t]; saveDb(); return null; }
+  if (Date.now() - last > 3600000) { s.lastSeenAt = nowIso(); saveDb(); }
+  return s;
+}
 function authUser(req, q) {
   const t = tokenFrom(req, q);
   if (!t) return null;
-  const s = db.sessions[t];
+  const s = liveSession(db.sessions, t);
   if (!s) return null;
   const u = db.users.find((x) => x.id === s.userId);
   return u && !u.disabled ? u : null;
@@ -540,7 +589,7 @@ const ADMIN_ROLES = ['superadmin', 'owner', 'staff'];
 function authAdmin(req, q) {
   const t = tokenFrom(req, q);
   if (!t) return null;
-  const s = db.adminSessions[t];
+  const s = liveSession(db.adminSessions, t);
   if (!s) return null;
   const uid_ = s.userId || s.staffUserId;
   if (!uid_) return s.role === 'superadmin' ? s : null;
@@ -551,7 +600,7 @@ function authAdmin(req, q) {
 }
 function newSession(map, payload) {
   const t = crypto.randomBytes(24).toString('hex');
-  map[t] = { ...payload, createdAt: nowIso() };
+  map[t] = { ...payload, createdAt: nowIso(), lastSeenAt: nowIso() };
   return t;
 }
 
@@ -568,10 +617,6 @@ function genCode(prefix) {
 }
 function normCode(c) { return String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
-function localDateStr(d) {
-  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 function toMin(t) { const p = t.split(':').map(Number); return p[0] * 60 + (p[1] || 0); }
 function slotTimes() {
   const c = cfg();
@@ -584,11 +629,9 @@ function slotTimes() {
   }
   return out;
 }
-function bookingDateTime(b) { return new Date(b.date + 'T' + b.time + ':00'); }
 function salonClosed(dateStr) {
   const c = cfg();
-  const d = new Date(dateStr + 'T12:00:00');
-  return c.closedWeekdays.includes(d.getDay()) || (c.closedDates || []).includes(dateStr);
+  return c.closedWeekdays.includes(ubWeekday(dateStr)) || (c.closedDates || []).includes(dateStr);
 }
 
 function addTransaction(userId, type, method, amount, note, status) {
@@ -614,60 +657,203 @@ function publicStaff(u) {
 function staffWindow(u, dateStr) {
   if (!u || !u.staff || u.staff.active === false) return null;
   if ((u.staff.daysOff || []).includes(dateStr)) return null;
-  const wd = new Date(dateStr + 'T12:00:00').getDay();
-  const h = (u.staff.hours || DEFAULT_HOURS)[wd];
+  const h = (u.staff.hours || DEFAULT_HOURS)[ubWeekday(dateStr)];
   if (!h) return null;
   return [toMin(h[0]), toMin(h[1])];
 }
-function staffBusy(staffId, dateStr) {
-  const c = cfg();
-  const out = [];
-  db.bookings.forEach((b) => {
-    if (b.staffId === staffId && b.date === dateStr && (b.status === 'confirmed' || b.status === 'done')) {
-      const s = toMin(b.time);
-      out.push([s, s + (b.minutes || c.slotMinutes)]);
-    }
-  });
-  db.blocks.forEach((bl) => {
-    if (bl.staffId === staffId && bl.date === dateStr) {
-      const s = toMin(bl.time);
-      out.push([s, s + c.slotMinutes]);
-    }
-  });
-  return out;
-}
-function overlaps(busy, start, end) { return busy.some(([a, b]) => start < b && end > a); }
-function slotFreeFor(u, dateStr, time, minutes) {
-  const win = staffWindow(u, dateStr);
-  if (!win) return false;
-  const s = toMin(time), e = s + minutes;
-  if (s < win[0] || e > win[1]) return false;
-  return !overlaps(staffBusy(u.id, dateStr), s, e);
-}
-function pickStaff(dateStr, time, minutes, preferredId) {
-  const candidates = staffUsers().filter((u) => slotFreeFor(u, dateStr, time, minutes));
+/* customer app: any free staff member for this slot, preferring their favourite,
+   then whoever has the fewest bookings that day */
+function pickStaff(dateStr, time, svc, preferredId, list) {
+  const candidates = staffUsers().filter((u) => !evaluate(u, svc, dateStr, time, list).error);
   if (!candidates.length) return null;
   if (preferredId) {
     const p = candidates.find((u) => u.id === preferredId);
     if (p) return p;
   }
-  candidates.sort((a, b) => {
-    const la = db.bookings.filter((x) => x.staffId === a.id && x.date === dateStr && (x.status === 'confirmed' || x.status === 'done')).length;
-    const lb = db.bookings.filter((x) => x.staffId === b.id && x.date === dateStr && (x.status === 'confirmed' || x.status === 'done')).length;
-    return la - lb;
-  });
+  const load = (u) => db.bookings.filter((x) => x.staffId === u.id && HOLDING.includes(x.status) && bkDate(x) === dateStr).length;
+  candidates.sort((a, b) => load(a) - load(b));
   return candidates[0];
 }
 
-function usableBundleFor(userId, serviceId) {
-  const now = Date.now();
-  return db.userBundles.find((ub) => {
-    if (ub.userId !== userId || ub.remaining <= 0) return false;
-    if (new Date(ub.expiresAt).getTime() < now) return false;
-    const bd = db.bundles.find((b) => b.id === ub.bundleId);
-    if (!bd) return false;
-    return !bd.serviceIds || !bd.serviceIds.length || bd.serviceIds.includes(serviceId);
-  }) || null;
+/* ---------------- time: Ulaanbaatar is UTC+08:00 all year (no DST) ----------------
+   Every stored appointment instant (bookings, blocks, machine holds) is an ISO string
+   with an explicit +08:00 offset, e.g. "2026-10-02T14:00:00+08:00": unambiguous,
+   readable as salon time, and — because the offset never varies — sortable as plain
+   strings. These helpers do the offset arithmetic themselves and never depend on the
+   process timezone. */
+const UB_OFFSET_MS = 8 * 3600000;
+const MIN_MS = 60000;
+function ubIso(ms) { return new Date(ms + UB_OFFSET_MS).toISOString().slice(0, 19) + '+08:00'; }
+function ubMs(dateStr, time) { return Date.parse(dateStr + 'T' + time + ':00+08:00'); }
+function ubDate(iso) { return ubIso(Date.parse(iso)).slice(0, 10); }
+function ubTime(iso) { return ubIso(Date.parse(iso)).slice(11, 16); }
+function ubToday() { return ubIso(Date.now()).slice(0, 10); }
+function ubAddDays(dateStr, n) { return ubIso(ubMs(dateStr, '12:00') + n * 86400000).slice(0, 10); }
+function ubWeekday(dateStr) { return new Date(ubMs(dateStr, '12:00') + UB_OFFSET_MS).getUTCDay(); }
+function validDate(d) { return DATE_RE.test(d || '') && ubIso(ubMs(d, '12:00')).slice(0, 10) === d; }
+function validTime(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(t || ''); }
+function hhmm(min) { return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
+function bkDate(b) { return ubDate(b.startsAt); }
+function bkTime(b) { return ubTime(b.startsAt); }
+function bkMinutes(b) { return Math.round((Date.parse(b.endsAt) - Date.parse(b.startsAt)) / MIN_MS); }
+function stepMinutes() { const s = Number(cfg().bookingStepMinutes); return [5, 10, 15, 20, 30, 60].includes(s) ? s : 15; }
+
+/* ---------------- machines (config.json → "machines") ----------------
+   { id, name, units, bufferMinutes } — bufferMinutes is turnaround/cleaning time
+   added after every machine window. Read once at start; invalid entries are dropped
+   loudly, and any service that names a dropped machine refuses to book (fail closed). */
+const MACHINE_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+const MACHINES = (() => {
+  const out = new Map();
+  for (const m of Array.isArray(config.machines) ? config.machines : []) {
+    const units = Number(m && m.units), buf = m && m.bufferMinutes !== undefined ? Number(m.bufferMinutes) : 0;
+    if (!m || !MACHINE_ID_RE.test(m.id || '') || out.has(m.id) || !Number.isInteger(units) || units < 1 || units > 50 || !Number.isInteger(buf) || buf < 0 || buf > 240) {
+      console.error('config.json machines: ignoring invalid entry ' + JSON.stringify(m));
+      continue;
+    }
+    out.set(m.id, { id: m.id, name: String(m.name || m.id).slice(0, 60), units, bufferMinutes: buf, placeholder: m.placeholder === true });
+  }
+  return out;
+})();
+function machineList() { return [...MACHINES.values()]; }
+
+/* A service's machine usage: [{ machine, minutes, startOffset }] — the machine is held
+   from startOffset to startOffset+minutes inside the appointment (plus its buffer after).
+   Returns { uses } or { error } for owner input. */
+function cleanUses(raw, serviceMinutes) {
+  if (raw === undefined || raw === null) return { uses: [] };
+  if (!Array.isArray(raw) || raw.length > 4) return { error: 'bad_uses' };
+  const uses = [], seen = new Set();
+  for (const u of raw) {
+    const machine = String((u && u.machine) || '');
+    const minutes = Number(u && u.minutes), startOffset = Number((u && u.startOffset) || 0);
+    if (!MACHINES.has(machine)) return { error: 'unknown_machine' };
+    if (seen.has(machine)) return { error: 'duplicate_machine' };
+    if (!Number.isInteger(minutes) || minutes < 1 || !Number.isInteger(startOffset) || startOffset < 0) return { error: 'bad_uses' };
+    if (startOffset + minutes > serviceMinutes) return { error: 'machine_window_outside_service' };
+    seen.add(machine);
+    uses.push({ machine, minutes, startOffset });
+  }
+  return { uses };
+}
+/* why an existing service cannot be booked right now (config may have changed under it) */
+function serviceMachineProblem(svc) {
+  for (const u of svc.uses || []) {
+    if (!MACHINES.has(u.machine)) return 'machine_not_configured';
+    if (u.startOffset + u.minutes > svc.minutes) return 'machine_window_outside_service';
+  }
+  return null;
+}
+
+/* ---------------- availability engine ----------------
+   Resources: every staff member is one unit ("staff:<id>"); every machine has its
+   configured unit count ("machine:<id>"). Only confirmed and done bookings hold
+   anything — cancelled and no-show bookings hold nothing, so cancelling frees the
+   staff member and every machine at once. Blocks hold their staff member only.
+   All intervals are half-open [start, end): one ending at 15:00 and another
+   starting at 15:00 do not overlap. */
+const HOLDING = ['confirmed', 'done'];
+/* the appointment window: what the staff member is busy for */
+function appointmentWindow(b) { return { s: Date.parse(b.startsAt), e: Date.parse(b.endsAt) }; }
+/* the machine windows: a sub-window of the appointment, held until releasesAt (use + buffer) */
+function machineHolds(b) { return (b.machines || []).map((h) => ({ machine: h.machine, s: Date.parse(h.startsAt), e: Date.parse(h.releasesAt) })); }
+
+function reservations(excludeBookingId) {
+  const out = [];
+  for (const b of db.bookings) {
+    if (!HOLDING.includes(b.status) || b.id === excludeBookingId) continue;
+    const w = appointmentWindow(b);
+    if (b.staffId) out.push({ res: 'staff:' + b.staffId, s: w.s, e: w.e });
+    for (const h of machineHolds(b)) out.push({ res: 'machine:' + h.machine, s: h.s, e: h.e });
+  }
+  for (const bl of db.blocks) out.push({ res: 'staff:' + bl.staffId, s: Date.parse(bl.startsAt), e: Date.parse(bl.endsAt) });
+  return out;
+}
+/* Highest number of reservations on `res` active at the same instant inside [s, e).
+   This is the "count overlapping reservations" rule made exact: for a 1-unit resource
+   it is any overlap at all; for 2+ units, two existing bookings that both touch the
+   window but never run at the same time only use one unit. */
+function peakUse(list, res, s, e) {
+  const ev = [];
+  for (const r of list) {
+    if (r.res === res && r.s < e && s < r.e) ev.push([Math.max(r.s, s), 1], [Math.min(r.e, e), -1]);
+  }
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]); /* at the same instant, releases come before starts */
+  let cur = 0, peak = 0;
+  for (const [, d] of ev) { cur += d; if (cur > peak) peak = cur; }
+  return peak;
+}
+/* what a booking of `svc` starting at startMs would reserve */
+function candidateFor(svc, startMs) {
+  const problem = serviceMachineProblem(svc);
+  if (problem) return { error: problem };
+  const holds = (svc.uses || []).map((u) => {
+    const s = startMs + u.startOffset * MIN_MS, e = s + u.minutes * MIN_MS;
+    return { machine: u.machine, s, e, release: e + MACHINES.get(u.machine).bufferMinutes * MIN_MS };
+  });
+  return { startMs, endMs: startMs + svc.minutes * MIN_MS, holds };
+}
+/* the same shape rebuilt from a stored booking (restore / reassign re-check its own snapshot) */
+function candidateOf(b) {
+  const w = appointmentWindow(b);
+  return { startMs: w.s, endMs: w.e, holds: machineHolds(b).map((h) => ({ machine: h.machine, s: h.s, e: h.e, release: h.e })) };
+}
+function clashFor(cand, staffId, list) {
+  if (peakUse(list, 'staff:' + staffId, cand.startMs, cand.endMs) >= 1) return 'staff_busy';
+  for (const h of cand.holds) {
+    const m = MACHINES.get(h.machine);
+    if (!m || peakUse(list, 'machine:' + h.machine, h.s, h.release) >= m.units) return 'machine_busy';
+  }
+  return null;
+}
+function hoursProblem(su, dateStr, startMin, endMin) {
+  if (salonClosed(dateStr)) return 'closed';
+  const win = staffWindow(su, dateStr);
+  if (!win) return 'staff_off';
+  if (startMin < win[0] || endMin > win[1]) return 'outside_hours';
+  return null;
+}
+/* full check for a new booking; `list` defaults to the live reservations */
+function evaluate(su, svc, dateStr, time, list) {
+  const startMin = toMin(time);
+  const hp = hoursProblem(su, dateStr, startMin, startMin + svc.minutes);
+  if (hp) return { error: hp };
+  const cand = candidateFor(svc, ubMs(dateStr, time));
+  if (cand.error) return cand;
+  const clash = clashFor(cand, su.id, list || reservations());
+  return clash ? { error: clash } : { cand };
+}
+/* stored fields for a booking made from a checked candidate */
+function scheduleFields(cand) {
+  return {
+    startsAt: ubIso(cand.startMs), endsAt: ubIso(cand.endMs),
+    machines: cand.holds.map((h) => ({ machine: h.machine, startsAt: ubIso(h.s), endsAt: ubIso(h.e), releasesAt: ubIso(h.release) }))
+  };
+}
+/* bookable start times for one staff member, service and day, on the step grid */
+function freeStarts(su, svc, dateStr, step, notBeforeMs) {
+  const win = staffWindow(su, dateStr);
+  if (!win || salonClosed(dateStr) || serviceMachineProblem(svc)) return [];
+  const list = reservations();
+  const out = [];
+  for (let t = Math.ceil(win[0] / step) * step; t + svc.minutes <= win[1]; t += step) {
+    const time = hhmm(t);
+    if (notBeforeMs && ubMs(dateStr, time) < notBeforeMs) continue;
+    if (!evaluate(su, svc, dateStr, time, list).error) out.push(time);
+  }
+  return out;
+}
+
+/* ---------------- serialized write path ----------------
+   Every booking and block write runs through here, one at a time. The callback is
+   synchronous: it re-derives reservations from the live db, re-checks availability,
+   mutates and calls saveDb() without yielding, so no other request can get between
+   the final check and the write — two staff racing for the last unit cannot both win. */
+let writeQueue = Promise.resolve();
+function serialized(fn) {
+  const run = writeQueue.then(fn);
+  writeQueue = run.catch(() => {});
+  return run;
 }
 
 function refundBooking(booking, byWhom) {
@@ -902,29 +1088,21 @@ async function handleApi(req, res, pathname, q) {
 
   if (route === 'GET /api/slots') {
     const date = q.get('date') || '';
-    if (!DATE_RE.test(date)) return fail(res, 400, 'bad_date');
-    const today = localDateStr(new Date());
-    const max = localDateStr(new Date(Date.now() + c.bookingDaysAhead * 86400000));
+    if (!validDate(date)) return fail(res, 400, 'bad_date');
+    const today = ubToday();
+    const max = ubAddDays(today, c.bookingDaysAhead);
     if (date < today || date > max) return fail(res, 400, 'date_out_of_range');
     if (salonClosed(date)) return json(res, 200, { date, closed: true, slots: [] });
-    const svc = db.services.find((s) => s.id === q.get('serviceId'));
-    const minutes = (svc && svc.minutes) || c.slotMinutes;
+    const svc = db.services.find((s) => s.id === q.get('serviceId') && s.active);
+    if (!svc) return fail(res, 400, 'bad_service');
     const staffParam = q.get('staffId') || 'any';
-    const now = new Date();
-    const slots = slotTimes().map((time) => {
-      let free;
-      if (staffParam === 'any') {
-        free = staffUsers().some((u) => slotFreeFor(u, date, time, minutes));
-      } else {
-        const su = staffById(staffParam);
-        free = su ? slotFreeFor(su, date, time, minutes) : false;
-      }
-      if (free && date === today) {
-        const dt = new Date(date + 'T' + time + ':00');
-        if (dt.getTime() - now.getTime() < 60 * 60 * 1000) free = false;
-      }
-      return { time, available: free };
-    });
+    const pool = staffParam === 'any' ? staffUsers() : [staffById(staffParam)].filter(Boolean);
+    const list = reservations();
+    const soonest = Date.now() + 60 * MIN_MS; /* the app keeps a one-hour lead time */
+    const slots = slotTimes().map((time) => ({
+      time,
+      available: ubMs(date, time) >= soonest && pool.some((u) => !evaluate(u, svc, date, time, list).error)
+    }));
     return json(res, 200, { date, closed: false, slots });
   }
 
@@ -933,55 +1111,58 @@ async function handleApi(req, res, pathname, q) {
     const b = await readJson(req);
     const svc = db.services.find((s) => s.id === b.serviceId && s.active);
     if (!svc) return fail(res, 400, 'bad_service');
-    if (!DATE_RE.test(b.date || '') || !TIME_RE.test(b.time || '')) return fail(res, 400, 'bad_request');
+    if (!validDate(b.date) || !validTime(b.time)) return fail(res, 400, 'bad_request');
     if (!slotTimes().includes(b.time)) return fail(res, 400, 'bad_time');
-    const today = localDateStr(new Date());
-    const max = localDateStr(new Date(Date.now() + c.bookingDaysAhead * 86400000));
-    if (b.date < today || b.date > max) return fail(res, 400, 'date_out_of_range');
-    if (salonClosed(b.date)) return fail(res, 400, 'date_out_of_range');
-    const dt = new Date(b.date + 'T' + b.time + ':00');
-    if (dt.getTime() - Date.now() < 60 * 60 * 1000) return fail(res, 400, 'too_soon');
-
-    let staffUser = null;
-    if (!b.staffId || b.staffId === 'any') {
-      staffUser = pickStaff(b.date, b.time, svc.minutes, user.preferredStaffId);
-      if (!staffUser) return fail(res, 409, 'slot_taken');
-    } else {
-      staffUser = staffById(b.staffId);
-      if (!staffUser) return fail(res, 400, 'bad_staff');
-      if (!slotFreeFor(staffUser, b.date, b.time, svc.minutes)) return fail(res, 409, 'slot_taken');
-    }
-
+    const today = ubToday();
+    if (b.date < today || b.date > ubAddDays(today, c.bookingDaysAhead) || salonClosed(b.date)) return fail(res, 400, 'date_out_of_range');
+    if (ubMs(b.date, b.time) - Date.now() < 60 * MIN_MS) return fail(res, 400, 'too_soon');
+    if (b.staffId && b.staffId !== 'any' && !staffById(b.staffId)) return fail(res, 400, 'bad_staff');
     const payWith = walletOn() && ['balance', 'salon', 'package'].includes(b.payWith) ? b.payWith : 'salon';
-    let userBundleId = null;
-    if (payWith === 'package') {
-      const ub = usableBundleFor(user.id, svc.id);
-      if (!ub) return fail(res, 400, 'no_package');
-      ub.remaining -= 1;
-      userBundleId = ub.id;
-    } else if (payWith === 'balance') {
-      if (user.balance < svc.price) return fail(res, 400, 'insufficient_balance');
-      user.balance -= svc.price;
-      addTransaction(user.id, 'payment', 'balance', -svc.price, svc.nameEn);
-    }
 
-    const booking = {
-      id: uid('bk'), userId: user.id, serviceId: svc.id, staffId: staffUser.id,
-      date: b.date, time: b.time, minutes: svc.minutes,
-      status: 'confirmed', paid: payWith, amount: svc.price,
-      createdBy: 'app', createdAt: nowIso()
-    };
-    if (userBundleId) booking.userBundleId = userBundleId;
-    db.bookings.push(booking);
-    saveDb();
-    return json(res, 200, { booking: bookingOut(booking), balance: user.balance });
+    /* check and write in one step (see serialized) */
+    const r = await serialized(() => {
+      const list = reservations();
+      let staffUser, ev;
+      if (!b.staffId || b.staffId === 'any') {
+        staffUser = pickStaff(b.date, b.time, svc, user.preferredStaffId, list);
+        if (!staffUser) return { status: 409, error: 'slot_taken' };
+        ev = evaluate(staffUser, svc, b.date, b.time, list);
+      } else {
+        staffUser = staffById(b.staffId);
+        ev = evaluate(staffUser, svc, b.date, b.time, list);
+        if (ev.error) return { status: 409, error: 'slot_taken' };
+      }
+      let userBundleId = null;
+      if (payWith === 'package') {
+        const ub = usableBundleFor(user.id, svc.id);
+        if (!ub) return { status: 400, error: 'no_package' };
+        ub.remaining -= 1;
+        userBundleId = ub.id;
+      } else if (payWith === 'balance') {
+        if (user.balance < svc.price) return { status: 400, error: 'insufficient_balance' };
+        user.balance -= svc.price;
+        addTransaction(user.id, 'payment', 'balance', -svc.price, svc.nameEn);
+      }
+      const booking = {
+        id: uid('bk'), userId: user.id, serviceId: svc.id, staffId: staffUser.id,
+        ...scheduleFields(ev.cand),
+        status: 'confirmed', paid: payWith, amount: svc.price,
+        createdBy: 'app', createdAt: nowIso()
+      };
+      if (userBundleId) booking.userBundleId = userBundleId;
+      db.bookings.push(booking);
+      saveDb();
+      return { booking };
+    });
+    if (r.error) return fail(res, r.status, r.error);
+    return json(res, 200, { booking: bookingOut(r.booking), balance: user.balance });
   }
 
   if (route === 'GET /api/bookings') {
     if (!user) return fail(res, 401, 'unauthorized');
     const list = db.bookings
       .filter((b) => b.userId === user.id)
-      .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
+      .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
       .map(bookingOut);
     return json(res, 200, list);
   }
@@ -992,7 +1173,7 @@ async function handleApi(req, res, pathname, q) {
     const booking = db.bookings.find((b) => b.id === m[1] && b.userId === user.id);
     if (!booking) return fail(res, 404, 'not_found');
     if (booking.status !== 'confirmed') return fail(res, 400, 'bad_request');
-    const hoursLeft = (bookingDateTime(booking).getTime() - Date.now()) / 3600000;
+    const hoursLeft = (Date.parse(booking.startsAt) - Date.now()) / 3600000;
     if (hoursLeft < c.cancelHours) return fail(res, 400, 'too_late_cancel');
     booking.status = 'cancelled';
     booking.cancelledAt = nowIso();
@@ -1282,6 +1463,13 @@ async function handleApi(req, res, pathname, q) {
     const ownerOnly = () => fail(res, 403, 'owner_only');
     const superOnly = () => fail(res, 403, 'superadmin_only');
 
+    /* Гарах ends the session on the server too — otherwise it would stay valid for weeks */
+    if (route === 'POST /api/admin/logout') {
+      delete db.adminSessions[tokenFrom(req, q)];
+      saveDb();
+      return json(res, 200, { ok: true });
+    }
+
     /* same wallet gate for the admin side — after auth, so an unauthenticated
        request still gets 401 rather than an empty list */
     if (!walletOn()) {
@@ -1293,14 +1481,14 @@ async function handleApi(req, res, pathname, q) {
 
     /* ----- overview ----- */
     if (route === 'GET /api/admin/overview') {
-      const today = localDateStr(new Date());
+      const today = ubToday();
       const upcoming = db.bookings
-        .filter((b) => b.status === 'confirmed' && b.date >= today && (isOwner || b.staffId === sess.staffUserId))
-        .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+        .filter((b) => b.status === 'confirmed' && bkDate(b) >= today && (isOwner || b.staffId === sess.staffUserId))
+        .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
         .map(adminBookingOut);
       const past = db.bookings
-        .filter((b) => !(b.status === 'confirmed' && b.date >= today) && (isOwner || b.staffId === sess.staffUserId))
-        .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
+        .filter((b) => !(b.status === 'confirmed' && bkDate(b) >= today) && (isOwner || b.staffId === sess.staffUserId))
+        .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
         .slice(0, 80)
         .map(adminBookingOut);
       const paidTx = db.transactions.filter((t) => t.type === 'topup');
@@ -1320,9 +1508,9 @@ async function handleApi(req, res, pathname, q) {
 
     if (route === 'GET /api/admin/stats') {
       if (!isOwner) return ownerOnly();
-      const month = /^\d{4}-\d{2}$/.test(q.get('month') || '') ? q.get('month') : localDateStr(new Date()).slice(0, 7);
+      const month = /^\d{4}-\d{2}$/.test(q.get('month') || '') ? q.get('month') : ubToday().slice(0, 7);
       const inMonth = (iso) => (iso || '').slice(0, 7) === month;
-      const bks = db.bookings.filter((b) => b.date.slice(0, 7) === month);
+      const bks = db.bookings.filter((b) => bkDate(b).slice(0, 7) === month);
       const done = bks.filter((b) => b.status === 'done');
       const svcRevenue = done.filter((b) => b.paid === 'balance' || b.paid === 'salon').reduce((s, b) => s + b.amount, 0);
       const bundleSales = db.transactions.filter((t) => t.type === 'bundle' && inMonth(t.createdAt)).reduce((s, t) => s - t.amount, 0);
@@ -1356,28 +1544,40 @@ async function handleApi(req, res, pathname, q) {
 
     /* ----- calendar ----- */
     if (route === 'GET /api/admin/calendar') {
-      const date = DATE_RE.test(q.get('date') || '') ? q.get('date') : localDateStr(new Date());
+      const date = validDate(q.get('date')) ? q.get('date') : ubToday();
       const staff = (isOwner ? staffUsers(true) : staffUsers(true).filter((u) => u.id === sess.staffUserId)).map((u) => {
         const win = staffWindow(u, date);
         return { id: u.id, name: u.name, color: (u.staff && u.staff.color) || '#b08c46', active: u.staff.active !== false, working: !!win, open: win ? win[0] : null, close: win ? win[1] : null };
       });
-      const bookings = db.bookings.filter((b) => b.date === date && (isOwner || b.staffId === sess.staffUserId)).map(adminBookingOut);
-      const blocks = db.blocks.filter((b) => b.date === date && (isOwner || b.staffId === sess.staffUserId));
-      return json(res, 200, { date, closed: salonClosed(date), slotMinutes: c.slotMinutes, slots: slotTimes(), staff, bookings, blocks });
+      const bookings = db.bookings.filter((b) => bkDate(b) === date && (isOwner || b.staffId === sess.staffUserId)).map(adminBookingOut);
+      const blocks = db.blocks.filter((b) => bkDate(b) === date && (isOwner || b.staffId === sess.staffUserId)).map(blockOut);
+      return json(res, 200, { date, closed: salonClosed(date), slotMinutes: c.slotMinutes, step: stepMinutes(), slots: slotTimes(), staff, bookings, blocks });
     }
 
+    /* A block is the staff member's own unavailable time ("15:00–16:00 personal").
+       It reserves that person only — never a machine. */
     if (route === 'POST /api/admin/blocks') {
       const b = await readJson(req);
-      if (!DATE_RE.test(b.date || '') || !TIME_RE.test(b.time || '')) return fail(res, 400, 'bad_request');
-      if (!slotTimes().includes(b.time)) return fail(res, 400, 'bad_time');
-      const su = staffById(b.staffId);
+      const from = b.from || b.time;
+      if (!validDate(b.date) || !validTime(from)) return fail(res, 400, 'bad_request');
+      /* the calendar grid's one-slot block sends only `time` */
+      const to = b.to === undefined ? hhmm(toMin(from) + c.slotMinutes) : String(b.to);
+      const sMin = toMin(from), eMin = to === '24:00' ? 1440 : (validTime(to) ? toMin(to) : -1);
+      if (eMin <= sMin || sMin % 5 || eMin % 5) return fail(res, 400, 'bad_range');
+      const su = staffById(b.staffId || sess.staffUserId || '');
       if (!su) return fail(res, 400, 'bad_staff');
       if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
-      if (db.blocks.some((x) => x.date === b.date && x.time === b.time && x.staffId === su.id)) return fail(res, 409, 'already_blocked');
-      const block = { id: uid('bl'), date: b.date, time: b.time, staffId: su.id, note: String(b.note || '').trim().slice(0, 100), createdAt: nowIso() };
-      db.blocks.push(block);
-      saveDb();
-      return json(res, 200, block);
+      const note = String(b.note || '').trim().slice(0, 100);
+      const r = await serialized(() => {
+        const s0 = ubMs(b.date, from), e0 = s0 + (eMin - sMin) * MIN_MS;
+        if (peakUse(reservations(), 'staff:' + su.id, s0, e0) >= 1) return { status: 409, error: 'staff_busy' };
+        const block = { id: uid('bl'), staffId: su.id, startsAt: ubIso(s0), endsAt: ubIso(e0), note, createdAt: nowIso() };
+        db.blocks.push(block);
+        saveDb();
+        return { block };
+      });
+      if (r.error) return fail(res, r.status, r.error);
+      return json(res, 200, blockOut(r.block));
     }
 
     m = pathname.match(/^\/api\/admin\/blocks\/([\w-]+)$/);
@@ -1394,51 +1594,164 @@ async function handleApi(req, res, pathname, q) {
       const b = await readJson(req);
       const svc = db.services.find((s) => s.id === b.serviceId);
       if (!svc) return fail(res, 400, 'bad_service');
-      if (!DATE_RE.test(b.date || '') || !TIME_RE.test(b.time || '')) return fail(res, 400, 'bad_request');
-      if (!slotTimes().includes(b.time)) return fail(res, 400, 'bad_time');
+      if (!validDate(b.date) || !validTime(b.time)) return fail(res, 400, 'bad_request');
+      if (toMin(b.time) % stepMinutes()) return fail(res, 400, 'bad_time');
       const su = staffById(b.staffId);
       if (!su) return fail(res, 400, 'bad_staff');
       if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
-      const today = localDateStr(new Date());
-      const min = localDateStr(new Date(Date.now() - 60 * 86400000));
-      const max = localDateStr(new Date(Date.now() + c.bookingDaysAhead * 86400000));
-      if (b.date < min || b.date > max) return fail(res, 400, 'date_out_of_range');
-      if (b.date >= today) {
-        if (!slotFreeFor(su, b.date, b.time, svc.minutes)) return fail(res, 409, 'slot_taken');
-      } else {
-        const s0 = toMin(b.time);
-        if (overlaps(staffBusy(su.id, b.date), s0, s0 + svc.minutes)) return fail(res, 409, 'slot_taken');
-      }
+      const today = ubToday();
+      if (b.date < ubAddDays(today, -60) || b.date > ubAddDays(today, c.bookingDaysAhead)) return fail(res, 400, 'date_out_of_range');
       const phone = String(b.phone || '').trim();
-      let existing = b.customerId
-        ? db.users.find((u) => u.id === b.customerId && u.role === 'customer')
-        : (phone ? db.users.find((u) => u.phone === phone) : null);
-      if (b.customerId && !existing) return fail(res, 404, 'not_found');
-      /* an unknown number becomes a client record, so the customer list builds
-         itself out of ordinary phone bookings */
-      let created = false;
-      if (!existing && PHONE_RE.test(phone)) {
-        existing = makeUser(String(b.name || '').trim().slice(0, 60) || 'Үйлчлүүлэгч ' + phone.slice(-4), phone, crypto.randomBytes(18).toString('hex'));
-        existing.noLogin = true;
-        existing.createdBy = sess.userId || 'admin';
-        db.users.push(existing);
-        created = true;
-      }
-      const booking = {
-        id: uid('bk'), userId: existing ? existing.id : null,
-        walkName: existing ? '' : String(b.name || phone || 'Walk-in').trim().slice(0, 60),
-        walkPhone: existing ? '' : phone,
-        serviceId: svc.id, staffId: su.id, date: b.date, time: b.time, minutes: svc.minutes,
-        status: b.date < today || (b.done === true && b.date === today) ? 'done' : 'confirmed', paid: 'salon', amount: svc.price,
-        createdBy: b.via === 'phone' ? 'phone' : 'admin', createdAt: nowIso()
-      };
-      db.bookings.push(booking);
+      if (b.customerId && !db.users.some((u) => u.id === b.customerId && u.role === 'customer')) return fail(res, 404, 'not_found');
       const noteText = String(b.note || '').trim().slice(0, 500);
-      if (noteText && existing && sess.userId) {
-        db.notes.push({ id: uid('nt'), staffUserId: sess.userId, customerId: existing.id, text: noteText, shared: true, createdAt: nowIso(), updatedAt: nowIso() });
+
+      /* availability is re-checked here, inside the serialized write, right before saving */
+      const r = await serialized(() => {
+        const ev = evaluate(su, svc, b.date, b.time);
+        if (ev.error) {
+          const clash = ev.error === 'staff_busy' || ev.error === 'machine_busy';
+          return { status: clash ? 409 : 400, error: clash ? 'slot_taken' : ev.error, reason: ev.error };
+        }
+        let existing = b.customerId
+          ? db.users.find((u) => u.id === b.customerId && u.role === 'customer')
+          : (phone ? db.users.find((u) => u.phone === phone) : null);
+        /* an unknown number becomes a client record as part of saving the booking,
+           so the customer list builds itself out of ordinary phone bookings */
+        let created = false;
+        if (!existing && PHONE_RE.test(phone)) {
+          existing = makeUser(String(b.name || '').trim().slice(0, 60) || 'Үйлчлүүлэгч ' + phone.slice(-4), phone, crypto.randomBytes(18).toString('hex'));
+          existing.noLogin = true;
+          existing.createdBy = sess.userId || 'admin';
+          db.users.push(existing);
+          created = true;
+        }
+        const booking = {
+          id: uid('bk'), userId: existing ? existing.id : null,
+          walkName: existing ? '' : String(b.name || phone || 'Walk-in').trim().slice(0, 60),
+          walkPhone: existing ? '' : phone,
+          serviceId: svc.id, staffId: su.id, ...scheduleFields(ev.cand),
+          status: b.date < today || (b.done === true && b.date === today) ? 'done' : 'confirmed', paid: 'salon', amount: svc.price,
+          createdBy: b.via === 'phone' ? 'phone' : 'admin', createdAt: nowIso()
+        };
+        db.bookings.push(booking);
+        if (noteText && existing && sess.userId) {
+          db.notes.push({ id: uid('nt'), staffUserId: sess.userId, customerId: existing.id, text: noteText, shared: true, createdAt: nowIso(), updatedAt: nowIso() });
+        }
+        saveDb();
+        return { booking, created };
+      });
+      if (r.error) return json(res, r.status, { error: r.error, reason: r.reason });
+      return json(res, 200, { ...adminBookingOut(r.booking), customerCreated: r.created });
+    }
+
+    /* ----- fast phone booking helpers ----- */
+    /* type-ahead by phone (4+ digits) or name (2+ letters): newest visits first.
+       Staff only ever see their own bookings with a client. */
+    if (route === 'GET /api/admin/lookup') {
+      const qq = String(q.get('q') || '').trim().toLowerCase();
+      const digits = qq.replace(/\D/g, '');
+      if (digits.length < 4 && (/\d/.test(qq) || qq.length < 2)) return json(res, 200, []);
+      const hits = db.users.filter((u) => u.role === 'customer' && (digits.length >= 4 ? u.phone.includes(digits) : u.name.toLowerCase().includes(qq)));
+      const today = ubToday();
+      return json(res, 200, hits.slice(0, 50).map((u) => {
+        const bks = db.bookings.filter((x) => x.userId === u.id && (isOwner || x.staffId === sess.staffUserId)).sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+        const lastDone = bks.find((x) => x.status === 'done');
+        const next = bks.filter((x) => x.status === 'confirmed' && bkDate(x) >= today).pop();
+        /* the service to suggest: whatever they booked most recently, done or upcoming */
+        const lastAny = bks.find((x) => HOLDING.includes(x.status));
+        const svc = lastAny ? db.services.find((x) => x.id === lastAny.serviceId) : null;
+        return {
+          id: u.id, name: u.name, phone: u.phone, desc: (u.staffDesc || '').slice(0, 140), noLogin: !!u.noLogin,
+          visits: bks.filter((x) => x.status === 'done').length,
+          lastVisit: lastDone ? bkDate(lastDone) : '', lastServiceId: svc ? svc.id : '', lastServiceName: svc ? svc.nameMn : '',
+          nextBooking: next ? bkDate(next) + ' ' + bkTime(next) : ''
+        };
+      }).sort((a, b) => (b.lastVisit || '').localeCompare(a.lastVisit || '')).slice(0, 6));
+    }
+    /* Bookable start times for one therapist, service and day — only times that pass
+       the full staff + machine check, so the booking screen cannot offer a clash. */
+    if (route === 'GET /api/admin/free') {
+      const date = q.get('date') || '';
+      if (!validDate(date)) return fail(res, 400, 'bad_date');
+      const svc = db.services.find((x) => x.id === q.get('serviceId'));
+      if (!svc) return fail(res, 400, 'bad_service');
+      const su = staffById(q.get('staffId') || sess.staffUserId || '');
+      if (!su) return fail(res, 400, 'bad_staff');
+      if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      const step = stepMinutes();
+      /* today: keep the slot that is just starting, drop anything earlier */
+      const notBefore = date === ubToday() ? Date.now() - step * MIN_MS : 0;
+      return json(res, 200, {
+        date, step, closed: salonClosed(date) || !staffWindow(su, date),
+        problem: serviceMachineProblem(svc), slots: freeStarts(su, svc, date, step, notBefore)
+      });
+    }
+
+    /* ----- own day view -----
+       Staff get their own bookings and blocks only (any staffId parameter is ignored);
+       the owner may look at any therapist. */
+    if (route === 'GET /api/admin/myday') {
+      const date = validDate(q.get('date')) ? q.get('date') : ubToday();
+      const sid = isOwner && q.get('staffId') ? q.get('staffId') : sess.staffUserId;
+      const su = sid ? staffById(sid) : null;
+      if (!su) return json(res, 200, { date, staff: null, items: [] });
+      const win = staffWindow(su, date);
+      const items = db.bookings.filter((b) => b.staffId === su.id && bkDate(b) === date).map((b) => ({ kind: 'booking', ...adminBookingOut(b) }))
+        .concat(db.blocks.filter((bl) => bl.staffId === su.id && bkDate(bl) === date).map((bl) => ({ kind: 'block', ...blockOut(bl) })))
+        .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+      return json(res, 200, {
+        date, step: stepMinutes(), closed: salonClosed(date),
+        staff: { id: su.id, name: su.name, working: !!win, open: win ? hhmm(win[0]) : null, close: win ? hhmm(win[1]) : null },
+        items
+      });
+    }
+
+    /* ----- machines ----- */
+    if (route === 'GET /api/admin/machines') {
+      return json(res, 200, machineList().map((m) => ({ id: m.id, name: m.name, units: m.units, bufferMinutes: m.bufferMinutes, placeholder: m.placeholder })));
+    }
+    /* Shared board, visible to every staff member: each machine and when it is busy.
+       Deliberately anonymous — no booking id, customer, phone, service or staff ever
+       leaves this endpoint; only times and how many units are taken. */
+    if (route === 'GET /api/admin/machines/board') {
+      const date = validDate(q.get('date')) ? q.get('date') : ubToday();
+      const dayS = ubMs(date, '00:00'), dayE = dayS + 86400000;
+      const holds = [];
+      for (const b of db.bookings) {
+        if (!HOLDING.includes(b.status)) continue;
+        for (const h of b.machines || []) {
+          const s0 = Date.parse(h.startsAt), e0 = Date.parse(h.endsAt), r0 = Date.parse(h.releasesAt);
+          if (s0 < dayE && dayS < r0) holds.push({ machine: h.machine, s: s0, e: e0, r: r0 });
+        }
       }
-      saveDb();
-      return json(res, 200, { ...adminBookingOut(booking), customerCreated: created });
+      const clip = (x) => ubTime(ubIso(Math.min(Math.max(x, dayS), dayE - MIN_MS)));
+      return json(res, 200, {
+        date,
+        machines: machineList().map((m) => {
+          const mine = holds.filter((h) => h.machine === m.id);
+          /* occupancy over the day as a step function: [from, to) with units taken */
+          const ev = [];
+          for (const h of mine) ev.push([h.s, 1], [h.r, -1]);
+          ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          const busy = [];
+          let cur = 0, from = null;
+          for (const [t, d] of ev) {
+            if (cur > 0 && from !== null && t > from) busy.push({ s: from, e: t, inUse: cur });
+            cur += d;
+            from = t;
+          }
+          const merged = [];
+          for (const x of busy) {
+            const last = merged[merged.length - 1];
+            if (last && last.e === x.s && last.inUse === x.inUse) last.e = x.e; else merged.push({ ...x });
+          }
+          return {
+            id: m.id, name: m.name, units: m.units, placeholder: m.placeholder,
+            busy: merged.map((x) => ({ from: clip(x.s), to: x.e >= dayE ? '24:00' : ubTime(ubIso(x.e)), inUse: x.inUse, full: x.inUse >= m.units })),
+            cleaning: mine.filter((h) => h.r > h.e).map((h) => ({ from: ubTime(ubIso(h.e)), to: ubTime(ubIso(h.r)) }))
+          };
+        })
+      });
     }
 
     /* ----- setup health (owner / super admin) ----- */
@@ -1473,58 +1786,30 @@ async function handleApi(req, res, pathname, q) {
       });
     }
 
-    /* ----- fast phone booking helpers ----- */
-    /* type-ahead by phone (4+ digits) or name (2+ letters): newest visits first */
-    if (route === 'GET /api/admin/lookup') {
-      const qq = String(q.get('q') || '').trim().toLowerCase();
-      const digits = qq.replace(/\D/g, '');
-      if (digits.length < 4 && (/\d/.test(qq) || qq.length < 2)) return json(res, 200, []);
-      const hits = db.users.filter((u) => u.role === 'customer' && (digits.length >= 4 ? u.phone.includes(digits) : u.name.toLowerCase().includes(qq)));
-      return json(res, 200, hits.slice(0, 50).map((u) => {
-        const bks = db.bookings.filter((x) => x.userId === u.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
-        const lastDone = bks.find((x) => x.status === 'done');
-        const next = bks.filter((x) => x.status === 'confirmed' && x.date >= localDateStr(new Date())).pop();
-        /* the service to suggest: whatever they booked most recently, done or upcoming */
-        const lastAny = bks.find((x) => x.status === 'done' || x.status === 'confirmed');
-        const svc = lastAny ? db.services.find((x) => x.id === lastAny.serviceId) : null;
-        return {
-          id: u.id, name: u.name, phone: u.phone, desc: (u.staffDesc || '').slice(0, 140), noLogin: !!u.noLogin,
-          visits: bks.filter((x) => x.status === 'done').length,
-          lastVisit: lastDone ? lastDone.date : '', lastServiceId: svc ? svc.id : '', lastServiceName: svc ? svc.nameMn : '',
-          nextBooking: next ? next.date + ' ' + next.time : ''
-        };
-      }).sort((a, b) => (b.lastVisit || '').localeCompare(a.lastVisit || '')).slice(0, 6));
-    }
-    /* free start times for one therapist, service and day (staff only see their own) */
-    if (route === 'GET /api/admin/free') {
-      const date = q.get('date') || '';
-      if (!DATE_RE.test(date)) return fail(res, 400, 'bad_date');
-      const svc = db.services.find((x) => x.id === q.get('serviceId'));
-      if (!svc) return fail(res, 400, 'bad_service');
-      const su = staffById(q.get('staffId') || sess.staffUserId || '');
-      if (!su) return fail(res, 400, 'bad_staff');
-      if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
-      if (salonClosed(date) || !staffWindow(su, date)) return json(res, 200, { date, closed: true, slots: [] });
-      const today = localDateStr(new Date());
-      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
-      return json(res, 200, {
-        date, closed: false,
-        slots: slotTimes().map((time) => ({ time, free: slotFreeFor(su, date, time, svc.minutes) && !(date === today && toMin(time) < nowMin - 30) }))
-      });
-    }
-
     /* ----- bookings management ----- */
     m = pathname.match(/^\/api\/admin\/bookings\/([\w-]+)\/status$/);
     if (m && method === 'POST') {
       const b = await readJson(req);
       const booking = db.bookings.find((x) => x.id === m[1]);
-      if (!booking) return fail(res, 404, 'not_found');
-      if (!isOwner && booking.staffId !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      /* another staff member's booking id behaves exactly like one that does not exist */
+      if (!booking || (!isOwner && booking.staffId !== sess.staffUserId)) return fail(res, 404, 'not_found');
       const allowed = ['confirmed', 'done', 'noshow', 'cancelled'];
       if (!allowed.includes(b.status)) return fail(res, 400, 'bad_request');
-      if (b.status === 'cancelled' && booking.status !== 'cancelled') refundBooking(booking, 'cancelled by salon');
-      booking.status = b.status;
-      saveDb();
+      const r = await serialized(() => {
+        /* bringing a cancelled / no-show booking back must not create a clash */
+        if (HOLDING.includes(b.status) && !HOLDING.includes(booking.status)) {
+          const clash = clashFor(candidateOf(booking), booking.staffId, reservations(booking.id));
+          if (clash) return { status: 409, error: 'slot_taken', reason: clash };
+        }
+        if (b.status === 'cancelled' && booking.status !== 'cancelled') {
+          refundBooking(booking, 'cancelled by salon');
+          booking.cancelledAt = nowIso();
+        }
+        booking.status = b.status;
+        saveDb();
+        return {};
+      });
+      if (r.error) return json(res, r.status, { error: r.error, reason: r.reason });
       return json(res, 200, { ok: true, booking: adminBookingOut(booking) });
     }
 
@@ -1536,12 +1821,16 @@ async function handleApi(req, res, pathname, q) {
       if (!booking) return fail(res, 404, 'not_found');
       const su = staffById(b.staffId);
       if (!su) return fail(res, 400, 'bad_staff');
-      if (booking.status === 'confirmed' && su.id !== booking.staffId) {
-        const s0 = toMin(booking.time);
-        if (overlaps(staffBusy(su.id, booking.date), s0, s0 + (booking.minutes || c.slotMinutes))) return fail(res, 409, 'slot_taken');
-      }
-      booking.staffId = su.id;
-      saveDb();
+      const r = await serialized(() => {
+        if (HOLDING.includes(booking.status) && su.id !== booking.staffId) {
+          const clash = clashFor(candidateOf(booking), su.id, reservations(booking.id));
+          if (clash) return { status: 409, error: 'slot_taken', reason: clash };
+        }
+        booking.staffId = su.id;
+        saveDb();
+        return {};
+      });
+      if (r.error) return json(res, r.status, { error: r.error, reason: r.reason });
       return json(res, 200, { ok: true, booking: adminBookingOut(booking) });
     }
 
@@ -1550,10 +1839,12 @@ async function handleApi(req, res, pathname, q) {
       const qry = (q.get('q') || '').toLowerCase().trim();
       let list = db.users.filter((u) => u.role === 'customer');
       if (qry) list = list.filter((u) => u.name.toLowerCase().includes(qry) || u.phone.includes(qry) || (u.staffDesc || '').toLowerCase().includes(qry));
+      const ownStaff = isOwner ? null : sess.staffUserId || '-';
+      const today = ubToday();
       let out = list.map((u) => {
-        const myBks = db.bookings.filter((b) => b.userId === u.id);
+        const myBks = db.bookings.filter((b) => b.userId === u.id && (!ownStaff || b.staffId === ownStaff));
         const doneBks = myBks.filter((b) => b.status === 'done');
-        const plans = planStatus(u);
+        const plans = planStatus(u, ownStaff);
         const due = plans.filter((pl) => pl.state !== 'booked').sort((a, b) => a.nextDue.localeCompare(b.nextDue))[0];
         return {
           ...publicUser(u),
@@ -1561,8 +1852,8 @@ async function handleApi(req, res, pathname, q) {
           nextDue: due ? due.nextDue : '', dueState: due ? due.state : '', dueService: due ? due.serviceName : '',
           bookings: myBks.length,
           visits: doneBks.length,
-          lastVisit: (doneBks.sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))[0] || {}).date || '',
-          nextBooking: (myBks.filter((b) => b.status === 'confirmed' && b.date >= localDateStr(new Date())).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] || {}).date || ''
+          lastVisit: doneBks.length ? bkDate(doneBks.sort((a, b) => b.startsAt.localeCompare(a.startsAt))[0]) : '',
+          nextBooking: (() => { const n = myBks.filter((b) => b.status === 'confirmed' && bkDate(b) >= today).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0]; return n ? bkDate(n) : ''; })()
         };
       });
       if (q.get('due') === '1') out = out.filter((u) => u.dueState === 'due' || u.dueState === 'overdue').sort((a, b) => a.nextDue.localeCompare(b.nextDue));
@@ -1618,7 +1909,7 @@ async function handleApi(req, res, pathname, q) {
       if (!svc) return fail(res, 400, 'bad_service');
       const every = Math.round(Number(b.everyDays));
       if (!Number.isFinite(every) || every < 1 || every > 365) return fail(res, 400, 'bad_interval');
-      const start = DATE_RE.test(b.startDate || '') ? b.startDate : localDateStr(new Date());
+      const start = validDate(b.startDate) ? b.startDate : ubToday();
       if (!u.plans) u.plans = [];
       if (u.plans.length >= 10) return fail(res, 400, 'too_many');
       u.plans.push({ id: uid('pl'), serviceId: svc.id, everyDays: every, startDate: start, note: String(b.note || '').trim().slice(0, 200), createdBy: sess.userId || null, createdAt: nowIso() });
@@ -1638,16 +1929,18 @@ async function handleApi(req, res, pathname, q) {
 
     m = pathname.match(/^\/api\/admin\/users\/([\w-]+)$/);
     if (m && method === 'GET') {
-      const u = db.users.find((x) => x.id === m[1]);
+      const u = db.users.find((x) => x.id === m[1] && x.role === 'customer');
       if (!u) return fail(res, 404, 'not_found');
-      const bks = db.bookings.filter((b) => b.userId === u.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).map(adminBookingOut);
+      /* staff see their own visits with this client only; the owner sees all */
+      const ownStaff = isOwner ? null : sess.staffUserId || '-';
+      const bks = db.bookings.filter((b) => b.userId === u.id && (!ownStaff || b.staffId === ownStaff)).sort((a, b) => b.startsAt.localeCompare(a.startsAt)).map(adminBookingOut);
       const done = bks.filter((b) => b.status === 'done');
       const spent = done.filter((b) => b.paid === 'balance' || b.paid === 'salon').reduce((s, b) => s + b.amount, 0);
       const packages = db.userBundles.filter((ub) => ub.userId === u.id).map((ub) => {
         const bd = db.bundles.find((b) => b.id === ub.bundleId) || {};
         return { id: ub.id, name: bd.nameMn || '?', remaining: ub.remaining, sessions: bd.sessions || 0, expiresAt: ub.expiresAt, expired: new Date(ub.expiresAt).getTime() < Date.now() };
       });
-      const reviews = db.reviews.filter((r) => r.userId === u.id).map((r) => ({ id: r.id, rating: r.rating, text: r.text, approved: r.approved, createdAt: r.createdAt }));
+      const reviews = db.reviews.filter((r) => r.userId === u.id && (!ownStaff || r.staffId === ownStaff)).map((r) => ({ id: r.id, rating: r.rating, text: r.text, approved: r.approved, createdAt: r.createdAt }));
       const myNotes = db.notes.filter((n) => n.customerId === u.id && n.staffUserId === sess.userId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       /* notes other staff chose to share with the team */
@@ -1661,7 +1954,7 @@ async function handleApi(req, res, pathname, q) {
         stats: { visits: done.length, spent, total: bks.length, noshow: bks.filter((b) => b.status === 'noshow').length },
         bookings: bks.slice(0, 60),
         packages, reviews, myNotes, sharedNotes,
-        desc: u.staffDesc || '', noLogin: !!u.noLogin, plans: planStatus(u)
+        desc: u.staffDesc || '', noLogin: !!u.noLogin, plans: planStatus(u, ownStaff)
       });
     }
 
@@ -1729,6 +2022,8 @@ async function handleApi(req, res, pathname, q) {
       const b = await readJson(req);
       const svc = serviceFromBody(b, { id: uid('svc'), active: true });
       if (!svc) return fail(res, 400, 'bad_request');
+      const cu = cleanUses(b.uses, svc.minutes);
+      if (cu.error) return fail(res, 400, cu.error);
       db.services.push(svc);
       saveDb();
       return json(res, 200, svc);
@@ -1745,10 +2040,14 @@ async function handleApi(req, res, pathname, q) {
         if (!Number.isFinite(p) || p < 0 || p > 100000000) return fail(res, 400, 'bad_request');
         svc.price = p;
       }
-      if (b.minutes !== undefined) {
-        const mn = Math.round(Number(b.minutes));
+      if (b.minutes !== undefined || b.uses !== undefined) {
+        const mn = b.minutes !== undefined ? Math.round(Number(b.minutes)) : svc.minutes;
         if (!Number.isFinite(mn) || mn < 15 || mn > 240) return fail(res, 400, 'bad_request');
+        /* the machine windows must still fit inside the (new) duration */
+        const cu = cleanUses(b.uses !== undefined ? b.uses : svc.uses, mn);
+        if (cu.error) return fail(res, 400, cu.error);
         svc.minutes = mn;
+        svc.uses = cu.uses;
       }
       if (b.active !== undefined) svc.active = !!b.active;
       if (typeof b.nameEn === 'string' && b.nameEn.trim()) svc.nameEn = b.nameEn.trim().slice(0, 80);
@@ -1778,7 +2077,7 @@ async function handleApi(req, res, pathname, q) {
         color: u.staff.color || '#b08c46', hours: u.staff.hours || DEFAULT_HOURS,
         daysOff: u.staff.daysOff || [], active: u.staff.active !== false,
         rating: staffRating(u.id).rating, reviewCount: staffRating(u.id).count,
-        upcoming: db.bookings.filter((b) => b.staffId === u.id && b.status === 'confirmed' && b.date >= localDateStr(new Date())).length
+        upcoming: db.bookings.filter((b) => b.staffId === u.id && b.status === 'confirmed' && bkDate(b) >= ubToday()).length
       })));
     }
 
@@ -2187,6 +2486,14 @@ async function handleApi(req, res, pathname, q) {
 function photoOut(p) {
   return { id: p.id, note: p.note, createdAt: p.createdAt, url: '/api/photos/' + p.id + '/file' };
 }
+function machineHoldOut(h) {
+  const m = MACHINES.get(h.machine);
+  return { machine: h.machine, name: m ? m.name : h.machine, from: ubTime(h.startsAt), to: ubTime(h.endsAt), until: ubTime(h.releasesAt) };
+}
+function blockOut(bl) {
+  /* until is counted from the start so a block to midnight reads 24:00, not 00:00 */
+  return { id: bl.id, staffId: bl.staffId, note: bl.note || '', startsAt: bl.startsAt, endsAt: bl.endsAt, date: bkDate(bl), time: bkTime(bl), until: hhmm(toMin(bkTime(bl)) + bkMinutes(bl)), minutes: bkMinutes(bl) };
+}
 function msgOut(msg) {
   return { id: msg.id, from: msg.from, fromName: msg.fromName, text: msg.text, createdAt: msg.createdAt };
 }
@@ -2196,24 +2503,25 @@ function bookingOut(b) {
   return {
     id: b.id, serviceId: b.serviceId, staffId: b.staffId || null,
     staffName: st ? st.name : '', staffColor: st && st.staff ? st.staff.color : '',
-    date: b.date, time: b.time, minutes: b.minutes, status: b.status, paid: b.paid, amount: b.amount,
+    /* date/time/minutes are derived for the screens; startsAt/endsAt are what is stored */
+    date: bkDate(b), time: bkTime(b), minutes: bkMinutes(b), startsAt: b.startsAt, endsAt: b.endsAt,
+    machines: (b.machines || []).map(machineHoldOut),
+    status: b.status, paid: b.paid, amount: b.amount,
     createdAt: b.createdAt, reviewId: b.reviewId || null, service: svc
   };
 }
 /* Next due date for each repeat-service plan: last finished visit of that service
    (or the plan start) + everyDays. "booked" when a future booking already exists. */
-function planStatus(u) {
-  const today = localDateStr(new Date());
-  const soon = localDateStr(new Date(Date.now() + 3 * 86400000));
+function planStatus(u, staffId) {
+  const today = ubToday();
+  const soon = ubAddDays(today, 3);
   return (u.plans || []).map((pl) => {
     const svc = db.services.find((x) => x.id === pl.serviceId);
-    const mine = db.bookings.filter((b) => b.userId === u.id && b.serviceId === pl.serviceId);
-    const last = mine.filter((b) => b.status === 'done').map((b) => b.date).sort().pop() || '';
+    const mine = db.bookings.filter((b) => b.userId === u.id && b.serviceId === pl.serviceId && (!staffId || b.staffId === staffId));
+    const last = mine.filter((b) => b.status === 'done').map(bkDate).sort().pop() || '';
     const base = last && last > pl.startDate ? last : pl.startDate;
-    const d = new Date(base + 'T12:00:00');
-    d.setDate(d.getDate() + pl.everyDays);
-    const nextDue = localDateStr(d);
-    const booked = mine.some((b) => b.status === 'confirmed' && b.date >= today);
+    const nextDue = ubAddDays(base, pl.everyDays);
+    const booked = mine.some((b) => b.status === 'confirmed' && bkDate(b) >= today);
     const state = booked ? 'booked' : (nextDue < today ? 'overdue' : (nextDue <= soon ? 'due' : 'ok'));
     return { ...pl, serviceName: svc ? svc.nameMn : '?', lastVisit: last, nextDue, state };
   });
@@ -2256,7 +2564,8 @@ function serviceFromBody(b, base) {
     group: ['facial', 'body', 'other'].includes(b.group) ? b.group : 'facial',
     nameMn: nameMn.slice(0, 80), nameEn: nameEn.slice(0, 80),
     descMn: String(b.descMn || '').trim().slice(0, 300), descEn: String(b.descEn || '').trim().slice(0, 300),
-    minutes, price, emoji: String(b.emoji || '🌿').trim().slice(0, 8)
+    minutes, price, emoji: String(b.emoji || '🌿').trim().slice(0, 8),
+    uses: cleanUses(b.uses, minutes).uses || []
   };
 }
 function bundleFromBody(b, base) {
@@ -2324,12 +2633,7 @@ const MIME = {
    subscribes to, so bookings made here show up in the calendar staff already use.
    Google refreshes subscriptions on its own schedule (often hours), so the admin
    day view stays the source of truth for same-day changes. */
-const UB_OFFSET_H = 8; /* Ulaanbaatar is UTC+8 all year (no DST since 2017) */
-function icsUtc(dateStr, minutes) {
-  const [y, mo, d] = dateStr.split('-').map(Number);
-  const t = new Date(Date.UTC(y, mo - 1, d, 0, minutes) - UB_OFFSET_H * 3600000);
-  return t.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-}
+function icsUtc(iso) { return new Date(Date.parse(iso)).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
 function icsText(s) {
   return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 }
@@ -2352,34 +2656,32 @@ function calFeedFor(feed) {
   if (all && u.role !== 'owner' && u.role !== 'superadmin') return null;
   if (!all && !u.staff) return null;
   const c = cfg();
-  const from = localDateStr(new Date(Date.now() - 60 * 86400000));
-  const to = localDateStr(new Date(Date.now() + 180 * 86400000));
+  const from = Date.now() - 60 * 86400000, to = Date.now() + 180 * 86400000;
+  const inRange = (x) => Date.parse(x.startsAt) >= from && Date.parse(x.startsAt) <= to;
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//B\'s Gua Sha//Bookings//MN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'X-WR-CALNAME:' + icsText("B's Gua Sha — " + (all ? 'бүх захиалга' : u.name)),
     'X-WR-TIMEZONE:Asia/Ulaanbaatar', 'REFRESH-INTERVAL;VALUE=DURATION:PT30M', 'X-PUBLISHED-TTL:PT30M'
   ];
-  const bks = db.bookings.filter((b) => (b.status === 'confirmed' || b.status === 'done') && b.date >= from && b.date <= to && (all || b.staffId === u.id));
+  const bks = db.bookings.filter((b) => HOLDING.includes(b.status) && inRange(b) && (all || b.staffId === u.id));
   for (const b of bks) {
     const svc = db.services.find((x) => x.id === b.serviceId);
     const cu = b.userId ? db.users.find((x) => x.id === b.userId) : null;
     const name = cu ? cu.name : (b.walkName || 'Зочин');
     const phone = cu ? cu.phone : (b.walkPhone || '');
     const st = all && b.staffId ? staffById(b.staffId) : null;
-    const start = toMin(b.time);
-    const desc = [phone ? '📞 ' + phone : '', svc ? svc.nameMn + ' · ' + (b.minutes || svc.minutes) + ' мин · ' + (b.amount || svc.price).toLocaleString('en-US') + '₮' : '',
+    const desc = [phone ? '📞 ' + phone : '', svc ? svc.nameMn + ' · ' + bkMinutes(b) + ' мин · ' + (b.amount || svc.price).toLocaleString('en-US') + '₮' : '',
       b.status === 'done' ? '✓ Болсон' : '', cu && cu.staffDesc ? '📋 ' + cu.staffDesc : ''].filter(Boolean).join('\n');
     lines.push('BEGIN:VEVENT', 'UID:' + b.id + '@bguasha', 'DTSTAMP:' + stamp,
-      'DTSTART:' + icsUtc(b.date, start), 'DTEND:' + icsUtc(b.date, start + (b.minutes || (svc && svc.minutes) || 60)),
+      'DTSTART:' + icsUtc(b.startsAt), 'DTEND:' + icsUtc(b.endsAt),
       'SUMMARY:' + icsText(name + ' — ' + (svc ? svc.nameMn : 'Үйлчилгээ') + (st ? ' (' + firstName(st.name) + ')' : '')),
       'DESCRIPTION:' + icsText(desc), 'LOCATION:' + icsText(c.addressMn || ''), 'STATUS:CONFIRMED', 'END:VEVENT');
   }
   /* blocked time (breaks, errands) so the calendar shows the day as it really is */
-  for (const bl of db.blocks.filter((x) => x.date >= from && x.date <= to && (all || x.staffId === u.id))) {
-    const start = toMin(bl.time);
+  for (const bl of db.blocks.filter((x) => inRange(x) && (all || x.staffId === u.id))) {
     lines.push('BEGIN:VEVENT', 'UID:' + bl.id + '@bguasha', 'DTSTAMP:' + stamp,
-      'DTSTART:' + icsUtc(bl.date, start), 'DTEND:' + icsUtc(bl.date, start + (c.slotMinutes || 60)),
+      'DTSTART:' + icsUtc(bl.startsAt), 'DTEND:' + icsUtc(bl.endsAt),
       'SUMMARY:' + icsText('🚫 ' + (bl.note || 'Хаасан цаг')), 'TRANSP:OPAQUE', 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');

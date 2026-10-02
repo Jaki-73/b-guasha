@@ -305,6 +305,100 @@
         "Boot counter increments and createdAt is kept across restarts",
         "Staff get 403 on /api/admin/health"
       ]
+    },
+    {
+      "id": 13,
+      "date": "2026-10-02",
+      "author": "Claude (Claude Code session)",
+      "summary": "Booking and block times stored as explicit +08:00 instants",
+      "why": "Availability has to compare exact instants. Bookings stored a bare date + time, and 'today' and weekdays came from the server's own clock and time zone (Render runs in UTC), so the salon's day could shift by eight hours.",
+      "changes": [
+        "Bookings and blocks store startsAt / endsAt as ISO strings with an explicit +08:00 offset (e.g. 2026-10-02T14:00:00+08:00). No bare local time is stored.",
+        "Every date calculation (today, weekday, adding days, the customer app's one-hour lead time, plan due dates, the calendar subscription feed) uses fixed UTC+08:00 and ignores the process time zone.",
+        "API responses still include date, time and minutes, derived from startsAt / endsAt, so existing screens and the customer app keep working."
+      ],
+      "data_impact": "One-time migration on the first start (meta.scheduleVersion 1): each booking's date/time/minutes becomes startsAt/endsAt and gets machines: []; each block's date/time becomes startsAt/endsAt one slot long; the old keys are removed; services get uses: []. Take a Backup (admin header) before deploying.",
+      "files": [
+        "server.js"
+      ],
+      "verified": [
+        "npm test: a legacy database with bare date/time bookings and blocks migrates to +08:00 instants and the old bookings still block new ones",
+        "npm test: every stored booking, machine hold and block matches YYYY-MM-DDTHH:MM:SS+08:00",
+        "The whole suite runs with the server process in TZ=America/Los_Angeles"
+      ]
+    },
+    {
+      "id": 14,
+      "date": "2026-10-02",
+      "author": "Claude (Claude Code session)",
+      "summary": "Machine registry and machine-aware availability: two staff can never book the same machine at overlapping times",
+      "why": "The salon has a limited number of machines (e.g. one HIFU, two steamers). Bookings only checked the therapist, so two people could book the same machine for the same time.",
+      "changes": [
+        "config.json → machines: [{id, name, units, bufferMinutes}], shipped as clearly marked PLACEHOLDER entries; bookingStepMinutes (default 15) sets the staff booking grid. Invalid entries are logged and ignored.",
+        "Services declare uses: [{machine, minutes, startOffset}] — the part of the treatment that uses each machine. Validated: known machine, no duplicates, window inside the service, at most 4.",
+        "A booking reserves its therapist (1 unit) for the whole appointment and each machine from start+startOffset for minutes, plus that machine's bufferMinutes. Intervals are half-open, so back-to-back is allowed. Overlapping reservations are counted per resource (peak concurrency) and the booking is refused when any resource would exceed its units.",
+        "Only confirmed and done bookings hold anything; cancelling releases the therapist and machines at once; restoring a cancelled or no-show booking, or reassigning it, re-checks.",
+        "The check runs again inside a serialized write (check, mutate and save with no await in between), for customer bookings, staff bookings, restores, reassignments and blocks.",
+        "Bookings keep a snapshot of their machine windows, so later edits to a service don't move existing reservations.",
+        "GET /api/admin/free returns only the start times that pass the full therapist + machine check; a refused booking returns 409 {error: 'slot_taken', reason: 'staff_busy' | 'machine_busy'}.",
+        "The customer app's slots use the same engine.",
+        "Owner warnings: machines_placeholder and service_machine_problem."
+      ],
+      "data_impact": "Bookings gain machines: [{machine, startsAt, endsAt, releasesAt}] (existing bookings: none). Services gain uses (existing: none, meaning no machine).",
+      "files": [
+        "server.js",
+        "config.json",
+        "package.json",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "npm test (node --test, no dependencies) against the real server with 1 HIFU and 2 steamers: acceptance cases 1–6 pass, plus cleaning buffers, a two-machine service and a service with no machine",
+        "Races: two staff for the last HIFU → exactly one succeeds; five at once → one; three for two steamers → two",
+        "Mutation checks: moving the check outside the serialized write makes the race test fail; treating the end as inclusive makes the back-to-back test fail"
+      ]
+    },
+    {
+      "id": 15,
+      "date": "2026-10-02",
+      "author": "Claude (Claude Code session)",
+      "summary": "Staff can no longer see each other's schedules through any page or API call; own-day, block and machine-board endpoints",
+      "why": "Each therapist's day view must be private, enforced on the server for every request.",
+      "changes": [
+        "Staff requests are filtered to their own bookings everywhere: calendar, overview, booking status, client list, client card (history, plan due dates, reviews), phone lookup, free times and the calendar feed. Another staff member's booking id answers 404, like an id that does not exist.",
+        "New GET /api/admin/myday — one day of the caller's own bookings and blocks (the owner may pass staffId).",
+        "New GET /api/admin/machines and GET /api/admin/machines/board — the shared board shows only each machine's busy windows, units in use and cleaning time; no booking id, client, phone, service or staff name.",
+        "Blocks: any length (from–to, up to 24:00). Staff block only themselves; a block reserves the therapist only, never a machine, and is refused if it overlaps their own booking.",
+        "Restoring a booking to confirmed now re-checks availability; before, it could create a double booking."
+      ],
+      "data_impact": "None.",
+      "files": [
+        "server.js",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "npm test, acceptance 7: B gets 404 on A's booking id; A's bookings are absent from B's my-day, calendar, overview, client list, client card and lookup; B gets 403 for A's free times, for blocking A's time and for deleting A's block; B's calendar feed has only B's bookings",
+        "npm test: the board contains no client names, phone numbers, service or staff names, or ids"
+      ]
+    },
+    {
+      "id": 16,
+      "date": "2026-10-02",
+      "author": "Claude (Claude Code session)",
+      "summary": "Logins last 60 days from their last use; signing out ends the session on the server",
+      "why": "Staff use the panel from their phone's home screen and should not have to log in again every visit. A long-lived login then has to be revocable.",
+      "changes": [
+        "Admin and customer sessions expire 60 days after their last use (sliding). lastSeenAt is written at most once an hour per session.",
+        "New POST /api/admin/logout deletes the current admin session."
+      ],
+      "data_impact": "Existing sessions get lastSeenAt = now on the first start. Sessions unused for 60 days are removed the next time they are presented. Customer sessions previously never expired.",
+      "files": [
+        "server.js",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "npm test: a session last used 59 days ago still works and one last used 61 days ago gets 401",
+        "npm test: after logout that token gets 401 while the same person's other session still works"
+      ]
     }
   ]
 }
