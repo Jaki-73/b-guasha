@@ -97,7 +97,7 @@
   }
   function salonCallHtml(cls) {
     var c = state.config || {};
-    return c.phoneTel ? '<a class="btn ' + (cls || 'btn-ghost') + ' btn-block mt" href="tel:' + esc(c.phoneTel) + '">' + t('bk.call') + ' · ' + esc(c.phoneDisplay || '') + '</a>' : '';
+    return c.phoneTel ? '<a class="btn ' + (cls || 'btn-ghost') + ' btn-block mt" href="tel:' + esc(c.phoneTel) + '">' + t('bk.call') + ' · <span class="nw">' + esc(c.phoneDisplay || '') + '</span></a>' : '';
   }
 
   function toast(msg, kind) {
@@ -314,7 +314,7 @@
       '<div class="row" style="justify-content:center;margin-bottom:16px">' +
       '<button class="icon-btn" id="abLang">' + (state.lang === 'mn' ? 'EN' : 'МН') + '</button>' +
       '<button class="icon-btn" id="abTheme">' + (state.theme === 'dark' ? '☀️' : '🌙') + '</button></div>' +
-      (pendingBook ? '<p class="auth-note">📅 ' + esc(t('auth.book_first')) + '</p>' : '') +
+      (pendingBook ? '<p class="auth-note">' + (pendingBook === 'chat' ? '💬 ' + esc(t('auth.chat_first')) : pendingBook === 'bookings' ? '📅 ' + esc(t('auth.bookings_first')) : '📅 ' + esc(t('auth.book_first'))) + '</p>' : '') +
       '<div class="auth-tabs">' +
       '<button id="tabLogin" class="' + (authMode === 'login' ? 'active' : '') + '">' + t('auth.login') + '</button>' +
       '<button id="tabReg" class="' + (authMode === 'register' ? 'active' : '') + '">' + t('auth.register') + '</button></div>' +
@@ -618,7 +618,9 @@
     var tx = function (v) { return String(v).replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n'); };
     var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', "PRODID:-//B's Gua Sha//app//MN", 'BEGIN:VEVENT', 'UID:' + b.id + '@bs-guasha',
       'DTSTAMP:' + icsStamp(Date.now()), 'DTSTART:' + icsStamp(s), 'DTEND:' + icsStamp(e),
-      'SUMMARY:' + tx(calTitle(b)), 'LOCATION:' + tx(addressText()), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+      'SUMMARY:' + tx(calTitle(b)), 'LOCATION:' + tx(addressText()),
+      'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT2H', 'DESCRIPTION:' + tx(calTitle(b)), 'END:VALARM',
+      'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
     a.download = 'bs-guasha.ics';
@@ -662,7 +664,7 @@
     if ((x = m.querySelector('#bkRate'))) x.onclick = function () { closeModal(); openReview(b); };
     if ((x = m.querySelector('#bkMove'))) x.onclick = function () { closeModal(); startMove(b); };
     if ((x = m.querySelector('#bkCancel'))) x.onclick = function () {
-      confirmDlg(t('prof.cancel_q'), { no: t('prof.cancel_no'), yes: t('prof.cancel_yes'), danger: true }).then(function (yes) {
+      confirmDlg(t(walletOn() ? 'prof.cancel_q' : 'prof.cancel_q_nw'), { no: t('prof.cancel_no'), yes: t('prof.cancel_yes'), danger: true }).then(function (yes) {
         if (!yes) return;
         api('/api/bookings/' + encodeURIComponent(b.id) + '/cancel', { method: 'POST' })
           .then(function (d) {
@@ -700,8 +702,10 @@
     /* step 1 — the customer's own upcoming bookings first, then a new booking */
     if (bk.step === 1) {
       var mine = (state.bookings || []).filter(isUpcoming).sort(function (a, b) { return startMs(a) - startMs(b); });
-      if (mine.length) html += '<div class="section-head"><h3>' + t('book.mine') + '</h3></div><div class="card" id="myUpcoming">' + mine.map(bookingRowHtml).join('') + '</div>' +
-        '<div class="section-head"><h3>' + t('book.new') + '</h3></div>';
+      /* with upcoming visits: they come first, and the new-booking steps start under their own heading */
+      if (mine.length) html = appbar() + '<div class="book-wrap"><h2 class="view-title">' + t('book.mine') + '</h2>' +
+        '<div class="card" id="myUpcoming">' + mine.map(bookingRowHtml).join('') + '</div>' +
+        '<h2 class="view-title" style="margin-top:22px">' + t('book.new') + '</h2>' + stepperHtml(1);
       html += '<p class="view-sub">' + t('book.step_service') + '</p><div class="svc-list svc-list-book">' + state.services.map(function (x) { return svcRowHtml(x); }).join('') + '</div>';
       $app.innerHTML = html + '</div>';
       bindAppbar();
@@ -724,7 +728,7 @@
     html += '<div class="card svc-row" style="cursor:default;margin-top:10px"><div class="emoji">' + (s.emoji || '🌿') + '</div>' +
       '<div><div class="name">' + esc(svcName(s)) + '</div><div class="meta">' + s.minutes + ' ' + t('book.min') + '</div></div>' +
       '<div class="price">' + money(s.price) + '</div></div>';
-    if (mv) html += '<p class="muted small" style="margin-top:8px">' + t('bk.now') + ': <s>' + fmtDate(mv.date) + ' · ' + mv.time + '</s></p>';
+    if (mv) html += '<p class="small" style="margin-top:8px"><span class="muted">' + t('bk.now') + ':</span> <b>' + fmtDate(mv.date) + ' · ' + mv.time + '</b></p>';
 
     /* step 2 — staff */
     if (bk.step === 2) {
@@ -777,8 +781,10 @@
           html += '<div class="slot-grid">' + bk.slots.slots.map(function (x) {
             var was = mv && mv.date === bk.date && mv.time === x.time;
             var off = !x.available || was;
-            return '<button class="slot' + (off ? ' taken' : '') + (was ? ' was' : '') + (bk.time === x.time ? ' active' : '') + '" data-time="' + x.time + '"' + (off ? ' disabled' : '') + '>' +
-              x.time + '<small>–' + endOf(x.time, s.minutes) + '</small></button>';
+            /* the current time of the booking being moved, and the customer's own other visits, say so */
+            var label = was ? t('bk.now_short') : (x.mine ? t('bk.yours') : '–' + endOf(x.time, s.minutes));
+            return '<button class="slot' + (off ? ' taken' : '') + (was || x.mine ? ' was' : '') + (bk.time === x.time ? ' active' : '') + '" data-time="' + x.time + '"' + (off ? ' disabled' : '') + '>' +
+              x.time + '<small>' + esc(label) + '</small></button>';
           }).join('') + '</div>';
         }
       }
@@ -863,6 +869,11 @@
   function submitMove(btn) {
     var bk = state.book, mv = bk.move;
     if (btn.disabled) return;
+    var q = t('bk.move_q').replace('{from}', fmtDate(mv.date) + ' ' + mv.time).replace('{to}', fmtDate(bk.date) + ' ' + bk.time);
+    confirmDlg(q, { no: t('bk.move_no'), yes: t('bk.move_yes') }).then(function (yes) { if (yes) doMove(btn); });
+  }
+  function doMove(btn) {
+    var bk = state.book, mv = bk.move;
     btn.disabled = true;
     api('/api/bookings/' + encodeURIComponent(mv.id) + '/move', { method: 'POST', body: { date: bk.date, time: bk.time } })
       .then(function (d) {

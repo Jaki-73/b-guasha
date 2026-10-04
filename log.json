@@ -547,6 +547,38 @@
         "Tests: board 'mine' only for the asker, cleaning sorted; client_busy and customerId filter",
         "Playwright phone run as staff: no horizontal overflow on Clients, Bookings, client card; future booking dialog has no Болсон; Enter saves a note; board follows My day; sheet header shows the caller; no console errors"
       ]
+    },
+    {
+      "id": 22,
+      "date": "2026-10-04",
+      "author": "Claude (Claude Code session)",
+      "summary": "Round-2 review fixes: no customer-overlap side channel for staff, free-time counts on day buttons, small customer and staff fixes",
+      "why": "Second persona reviews. The therapist found that leaving out times when her customer was booked elsewhere revealed exactly when a colleague had that customer — a schedule leak the privacy rule forbids. Both reviewers listed smaller rough edges.",
+      "changes": [
+        "The 'customer already booked at that time' check now runs only for the owner (who sees every schedule) and for customers' own bookings in the app. For staff it is neither a refusal nor missing times, so it cannot reveal a colleague's visit; staff bookings are still checked for their own time and the machines.",
+        "GET /api/admin/free-days: free start counts per day (same rules and privacy as /api/admin/free; another therapist's is 403). The booking sheet shows '16 сул' / 'дүүрэн' under each day button.",
+        "Booking sheet: the chosen service stays visible on the times step with a 'солих' link.",
+        "My day: the therapist's own name no longer shows on every card but the first (map passed the index as a flag); the round 📞 button is not shown on My day, which has its own big 📞 button and was covered by it.",
+        "Customer card: the note field is full width on its own row.",
+        "Admin tabs 44px tall on a phone; the login title says 'Ажилтны нэвтрэлт'.",
+        "App: moving asks 'from → to?' first; the current time is shown plainly (not struck through) and its slot is labelled 'одоо'; a time blocked by the customer's own other visit says 'таны цаг' (/api/slots marks it mine) instead of looking like the salon is full.",
+        "App: 'Таны захиалгууд' comes first on the Захиалга tab with the new-booking stepper under its own heading; the login note matches why she came (chat / bookings / booking); the salon phone never breaks across lines; the cancel question drops the refund sentence when the wallet is off; the .ics file has a reminder two hours before; the forgot-password text says 'салоны ажилтан'."
+      ],
+      "data_impact": "None.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "public/admin/index.html",
+        "public/app/app.js",
+        "public/app/app.css",
+        "public/app/i18n.js",
+        "test/scheduling.test.js",
+        "README.md"
+      ],
+      "verified": [
+        "Tests: staff /free and /free-days are identical with and without customerId, a staff booking for a customer busy with a colleague is not refused, free-days for a colleague is 403; owner counts match /free; /api/slots marks the customer's own visit",
+        "Playwright phone runs as customer and staff: move confirm dialog, Back behaviour, day counts, no own name on My day cards, no 📞 overlay on My day, no console errors"
+      ]
     }
   ]
 }

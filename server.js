@@ -877,6 +877,17 @@ function freeStarts(su, svc, dateStr, step, notBeforeMs, excludeBookingId) {
   return out;
 }
 
+/* the booking sheet's start times: today drops what has already begun (keeping the slot
+   that is just starting); `cid` leaves out times when that customer is booked elsewhere */
+function freeSlotsFor(su, svc, date, excludeBookingId, cid) {
+  const step = stepMinutes();
+  const notBefore = date === ubToday() ? Date.now() - step * MIN_MS : 0;
+  return freeStarts(su, svc, date, step, notBefore, excludeBookingId).filter((time) => {
+    const s0 = ubMs(date, time);
+    return !clientBusy(cid, { startMs: s0, endMs: s0 + svc.minutes * MIN_MS }, excludeBookingId);
+  });
+}
+
 /* ---------------- serialized write path ----------------
    Every booking and block write runs through here, one at a time. The callback is
    synchronous: it re-derives reservations from the live db, re-checks availability,
@@ -1144,11 +1155,11 @@ async function handleApi(req, res, pathname, q) {
     const soonest = Date.now() + 60 * MIN_MS; /* the app keeps a one-hour lead time */
     const slots = slotTimes().map((time) => {
       const s0 = ubMs(date, time);
-      return {
-        time,
-        available: s0 >= soonest && pool.some((u) => !evaluate(u, svc, date, time, list).error) &&
-          !(me && clientBusy(me.id, { startMs: s0, endMs: s0 + svc.minutes * MIN_MS }, moving ? moving.id : undefined))
-      };
+      /* the customer's own other visit at that time: shown as hers, not as "salon full" */
+      const mine = !!me && clientBusy(me.id, { startMs: s0, endMs: s0 + svc.minutes * MIN_MS }, moving ? moving.id : undefined);
+      const out = { time, available: !mine && s0 >= soonest && pool.some((u) => !evaluate(u, svc, date, time, list).error) };
+      if (mine) out.mine = true;
+      return out;
     });
     return json(res, 200, { date, closed: false, slots });
   }
@@ -1708,7 +1719,9 @@ async function handleApi(req, res, pathname, q) {
           db.users.push(existing);
           created = true;
         }
-        if (existing && clientBusy(existing.id, ev.cand)) return { status: 409, error: 'client_busy', reason: 'client_busy' };
+        /* only the owner, who sees every schedule anyway: for staff a refusal (or a missing
+           time) would reveal when a colleague has this customer */
+        if (isOwner && existing && clientBusy(existing.id, ev.cand)) return { status: 409, error: 'client_busy', reason: 'client_busy' };
         const booking = {
           id: uid('bk'), userId: existing ? existing.id : null,
           walkName: existing ? '' : String(b.name || phone || 'Walk-in').trim().slice(0, 60),
@@ -1765,18 +1778,32 @@ async function handleApi(req, res, pathname, q) {
       /* moving a booking: its own current time counts as free (only a booking this person may see) */
       const moving = q.get('exclude') ? db.bookings.find((x) => x.id === q.get('exclude') && (isOwner || x.staffId === sess.staffUserId)) : null;
       const step = stepMinutes();
-      /* today: keep the slot that is just starting, drop anything earlier */
-      const notBefore = date === ubToday() ? Date.now() - step * MIN_MS : 0;
-      /* booking for a known customer: leave out times when she is already booked elsewhere */
-      const cid = q.get('customerId') || (moving && moving.userId) || '';
-      const slots = freeStarts(su, svc, date, step, notBefore, moving ? moving.id : undefined).filter((time) => {
-        const s0 = ubMs(date, time);
-        return !clientBusy(cid, { startMs: s0, endMs: s0 + svc.minutes * MIN_MS }, moving ? moving.id : undefined);
-      });
+      /* the owner booking a known customer: leave out times when she is already booked elsewhere.
+         Never for staff — the gaps would show when a colleague has her. */
+      const cid = isOwner ? (q.get('customerId') || (moving && moving.userId) || '') : '';
       return json(res, 200, {
         date, step, closed: salonClosed(date) || !staffWindow(su, date),
-        problem: serviceMachineProblem(svc), slots
+        problem: serviceMachineProblem(svc), slots: freeSlotsFor(su, svc, date, moving ? moving.id : undefined, cid)
       });
+    }
+    /* How many free start times each of the next days has (the day buttons in the booking
+       sheet show it). Same rules and the same privacy as /api/admin/free. */
+    if (route === 'GET /api/admin/free-days') {
+      const svc = db.services.find((x) => x.id === q.get('serviceId'));
+      if (!svc) return fail(res, 400, 'bad_service');
+      const su = staffById(q.get('staffId') || sess.staffUserId || '');
+      if (!su) return fail(res, 400, 'bad_staff');
+      if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      const from = validDate(q.get('from')) ? q.get('from') : ubToday();
+      const n = Math.min(Math.max(parseInt(q.get('days') || '14', 10) || 14, 1), 31);
+      const moving = q.get('exclude') ? db.bookings.find((x) => x.id === q.get('exclude') && (isOwner || x.staffId === sess.staffUserId)) : null;
+      const cid = isOwner ? (q.get('customerId') || (moving && moving.userId) || '') : '';
+      const days = [];
+      for (let i = 0; i < n; i++) {
+        const date = ubAddDays(from, i);
+        days.push({ date, free: freeSlotsFor(su, svc, date, moving ? moving.id : undefined, cid).length });
+      }
+      return json(res, 200, { days });
     }
 
     /* ----- own day view -----
@@ -1954,7 +1981,7 @@ async function handleApi(req, res, pathname, q) {
           const clash = ev.error === 'staff_busy' || ev.error === 'machine_busy';
           return { status: clash ? 409 : 400, error: clash ? 'slot_taken' : ev.error, reason: ev.error };
         }
-        if (clientBusy(booking.userId, ev.cand, booking.id)) return { status: 409, error: 'client_busy', reason: 'client_busy' };
+        if (isOwner && clientBusy(booking.userId, ev.cand, booking.id)) return { status: 409, error: 'client_busy', reason: 'client_busy' };
         (booking.moves = booking.moves || []).push({ from: booking.startsAt, staffId: booking.staffId, by: sess.userId || 'admin', at: nowIso() });
         Object.assign(booking, scheduleFields(ev.cand), { staffId: su.id });
         saveDb();

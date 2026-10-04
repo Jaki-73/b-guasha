@@ -52,12 +52,15 @@
     return WD_SHORT[weekday(ds)] + ' ' + Number(ds.slice(5, 7)) + '/' + Number(ds.slice(8, 10));
   }
   /* two weeks of day buttons from today; a date outside that strip comes first */
-  function dayChips(sel, attr) {
+  /* counts: optional { date: number of free start times } shown under each day */
+  function dayChips(sel, attr, counts) {
     var t = todayStr(), out = '', seen = false;
     for (var i = 0; i < 14; i++) {
       var ds = addDays(t, i);
       if (ds === sel) seen = true;
-      out += '<button type="button" class="qb-chip' + (ds === sel ? ' on' : '') + '" ' + attr + '="' + ds + '">' + esc(dayLabel(ds)) + '</button>';
+      var n = counts && counts[ds];
+      out += '<button type="button" class="qb-chip' + (ds === sel ? ' on' : '') + (counts && !n ? ' zero' : '') + '" ' + attr + '="' + ds + '">' + esc(dayLabel(ds)) +
+        (counts ? '<small class="qb-cnt">' + (n ? n + ' сул' : 'дүүрэн') + '</small>' : '') + '</button>';
     }
     if (!seen) out = '<button type="button" class="qb-chip on" ' + attr + '="' + sel + '">' + esc(dayLabel(sel)) + '</button>' + out;
     return out;
@@ -204,11 +207,12 @@
       }).join('') + '</div>' +
       '<div id="healthHost"></div>' +
       '<div id="content"><div class="skeleton"></div></div>' +
-      '<button type="button" class="fab" id="fabBtn" aria-label="Утасны захиалга">📞</button>';
+      (tab === 'myday' ? '' : '<button type="button" class="fab" id="fabBtn" aria-label="Утасны захиалга">📞</button>');
 
     if (isOwner) loadHealth();
     document.getElementById('quickBtn').onclick = function () { openQuickBook({ date: viewDate() }); };
-    document.getElementById('fabBtn').onclick = function () { openQuickBook({ date: viewDate() }); };
+    var fab = document.getElementById('fabBtn');
+    if (fab) fab.onclick = function () { openQuickBook({ date: viewDate() }); };
     document.getElementById('calFeedBtn').onclick = function () { openCalFeed(false); };
     document.getElementById('themeBtn').onclick = function () {
       theme = theme === 'dark' ? 'light' : 'dark';
@@ -241,7 +245,7 @@
     var mode = sessionStorage.getItem('bg_admin_mode') || 'staff';
     root.innerHTML =
       '<div class="pin-wrap"><img src="/assets/logo.svg" alt="">' +
-      '<h2 style="font-family:\'Playfair Display\',serif;margin:12px 0">Удирдлагын хэсэг</h2>' +
+      '<h2 style="font-family:\'Playfair Display\',serif;margin:12px 0">Ажилтны нэвтрэлт</h2>' +
       '<div class="auth-tabs" style="max-width:320px;margin:0 auto 16px">' +
       '<button id="mStaff" class="' + (mode === 'staff' ? 'active' : '') + '">Утсаар</button>' +
       '<button id="mPin" class="' + (mode === 'pin' ? 'active' : '') + '">Супер админ (PIN)</button></div>' +
@@ -495,7 +499,7 @@
       client: opts.client || null, newName: '', phone: '', serviceId: opts.serviceId || null,
       date: opts.date || todayStr(), time: opts.time || null,
       staffId: opts.staffId || meStaffId || '', staffList: [], slots: null, slotInfo: {}, matches: [], noPhone: false, note: '', jump: null,
-      board: null, minH: 0, autoMoved: false
+      board: null, minH: 0, autoMoved: false, counts: null, countsKey: ''
     };
     /* opened on today with nothing left today (an evening call): show the next day with free times,
        until the person picks a day themselves */
@@ -505,6 +509,7 @@
     var host = openSheet('<div id="qb" class="sheet-inner"></div>').querySelector('#qb');
 
     function svcById(id) { return (servicesCache || []).find(function (x) { return x.id === id; }); }
+    function svcNow0() { return svcById(st.serviceId); }
     function hasWho() { return !!(st.client || st.phone.length === 8 || st.newName.trim()); }
     function ready() { return hasWho() && !!st.serviceId && !!st.staffId && !!st.time; }
     function missing() {
@@ -573,7 +578,8 @@
             return '<button type="button" class="qb-chip' + (s.id === st.staffId ? ' on' : '') + '" data-staff="' + esc(s.id) + '"' + (s.working ? '' : ' disabled') + '>' +
               esc(s.name) + (s.working ? '' : ' · амарна') + '</button>';
           }).join('') + '</div>' : '';
-      var days = '<div class="qb-row qb-days">' + dayChips(st.date, 'data-day') + '</div>';
+      var days = '<div class="qb-row qb-days">' + dayChips(st.date, 'data-day', st.counts) + '</div>';
+      var chosen = !mv && svcNow0() ? '<button type="button" class="qb-link qb-chosen" id="qbSvcBack">' + esc(svcNow0().emoji || '🌿') + ' ' + esc(svcNow0().nameMn) + ' · ' + svcNow0().minutes + ' мин — <u>солих</u></button>' : '';
       var notes = st.autoMoved && st.slots ? '<p class="qb-mnote">Өнөөдөр чөлөөтэй цаг үлдээгүй — хамгийн ойрын чөлөөтэй өдрийг харууллаа.</p>' : '';
       /* why some times are missing: when a machine this service needs is fully taken (no names) */
       var svcNow = svcById(st.serviceId);
@@ -602,7 +608,7 @@
           }).join('') + '</div></div>';
         }).join('');
       }
-      return staffChips + days + notes + body;
+      return chosen + staffChips + days + notes + body;
     }
 
     function draw() {
@@ -645,6 +651,20 @@
       var key = st.date + st.serviceId + st.staffId + (st.client ? st.client.id : '');
       draw();
       var svc = svcById(st.serviceId);
+      /* free-time counts for the day buttons ("when is the HIFU free this week?") */
+      var ckey = st.serviceId + st.staffId + (st.client ? st.client.id : '') + (mv ? mv.id : '');
+      if (st.countsKey !== ckey) {
+        st.countsKey = ckey;
+        st.counts = null;
+        api('/api/admin/free-days?from=' + todayStr() + '&days=14&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId) +
+          (mv ? '&exclude=' + encodeURIComponent(mv.id) : '') + (st.client && !mv ? '&customerId=' + encodeURIComponent(st.client.id) : ''))
+          .then(function (r) {
+            if (st.countsKey !== ckey) return;
+            st.counts = {};
+            r.days.forEach(function (x) { st.counts[x.date] = x.free; });
+            draw();
+          }).catch(function () {});
+      }
       /* the anonymous machine board, to say why times are missing */
       if (svc && svc.uses && svc.uses.length && !(st.board && st.board.date === st.date)) {
         var bd = st.date;
@@ -741,6 +761,8 @@
       });
       var note = host.querySelector('#qbNote');
       if (note) note.oninput = function () { st.note = note.value; };
+      var sb = host.querySelector('#qbSvcBack');
+      if (sb) sb.onclick = function () { var s2 = host.querySelector('#qbS2'); if (s2) s2.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
       host.querySelector('#qbCancel').onclick = closeModal;
       host.querySelector('#qbOk').onclick = submit;
     }
@@ -850,7 +872,7 @@
       var s = d.staff;
       var meta = d.closed ? '<span class="chip cancelled">Салон амарна</span>'
         : (s && s.working ? '🕙 ' + esc(s.open) + '–' + esc(s.close) + ' ажиллана' : (s ? '<span class="chip noshow">Та энэ өдөр амарна</span>' : '<span class="muted">Танд эмчилгээний хуваарь алга</span>'));
-      var list = d.items.length ? d.items.map(dayItemHtml).join('') : '<div class="empty-day">Энэ өдөр захиалга алга 🌿</div>';
+      var list = d.items.length ? d.items.map(function (x) { return dayItemHtml(x); }).join('') : '<div class="empty-day">Энэ өдөр захиалга алга 🌿</div>';
       c.innerHTML = dateNavHtml(myDate) + '<div class="day-meta">' + meta + '</div>' +
         (s ? '<div class="big-actions"><button class="btn btn-primary big-btn" id="mdBook">📞 Захиалга нэмэх</button>' +
           '<button class="btn btn-ghost big-btn" id="mdBlock">🚫 Завгүй цаг</button></div>' : '') +
@@ -1358,9 +1380,9 @@
 
         '<h3 style="font-size:1rem;margin:14px 0 6px">📝 Тэмдэглэл</h3>' +
         '<div id="notesHost">' + notesHtml + sharedHtml + '</div>' +
-        '<div class="row" style="flex-wrap:wrap"><input id="newNote" class="cell-input" style="flex:1;min-width:200px" maxlength="500" placeholder="ж: хүчтэй массаж таалагддаг, нуруу эмзэг…">' +
-        '<label class="small big-check"><input type="checkbox" id="noteShared" checked> 👥 багтай хуваалцах</label>' +
-        '<button class="mini-btn" id="addNote">+ Нэмэх</button></div>' +
+        '<input id="newNote" class="cell-input big-input note-input" maxlength="500" placeholder="ж: хүчтэй массаж таалагддаг, нуруу эмзэг…">' +
+        '<div class="row" style="flex-wrap:wrap;margin-top:6px"><label class="small big-check"><input type="checkbox" id="noteShared" checked> 👥 багтай хуваалцах</label>' +
+        '<span class="spacer" style="flex:1"></span><button class="btn btn-primary btn-sm" id="addNote">+ Нэмэх</button></div>' +
 
         (featureWallet ? '<h3 style="font-size:1rem;margin:14px 0 6px">🎁 Багцууд</h3>' + pkgHtml : '') +
 

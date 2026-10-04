@@ -207,6 +207,10 @@
   .cc-call span { font-size: 0.68rem; color: var(--muted); }
   .big-check { display: flex; gap: 8px; align-items: center; cursor: pointer; min-height: 44px; }
   .big-check input { width: 22px; height: 22px; flex: 0 0 auto; }
+  .qb-cnt { display: block; font-size: 0.68rem; font-weight: 500; opacity: 0.75; }
+  .qb-chip.zero:not(.on) { opacity: 0.55; }
+  .qb-chosen { display: block; padding: 4px 0 8px; text-align: left; min-height: 0; }
+  .note-input { width: 100%; margin-top: 4px; }
   .qb-mnote { background: var(--surface2); border-radius: 10px; padding: 8px 10px; font-size: 0.85rem; margin: 0 0 10px; line-height: 1.5; }
   .qb-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mtrack .seg.mine { top: auto; bottom: 0; height: 4px; background: var(--brand); border-radius: 2px; }
@@ -224,7 +228,7 @@
     #quickBtn { display: none; }
     .admin-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 12px -12px; padding: 0 12px 4px; scrollbar-width: none; }
     .admin-tabs::-webkit-scrollbar { display: none; }
-    .admin-tabs button { flex: 0 0 auto; padding: 10px 14px; }
+    .admin-tabs button { flex: 0 0 auto; padding: 10px 14px; min-height: 44px; }
     .bk-actions button, .mini-btn { min-height: 40px; padding: 8px 12px; font-size: 0.85rem; }
     #outBtn, #themeBtn, #calFeedBtn { min-height: 44px; min-width: 44px; }
     .modal .row input.cell-input { min-width: 0 !important; flex: 1 1 160px; }

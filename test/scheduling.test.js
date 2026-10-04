@@ -567,6 +567,7 @@ describe('customer app and shared customers', () => {
     assert.equal(r.data.error, 'client_busy');
     const slots = (await call('GET', `/api/slots?date=${D}&serviceId=svc-facial-express&staffId=${id.owner}`, tok.sarnai)).data.slots;
     assert.equal(slots.find((x) => x.time === '17:00').available, false);
+    assert.equal(slots.find((x) => x.time === '17:00').mine, true, 'her own visit, not "salon full"');
     assert.equal(slots.find((x) => x.time === '18:00').available, true);
     /* staff: refused with a neutral reason, and the sheet leaves those times out */
     const w = await call('POST', '/api/admin/walkin', tok.owner, { staffId: id.owner, serviceId: 'svc-facial-express', date: D, time: '17:30', customerId: id.sarnai });
@@ -575,6 +576,29 @@ describe('customer app and shared customers', () => {
     assert.ok(!JSON.stringify(w.data).includes('Туяа'));
     const free = (await call('GET', `/api/admin/free?date=${D}&serviceId=svc-facial-express&staffId=${id.owner}&customerId=${id.sarnai}`, tok.owner)).data.slots;
     assert.ok(!free.includes('17:00') && !free.includes('17:30') && free.includes('18:00') && free.includes('16:30'));
+    const days = (await call('GET', `/api/admin/free-days?from=${D}&days=2&serviceId=svc-facial-express&staffId=${id.owner}&customerId=${id.sarnai}`, tok.owner)).data.days;
+    assert.equal(days[0].date, D);
+    assert.equal(days[0].free, free.length);
+  });
+
+  test('staff are never told when a colleague has a customer — not by a refusal, not by missing times', async () => {
+    /* Сарнай's 17:00–18:00 is with Туяа; the owner (also a therapist) is free then */
+    const nomin = await (async () => {
+      const sa = (await call('POST', '/api/admin/login-staff', null, { phone: '80000000', password: 'Test#Super-2026' })).data.token;
+      const r = await call('POST', '/api/admin/accounts', sa, { role: 'staff', name: 'Номин', phone: '88110009', password: 'nomin-123' });
+      assert.equal(r.status, 200, r.text);
+      return (await call('POST', '/api/admin/login-staff', null, { phone: '88110009', password: 'nomin-123' })).data;
+    })();
+    const plain = async (cid) => (await call('GET', `/api/admin/free?date=${D}&serviceId=svc-facial-express&staffId=${nomin.staffUserId}` + (cid ? '&customerId=' + cid : ''), nomin.token)).data.slots;
+    assert.deepEqual(await plain(id.sarnai), await plain(), 'customerId must not change what staff are offered');
+    assert.ok((await plain(id.sarnai)).includes('17:00'));
+    const days = async (cid) => (await call('GET', `/api/admin/free-days?from=${D}&days=3&serviceId=svc-facial-express` + (cid ? '&customerId=' + cid : ''), nomin.token)).data.days;
+    assert.deepEqual(await days(id.sarnai), await days());
+    /* and the save is not refused with a reason that points at the colleague */
+    const w = await call('POST', '/api/admin/walkin', nomin.token, { staffId: nomin.staffUserId, serviceId: 'svc-facial-express', date: D, time: '17:00', customerId: id.sarnai });
+    assert.equal(w.status, 200, w.text);
+    /* free-days for a colleague is refused like /free */
+    assert.equal((await call('GET', `/api/admin/free-days?serviceId=svc-facial-express&staffId=${id.tuya}`, nomin.token)).status, 403);
   });
 
   test('the seeded example reviews are never shown to the public as real ones', async () => {
