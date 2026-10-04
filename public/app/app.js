@@ -73,6 +73,32 @@
     for (var i = 1; i <= 5; i++) out += i <= n ? '★' : '☆';
     return out;
   }
+  /* people type "9511-2233", "9511 2233" or "+976 9511 2233": keep the 8 digits */
+  function normPhone(v) {
+    var d = String(v || '').replace(/\D/g, '');
+    return d.length === 11 && d.indexOf('976') === 0 ? d.slice(3) : d;
+  }
+  function tH(key) { return t(key).replace('{h}', cancelHours()); }
+  function cancelHours() { return (state.config && state.config.cancelHours) || 24; }
+  /* startsAt carries +08:00, so this is right whatever the phone's own time zone */
+  function startMs(b) { return Date.parse(b.startsAt || (b.date + 'T' + b.time + ':00+08:00')); }
+  function isUpcoming(b) { return b.status === 'confirmed' && startMs(b) > Date.now(); }
+  function canChange(b) { return b.status === 'confirmed' && (startMs(b) - Date.now()) / 3600000 >= cancelHours(); }
+  function endOf(time, mins) {
+    var m = Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)) + (mins || 0);
+    return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  }
+  function addressText() { var c = state.config || {}; return (state.lang === 'mn' ? c.addressMn : c.addressEn) || ''; }
+  /* the owner's map link once it is set; until then a map search for the address */
+  function mapLinkHtml() {
+    var c = state.config || {};
+    if (c.mapUrl) return '<a href="' + esc(c.mapUrl) + '" target="_blank" rel="noopener">' + t('prof.map_go') + '</a>';
+    return '<a href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(c.addressMn || c.addressEn || '') + '" target="_blank" rel="noopener">' + t('bk.map_search') + '</a>';
+  }
+  function salonCallHtml(cls) {
+    var c = state.config || {};
+    return c.phoneTel ? '<a class="btn ' + (cls || 'btn-ghost') + ' btn-block mt" href="tel:' + esc(c.phoneTel) + '">' + t('bk.call') + ' · ' + esc(c.phoneDisplay || '') + '</a>' : '';
+  }
 
   function toast(msg, kind) {
     var el = document.createElement('div');
@@ -110,13 +136,15 @@
   }
   function closeModal() { $modalHost.innerHTML = ''; }
 
-  function confirmDlg(msg) {
+  /* opts: { no, yes, danger } — say what each button does ("No, keep it" / "Yes, cancel") */
+  function confirmDlg(msg, opts) {
+    opts = opts || {};
     return new Promise(function (resolve) {
       var m = openModal(
         '<p style="font-size:1rem">' + esc(msg) + '</p>' +
         '<div class="modal-actions">' +
-        '<button class="btn btn-ghost" data-x="no">' + t('common.cancel') + '</button>' +
-        '<button class="btn btn-primary" data-x="yes">' + t('common.yes') + '</button></div>'
+        '<button class="btn ' + (opts.danger ? 'btn-primary' : 'btn-ghost') + '" data-x="no">' + esc(opts.no || t('common.cancel')) + '</button>' +
+        '<button class="btn ' + (opts.danger ? 'btn-ghost bk-danger' : 'btn-primary') + '" data-x="yes">' + esc(opts.yes || t('common.yes')) + '</button></div>'
       );
       m.querySelector('[data-x="no"]').onclick = function () { closeModal(); resolve(false); };
       m.querySelector('[data-x="yes"]').onclick = function () { closeModal(); resolve(true); };
@@ -172,16 +200,69 @@
   }
 
   /* ================= navigation ================= */
-  function setView(v) {
-    if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
-    state.view = v;
-    if (v === 'book') state.book = { step: 1, service: null, staffId: 'any', date: null, time: null, payWith: null, slots: null, loadingSlots: false };
+  function freshBook() { return { step: 1, service: null, staffId: 'any', date: null, time: null, payWith: null, slots: null, loadingSlots: false, move: null }; }
+  function markTab(v) {
     $tabbar.querySelectorAll('.tab').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-view') === v);
     });
+  }
+  function setView(v) {
+    if (chatTimer) { clearInterval(chatTimer); chatTimer = null; }
+    state.view = v;
+    if (v === 'book') state.book = freshBook();
+    markTab(v);
     render();
     window.scrollTo(0, 0);
+    pushNav();
   }
+  /* Android Back / browser Back walks back through the app's own screens and booking
+     steps instead of dropping out to the website: every screen and step is a history
+     entry. Moving between them from a Back press never adds a new entry. */
+  var fromHistory = false;
+  function pushNav() {
+    if (fromHistory || !state.user || !history.pushState) return;
+    var cur = history.state || {};
+    var step = state.view === 'book' ? state.book.step : 0;
+    if (cur.app === state.view && (cur.step || 0) === step) return;
+    history.pushState({ app: state.view, step: step }, '');
+  }
+  function goStep(n) {
+    state.book.step = n;
+    render();
+    window.scrollTo(0, 0);
+    pushNav();
+  }
+  /* the in-app ← button: same as the phone's Back when the previous entry is our step */
+  function stepBack() {
+    var bk = state.book, h = history.state || {};
+    if (h.app === 'book' && h.step === bk.step && bk.step > 1) { history.back(); return; }
+    if (bk.move) { setView('home'); return; }
+    bk.step = Math.max(1, bk.step - 1);
+    render();
+  }
+  window.addEventListener('popstate', function (e) {
+    if (!state.user) return;
+    /* Back with a sheet open only closes the sheet */
+    if ($modalHost.firstChild) {
+      closeModal();
+      history.pushState({ app: state.view, step: state.view === 'book' ? state.book.step : 0 }, '');
+      return;
+    }
+    var s = e.state && e.state.app ? e.state : { app: 'home', step: 0 };
+    fromHistory = true;
+    try {
+      if (s.app !== 'book') { setView(s.app); return; }
+      var bk = state.book;
+      if (state.view !== 'book') { state.view = 'book'; markTab('book'); }
+      if (bk.move && s.step !== 3) { state.book = bk = freshBook(); }
+      var step = s.step || 1;
+      if (!bk.service) step = 1;
+      if (step >= 4 && !bk.time) step = 3;
+      bk.step = step;
+      render();
+      if (step === 3 && !bk.slots && !bk.loadingSlots) loadSlots(bk.date || dateOffset(0), 7);
+    } finally { fromHistory = false; }
+  });
   $tabbar.addEventListener('click', function (e) {
     var b = e.target.closest('.tab');
     if (b) setView(b.getAttribute('data-view'));
@@ -216,8 +297,11 @@
   }
 
   /* ================= auth view ================= */
-  var authMode = 'login';
+  var authMode = null;
+  var authPhone = ''; /* survives switching between the log-in and sign-up tabs */
   function vAuth() {
+    /* someone who never signed in on this phone most likely needs to sign up */
+    if (authMode === null) { try { authMode = localStorage.getItem('bg_known') ? 'login' : 'register'; } catch (e) { authMode = 'login'; } }
     $app.innerHTML =
       '<div class="auth-split">' +
       /* desktop only: brand panel beside the form */
@@ -236,20 +320,35 @@
       '<button id="tabReg" class="' + (authMode === 'register' ? 'active' : '') + '">' + t('auth.register') + '</button></div>' +
       '<form id="authForm">' +
       (authMode === 'register' ? '<div class="field"><input id="fName" autocomplete="name" placeholder="' + esc(t('auth.name')) + '" maxlength="60"></div>' : '') +
-      '<div class="field"><input id="fPhone" inputmode="numeric" autocomplete="tel" placeholder="' + esc(t('auth.phone')) + '" maxlength="8"></div>' +
-      '<div class="field"><input id="fPass" type="password" autocomplete="current-password" placeholder="' + esc(t('auth.password')) + '"></div>' +
+      '<div class="field"><input id="fPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="' + esc(t('auth.phone')) + '" maxlength="20" value="' + esc(authPhone) + '"></div>' +
+      '<div class="field pass-field"><input id="fPass" type="password" autocomplete="' + (authMode === 'login' ? 'current-password' : 'new-password') + '" placeholder="' + esc(t('auth.password')) + '">' +
+      '<button type="button" class="pass-eye" id="passEye">' + t('auth.show') + '</button></div>' +
       '<button class="btn btn-primary btn-block" type="submit">' + (authMode === 'login' ? t('auth.login_btn') : t('auth.register_btn')) + '</button>' +
       '</form>' +
       '<p class="center mt small muted">' + (authMode === 'login' ? t('auth.no_account') + ' <a href="#" id="swap">' + t('auth.register') + '</a>' : t('auth.have_account') + ' <a href="#" id="swap">' + t('auth.login') + '</a>') + '</p>' +
-      '<p class="demo-hint">' + esc(t('auth.demo_hint')) + '</p>' +
+      (authMode === 'login' ? '<p class="center small"><a href="#" id="forgot">' + t('auth.forgot') + '</a></p>' : '') +
+      (state.config && state.config.demoAccount ? '<p class="demo-hint">' + esc(t('auth.demo_hint')) + '</p>' : '') +
       '</div></div>';
     bindAppbar();
-    document.getElementById('tabLogin').onclick = function () { authMode = 'login'; render(); };
-    document.getElementById('tabReg').onclick = function () { authMode = 'register'; render(); };
-    document.getElementById('swap').onclick = function (e) { e.preventDefault(); authMode = authMode === 'login' ? 'register' : 'login'; render(); };
+    function keepPhone() { authPhone = document.getElementById('fPhone').value; }
+    document.getElementById('tabLogin').onclick = function () { keepPhone(); authMode = 'login'; render(); };
+    document.getElementById('tabReg').onclick = function () { keepPhone(); authMode = 'register'; render(); };
+    document.getElementById('swap').onclick = function (e) { e.preventDefault(); keepPhone(); authMode = authMode === 'login' ? 'register' : 'login'; render(); };
+    document.getElementById('passEye').onclick = function () {
+      var f = document.getElementById('fPass');
+      f.type = f.type === 'password' ? 'text' : 'password';
+      this.textContent = f.type === 'password' ? t('auth.show') : t('auth.hide');
+    };
+    var fg = document.getElementById('forgot');
+    if (fg) fg.onclick = function (e) {
+      e.preventDefault();
+      var m = openModal('<h3>🔑 ' + t('auth.forgot') + '</h3><p>' + esc(t('auth.forgot_t')) + '</p>' + salonCallHtml('btn-primary') +
+        '<div class="modal-actions"><button class="btn btn-ghost" id="fgClose">' + t('common.close') + '</button></div>');
+      m.querySelector('#fgClose').onclick = closeModal;
+    };
     document.getElementById('authForm').onsubmit = function (e) {
       e.preventDefault();
-      var phone = document.getElementById('fPhone').value.trim();
+      var phone = normPhone(document.getElementById('fPhone').value);
       var pass = document.getElementById('fPass').value;
       var btn = e.target.querySelector('button[type="submit"]');
       btn.disabled = true;
@@ -262,12 +361,33 @@
       p.then(function (d) {
         state.token = d.token;
         state.user = d.user;
+        authPhone = '';
         localStorage.setItem('bg_token', d.token);
+        try { localStorage.setItem('bg_known', '1'); } catch (e3) { /* storage blocked */ }
         state.bookings = null; state.photos = null; state.myBundles = null; state.myGiftcards = null; state.chatMsgs = null;
         loadMyBundles();
         if (!applyPendingBook()) setView('home');
-      }).catch(function (e2) { toast(errMsg(e2), 'err'); btn.disabled = false; });
+        if (d.user.mustChangePassword) openChangePass(true);
+      }).catch(function (e2) {
+        btn.disabled = false;
+        /* the salon saved this number from a phone booking: carry on as a sign-up */
+        if (e2 && e2.error === 'needs_register') {
+          authPhone = phone; authMode = 'register'; render();
+          showFormError(errMsg(e2));
+          var n = document.getElementById('fName'); if (n) n.focus();
+          return;
+        }
+        showFormError(errMsg(e2));
+      });
     };
+    /* errors stay under the form (a toast is gone before it is read) */
+    function showFormError(msg) {
+      var f = document.getElementById('authForm');
+      if (!f) return toast(msg, 'err');
+      var el = document.getElementById('authErr');
+      if (!el) { el = document.createElement('p'); el.id = 'authErr'; el.className = 'form-err'; f.appendChild(el); }
+      el.textContent = msg;
+    }
   }
 
   function doLogout(silent) {
@@ -295,20 +415,18 @@
   /* ================= home view ================= */
   function vHome() {
     var u = state.user;
-    var next = (state.bookings || []).filter(function (b) {
-      return b.status === 'confirmed' && new Date(b.date + 'T' + b.time + ':00') > new Date();
-    }).sort(function (a, b) { return (a.date + a.time).localeCompare(b.date + b.time); })[0];
+    var next = (state.bookings || []).filter(isUpcoming).sort(function (a, b) { return startMs(a) - startMs(b); })[0];
 
     var nextHtml;
     if (next) {
       var svc = next.service || {};
       var dp = next.date.split('-');
-      nextHtml = '<div class="card appt-card">' +
+      nextHtml = '<div class="card appt-card tappable" data-bk="' + esc(next.id) + '" role="button" tabindex="0">' +
         '<div class="appt-date"><div class="d">' + Number(dp[2]) + '</div><div class="m">' + (state.lang === 'mn' ? dp[1] + '-р сар' : MO_EN[Number(dp[1]) - 1]) + '</div></div>' +
         '<div><div style="font-weight:600">' + esc(svcName(svc)) + '</div>' +
-        '<div class="muted small">' + fmtDate(next.date) + ' · ' + next.time + '</div>' +
+        '<div class="muted small">' + fmtDate(next.date) + ' · ' + next.time + '–' + endOf(next.time, next.minutes) + '</div>' +
         (next.staffName ? '<div class="muted small">' + esc(t('home.with')) + ' ' + esc(next.staffName) + '</div>' : '') +
-        '</div></div>';
+        '</div><span class="appt-arr">›</span></div>';
     } else {
       nextHtml = '<div class="card"><div class="muted small">' + t('home.no_next') + '</div>' +
         '<button class="btn btn-primary btn-sm mt" id="goBook2">' + t('home.book_now') + '</button></div>';
@@ -324,7 +442,7 @@
     /* On a phone .col is display:contents and the oN classes set the order;
        on desktop the two columns sit side by side. */
     $app.innerHTML = appbar() +
-      (cfg.paymentsDemo ? '<div class="demo-banner">' + t('home.demo_banner') + '</div>' : '') +
+      (cfg.paymentsDemo && walletOn() ? '<div class="demo-banner">' + t('home.demo_banner') + '</div>' : '') +
       '<div class="cols dash"><div class="col col-main">' +
       '<div class="o1 greet"><p class="muted">' + t('home.hello') + '</p>' +
       '<h2 class="view-title">' + esc(u.name) + '</h2></div>' +
@@ -345,9 +463,9 @@
       '<div class="o7" id="homeReviews">' + reviewsCardHtml() + '</div>' +
       '<div class="o8"><div class="section-head"><h3>' + t('home.info') + '</h3></div>' +
       '<div class="card">' +
-      '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
+      '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(addressText()) + '</span></div>' +
+      '<div class="list-row"><span class="lbl">' + t('prof.map') + '</span>' + mapLinkHtml() + '</div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
-      (cfg.mapUrl ? '<div class="list-row"><span class="lbl">' + t('prof.map') + '</span><a href="' + esc(cfg.mapUrl) + '" target="_blank" rel="noopener">' + t('prof.map_go') + '</a></div>' : '') +
       (cfg.bookingPhones ? '<div class="list-row"><span class="lbl">' + t('prof.book_phones') + '</span><span>' + String(cfg.bookingPhones).split(',').map(function (n) {
         n = n.trim(); return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
       }).join(', ') + '</span></div>' : '') +
@@ -368,6 +486,9 @@
     var gb = document.getElementById('goBook'); if (gb) gb.onclick = function () { setView('book'); };
     var gb2 = document.getElementById('goBook2'); if (gb2) gb2.onclick = function () { setView('book'); };
     var rn = document.getElementById('rateNow'); if (rn) rn.onclick = function () { openReview(rateBk); };
+    $app.querySelectorAll('[data-bk]').forEach(function (el) {
+      el.onclick = function () { var b = (state.bookings || []).find(function (x) { return x.id === el.getAttribute('data-bk'); }); if (b) openBooking(b); };
+    });
     $app.querySelectorAll('.qa').forEach(function (b) {
       b.onclick = function () {
         var k = b.getAttribute('data-qa');
@@ -381,7 +502,7 @@
       row.onclick = function () {
         var svc = state.services.find(function (s) { return s.id === row.getAttribute('data-id'); });
         setView('book');
-        if (svc) { state.book.service = svc; state.book.step = 2; render(); }
+        if (svc) { state.book.service = svc; goStep(2); }
       };
     });
 
@@ -411,22 +532,30 @@
   }
 
   /* ================= booking view (4 steps) ================= */
-  function loadSlots(date) {
+  function nextDay(ds) { return new Date(Date.parse(ds + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10); }
+  /* Free times for one day. `ahead` > 0 means the day was picked for the customer rather
+     than by them: if it has nothing free, move on to the next day (at most `ahead` days). */
+  function loadSlots(date, ahead) {
     var bk = state.book;
     bk.date = date;
     bk.time = null;
     bk.slots = null;
     bk.loadingSlots = true;
     render();
-    var url = '/api/slots?date=' + date + '&serviceId=' + encodeURIComponent(bk.service.id) + '&staffId=' + encodeURIComponent(bk.staffId || 'any');
+    var url = '/api/slots?date=' + date + '&serviceId=' + encodeURIComponent(bk.service.id) + '&staffId=' + encodeURIComponent(bk.staffId || 'any') +
+      (bk.move ? '&exclude=' + encodeURIComponent(bk.move.id) : '');
     api(url).then(function (d) {
-      if (state.book.date !== date) return;
-      state.book.loadingSlots = false;
-      state.book.slots = d;
+      if (state.book !== bk || bk.date !== date) return;
+      var free = !d.closed && (d.slots || []).some(function (x) { return x.available; });
+      var last = dateOffset(((state.config && state.config.bookingDaysAhead) || 21) - 1);
+      if (!free && ahead > 0 && date < last) { loadSlots(nextDay(date), ahead - 1); return; }
+      bk.loadingSlots = false;
+      bk.slots = d;
       render();
     }).catch(function (e) {
-      state.book.loadingSlots = false;
-      state.book.slots = { closed: false, slots: [] };
+      if (state.book !== bk) return;
+      bk.loadingSlots = false;
+      bk.slots = { closed: false, slots: [] };
       toast(errMsg(e), 'err');
       render();
     });
@@ -447,22 +576,146 @@
     }).join('') + '</ol>';
   }
 
+  /* one booking as a tappable row (book tab, profile) */
+  function bookingRowHtml(b) {
+    var svc = b.service || {};
+    return '<div class="booking-item tappable" data-bk="' + esc(b.id) + '" role="button" tabindex="0"><div class="row"><div class="grow">' +
+      '<div style="font-weight:600">' + esc(svcName(svc)) + '</div>' +
+      '<div class="muted small">' + fmtDate(b.date) + ' · ' + b.time + '–' + endOf(b.time, b.minutes) + '</div>' +
+      (b.staffName ? '<div class="muted small">👤 ' + esc(b.staffName) + '</div>' : '') + '</div>' +
+      '<div style="text-align:right"><span class="chip ' + b.status + '">' + t('prof.st_' + b.status) + '</span>' +
+      (b.status === 'done' && !b.reviewId ? '<div><button class="btn btn-sm btn-primary mt" data-rate="' + esc(b.id) + '">⭐ ' + t('home.rate_btn').replace('⭐ ', '') + '</button></div>' : '') +
+      (b.status === 'done' && b.reviewId ? '<div class="muted small mt">✓ ' + t('rev.done') + '</div>' : '') +
+      '</div><span class="appt-arr">›</span></div></div>';
+  }
+  function bindBookingRows(host) {
+    host.querySelectorAll('[data-rate]').forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var bk = (state.bookings || []).find(function (x) { return x.id === btn.getAttribute('data-rate'); });
+        if (bk) openReview(bk);
+      };
+    });
+    host.querySelectorAll('[data-bk]').forEach(function (el) {
+      el.onclick = function () {
+        var bk = (state.bookings || []).find(function (x) { return x.id === el.getAttribute('data-bk'); });
+        if (bk) openBooking(bk);
+      };
+    });
+  }
+  function payLabel(b) { var k = 'prof.paid_' + (b.paid || 'salon'), v = t(k); return v === k ? b.paid : v; }
+
+  /* "add to my calendar": Google Calendar link, and an .ics file for everything else */
+  function icsStamp(ms) { return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+  function calTitle(b) { return "B's Gua Sha — " + svcName(b.service || {}); }
+  function gcalHref(b) {
+    var s = startMs(b), e = s + (b.minutes || 60) * 60000;
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(calTitle(b)) +
+      '&dates=' + icsStamp(s) + '/' + icsStamp(e) + '&location=' + encodeURIComponent(addressText());
+  }
+  function downloadIcs(b) {
+    var s = startMs(b), e = s + (b.minutes || 60) * 60000;
+    var tx = function (v) { return String(v).replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n'); };
+    var ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', "PRODID:-//B's Gua Sha//app//MN", 'BEGIN:VEVENT', 'UID:' + b.id + '@bs-guasha',
+      'DTSTAMP:' + icsStamp(Date.now()), 'DTSTART:' + icsStamp(s), 'DTEND:' + icsStamp(e),
+      'SUMMARY:' + tx(calTitle(b)), 'LOCATION:' + tx(addressText()), 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+    a.download = 'bs-guasha.ics';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  /* One booking: when, where, the change/cancel rule, and what can be done with it.
+     opts.title replaces the heading (just booked / just moved). */
+  function openBooking(b, opts) {
+    opts = opts || {};
+    var svc = b.service || {};
+    var up = isUpcoming(b), late = up && !canChange(b);
+    var m = openModal(
+      (opts.title ? '<div class="bk-done">' + esc(opts.title) + '</div>' : '<h3>' + t('bk.title') + '</h3>') +
+      '<div class="bk-sum"><div class="bk-svc">' + (svc.emoji || '🌿') + ' <b>' + esc(svcName(svc)) + '</b></div>' +
+      '<div class="bk-when">' + fmtDate(b.date) + ' · <b>' + b.time + '–' + endOf(b.time, b.minutes) + '</b></div>' +
+      (b.staffName ? '<div class="muted small">👤 ' + esc(b.staffName) + '</div>' : '') +
+      '<div class="muted small">' + money(b.amount) + ' · ' + esc(payLabel(b)) + '</div>' +
+      '<span class="chip ' + b.status + '">' + t('prof.st_' + b.status) + '</span></div>' +
+      (up ? '<div class="list-row"><span class="lbl">' + t('bk.where') + '</span><span class="small">' + esc(addressText()) + '<br>' + mapLinkHtml() + '</span></div>' : '') +
+      (up ? '<div class="bk-cal"><a href="' + esc(gcalHref(b)) + '" target="_blank" rel="noopener">' + t('bk.add_cal') + '</a><a href="#" id="bkIcs">' + t('bk.add_ics') + '</a></div>' : '') +
+      (late ? '<p class="bk-note warn">' + esc(tH('bk.late')) + '</p>' + salonCallHtml('btn-primary') : '') +
+      (up && !late ? '<p class="bk-note">' + esc(tH('bk.policy')) + '</p>' +
+        '<div class="modal-actions"><button class="btn btn-ghost" id="bkMove">' + t('bk.move') + '</button><button class="btn btn-ghost bk-danger" id="bkCancel">' + t('prof.cancel') + '</button></div>' : '') +
+      (b.status === 'done' && !b.reviewId ? '<button class="btn btn-primary btn-block mt" id="bkRate">⭐ ' + t('home.rate_btn').replace('⭐ ', '') + '</button>' : '') +
+      '<div class="modal-actions">' + (opts.done ? '<button class="btn btn-ghost" id="bkMine">' + t('bk.see_mine') + '</button>' : '') +
+      '<button class="btn btn-primary" id="bkClose">' + (opts.done ? t('bk.got_it') : t('common.close')) + '</button></div>'
+    );
+    /* a second tap of "confirm" must not land on this sheet's buttons */
+    if (opts.done) {
+      var back = m.parentNode;
+      back.style.pointerEvents = 'none';
+      setTimeout(function () { back.style.pointerEvents = ''; }, 500);
+    }
+    m.querySelector('#bkClose').onclick = closeModal;
+    var x;
+    if ((x = m.querySelector('#bkMine'))) x.onclick = function () { closeModal(); setView('book'); };
+    if ((x = m.querySelector('#bkIcs'))) x.onclick = function (e) { e.preventDefault(); downloadIcs(b); };
+    if ((x = m.querySelector('#bkRate'))) x.onclick = function () { closeModal(); openReview(b); };
+    if ((x = m.querySelector('#bkMove'))) x.onclick = function () { closeModal(); startMove(b); };
+    if ((x = m.querySelector('#bkCancel'))) x.onclick = function () {
+      confirmDlg(t('prof.cancel_q'), { no: t('prof.cancel_no'), yes: t('prof.cancel_yes'), danger: true }).then(function (yes) {
+        if (!yes) return;
+        api('/api/bookings/' + encodeURIComponent(b.id) + '/cancel', { method: 'POST' })
+          .then(function (d) {
+            if (d.balance !== undefined) state.user.balance = d.balance;
+            state.bookings = null;
+            loadMyBundles();
+            toast(t('prof.cancelled'), 'ok');
+            render();
+          })
+          .catch(function (e) { toast(errMsg(e), 'err'); });
+      });
+    };
+  }
+
+  /* change the time of an existing booking: the date & time step, with its own old time free */
+  function startMove(b) {
+    var svc = state.services.find(function (s) { return s.id === b.serviceId; }) || b.service;
+    if (!svc) return;
+    state.view = 'book';
+    markTab('book');
+    state.book = freshBook();
+    state.book.move = b;
+    state.book.service = svc;
+    state.book.step = 3;
+    window.scrollTo(0, 0);
+    pushNav();
+    loadSlots(b.date >= dateOffset(0) ? b.date : dateOffset(0), 7);
+  }
+
   function vBook() {
     var bk = state.book;
-    var html = appbar() + '<div class="book-wrap"><h2 class="view-title">' + t('book.title') + '</h2>' + stepperHtml(bk.step);
+    var mv = bk.move;
+    var html = appbar() + '<div class="book-wrap"><h2 class="view-title">' + (mv ? t('bk.move_title') : t('book.title')) + '</h2>' + (mv ? '' : stepperHtml(bk.step));
 
-    /* step 1 — service */
+    /* step 1 — the customer's own upcoming bookings first, then a new booking */
     if (bk.step === 1) {
+      var mine = (state.bookings || []).filter(isUpcoming).sort(function (a, b) { return startMs(a) - startMs(b); });
+      if (mine.length) html += '<div class="section-head"><h3>' + t('book.mine') + '</h3></div><div class="card" id="myUpcoming">' + mine.map(bookingRowHtml).join('') + '</div>' +
+        '<div class="section-head"><h3>' + t('book.new') + '</h3></div>';
       html += '<p class="view-sub">' + t('book.step_service') + '</p><div class="svc-list svc-list-book">' + state.services.map(function (x) { return svcRowHtml(x); }).join('') + '</div>';
       $app.innerHTML = html + '</div>';
       bindAppbar();
+      var up = document.getElementById('myUpcoming');
+      if (up) bindBookingRows(up);
       $app.querySelectorAll('.svc-row').forEach(function (row) {
         row.onclick = function () {
           bk.service = state.services.find(function (s) { return s.id === row.getAttribute('data-id'); });
-          bk.step = 2;
-          render();
+          goStep(2);
         };
       });
+      if (state.bookings === null) {
+        api('/api/bookings').then(function (list) { state.bookings = list; if (state.view === 'book' && state.book.step === 1) render(); }).catch(function () {});
+      }
       return;
     }
 
@@ -471,6 +724,7 @@
     html += '<div class="card svc-row" style="cursor:default;margin-top:10px"><div class="emoji">' + (s.emoji || '🌿') + '</div>' +
       '<div><div class="name">' + esc(svcName(s)) + '</div><div class="meta">' + s.minutes + ' ' + t('book.min') + '</div></div>' +
       '<div class="price">' + money(s.price) + '</div></div>';
+    if (mv) html += '<p class="muted small" style="margin-top:8px">' + t('bk.now') + ': <s>' + fmtDate(mv.date) + ' · ' + mv.time + '</s></p>';
 
     /* step 2 — staff */
     if (bk.step === 2) {
@@ -480,17 +734,17 @@
         '<div class="staff-avatar" style="background:var(--gold)">✦</div>' +
         '<div><div class="nm">' + t('book.any_staff') + '</div><div class="sp">' + t('book.any_staff_d') + '</div></div></div>';
       html += state.staff.map(function (st) { return staffCardHtml(st, bk.staffId === st.id, prefId === st.id); }).join('') + '</div>';
-      html += '<button class="btn btn-primary btn-block mt" id="bkNext">' + t('common.confirm') + ' →</button>';
+      html += '<button class="btn btn-primary btn-block mt" id="bkNext">' + t('common.next') + ' →</button>';
       $app.innerHTML = html + '</div>';
       bindAppbar();
-      document.getElementById('bkBack').onclick = function () { bk.step = 1; bk.service = null; render(); };
+      document.getElementById('bkBack').onclick = stepBack;
       $app.querySelectorAll('.staff-card').forEach(function (c) {
         c.onclick = function () { bk.staffId = c.getAttribute('data-staff'); render(); };
       });
       document.getElementById('bkNext').onclick = function () {
-        bk.step = 3;
-        render();
-        loadSlots(bk.date || dateOffset(0));
+        bk.slots = null;
+        goStep(3);
+        loadSlots(bk.date || dateOffset(0), bk.date ? 0 : 7);
       };
       return;
     }
@@ -499,7 +753,7 @@
     if (bk.step === 3) {
       var chosenStaff = bk.staffId !== 'any' ? state.staff.find(function (x) { return x.id === bk.staffId; }) : null;
       html += '<p class="view-sub" style="margin-top:8px">' + t('book.step_datetime') +
-        (chosenStaff ? ' · <b>' + esc(chosenStaff.name) + '</b>' : '') + '</p><div class="date-strip">';
+        (chosenStaff ? ' · <b>' + esc(chosenStaff.name) + '</b>' : '') + '</p><div class="date-strip" id="dateStrip">';
       var maxDays = (state.config && state.config.bookingDaysAhead) || 21;
       for (var i = 0; i < maxDays; i++) {
         var ds = dateOffset(i);
@@ -521,26 +775,33 @@
           html += '<div class="empty"><span class="big">😔</span>' + t('book.no_slots') + '</div>';
         } else {
           html += '<div class="slot-grid">' + bk.slots.slots.map(function (x) {
-            return '<button class="slot' + (!x.available ? ' taken' : '') + (bk.time === x.time ? ' active' : '') + '" data-time="' + x.time + '"' + (!x.available ? ' disabled' : '') + '>' + x.time + '</button>';
+            var was = mv && mv.date === bk.date && mv.time === x.time;
+            var off = !x.available || was;
+            return '<button class="slot' + (off ? ' taken' : '') + (was ? ' was' : '') + (bk.time === x.time ? ' active' : '') + '" data-time="' + x.time + '"' + (off ? ' disabled' : '') + '>' +
+              x.time + '<small>–' + endOf(x.time, s.minutes) + '</small></button>';
           }).join('') + '</div>';
         }
       }
-      html += '<button class="btn btn-primary btn-block mt" id="bkNext"' + (bk.time ? '' : ' disabled') + '>' + t('common.confirm') + ' →</button>';
+      html += '<button class="btn btn-primary btn-block mt" id="bkNext"' + (bk.time ? '' : ' disabled') + '>' +
+        (mv ? (bk.time ? t('bk.move_btn') + ' → ' + fmtDate(bk.date) + ' ' + bk.time : t('bk.move_btn') + ' →') : t('common.next') + ' →') + '</button>';
       $app.innerHTML = html + '</div>';
       bindAppbar();
-      document.getElementById('bkBack').onclick = function () { bk.step = 2; render(); };
+      /* keep the chosen day in view (it may have been moved forward to the first free one) */
+      var strip = document.getElementById('dateStrip'), on = strip && strip.querySelector('.active');
+      if (on) strip.scrollLeft = Math.max(0, on.offsetLeft - strip.offsetLeft - 40);
+      document.getElementById('bkBack').onclick = stepBack;
       $app.querySelectorAll('.date-chip').forEach(function (c) {
-        c.onclick = function () { loadSlots(c.getAttribute('data-date')); };
+        c.onclick = function () { loadSlots(c.getAttribute('data-date'), 0); };
       });
       $app.querySelectorAll('.slot:not(.taken)').forEach(function (sl) {
         sl.onclick = function () { bk.time = sl.getAttribute('data-time'); render(); };
       });
       document.getElementById('bkNext').onclick = function () {
         if (!bk.time) return;
+        if (mv) return submitMove(this);
         var pkg = usableBundleClient(s.id);
         bk.payWith = !walletOn() ? 'salon' : (pkg ? 'package' : (state.user.balance >= s.price ? 'balance' : 'salon'));
-        bk.step = 4;
-        render();
+        goStep(4);
       };
       return;
     }
@@ -549,24 +810,28 @@
     var pkg = usableBundleClient(s.id);
     var canBalance = state.user.balance >= s.price;
     var staffLabel = bk.staffId === 'any' ? t('book.any_staff') : (state.staff.find(function (x) { return x.id === bk.staffId; }) || {}).name || '';
+    var soon = (Date.parse(bk.date + 'T' + bk.time + ':00+08:00') - Date.now()) / 3600000 < cancelHours();
     html += '<p class="view-sub" style="margin-top:8px">' + t('book.step_confirm') + '</p>' +
       '<div class="card">' +
-      '<div class="summary-row"><span class="muted">📅</span><span>' + fmtDate(bk.date) + ' · ' + bk.time + '</span></div>' +
+      '<div class="summary-row"><span class="muted">📅</span><span>' + fmtDate(bk.date) + ' · ' + bk.time + '–' + endOf(bk.time, s.minutes) + '</span></div>' +
       '<div class="summary-row"><span class="muted">' + t('book.staff') + '</span><span>' + esc(staffLabel) + '</span></div>' +
+      '<div class="summary-row"><span class="muted">📍</span><span class="small">' + esc(addressText()) + '</span></div>' +
       '<div class="summary-row total"><span>' + t('book.total') + '</span><span>' + money(s.price) + '</span></div></div>' +
-      '<h3 style="margin:14px 0 10px;font-size:1.05rem">' + t('book.pay_how') + '</h3>' +
-      (walletOn() && pkg ? '<div class="pay-opt' + (bk.payWith === 'package' ? ' active' : '') + '" data-pay="package">' +
-        '<span class="radio"></span><div><div class="ttl">🎁 ' + t('book.pay_package') + '</div>' +
-        '<div class="sub">' + esc(state.lang === 'mn' ? pkg.nameMn : pkg.nameEn) + ' · ' + pkg.remaining + ' ' + t('book.pkg_left') + '</div></div></div>' : '') +
-      (walletOn() ? '<div class="pay-opt' + (bk.payWith === 'balance' ? ' active' : '') + (canBalance ? '' : ' disabled') + '" data-pay="balance">' +
+      (walletOn() ? '<h3 style="margin:14px 0 10px;font-size:1.05rem">' + t('book.pay_how') + '</h3>' +
+        (pkg ? '<div class="pay-opt' + (bk.payWith === 'package' ? ' active' : '') + '" data-pay="package">' +
+          '<span class="radio"></span><div><div class="ttl">🎁 ' + t('book.pay_package') + '</div>' +
+          '<div class="sub">' + esc(state.lang === 'mn' ? pkg.nameMn : pkg.nameEn) + ' · ' + pkg.remaining + ' ' + t('book.pkg_left') + '</div></div></div>' : '') +
+        '<div class="pay-opt' + (bk.payWith === 'balance' ? ' active' : '') + (canBalance ? '' : ' disabled') + '" data-pay="balance">' +
         '<span class="radio"></span><div><div class="ttl">' + t('book.pay_balance') + '</div>' +
-        '<div class="sub">' + t('wallet.balance') + ': ' + money(state.user.balance) + (canBalance ? '' : ' — ' + t('book.balance_short')) + '</div></div></div>' : '') +
-      '<div class="pay-opt' + (bk.payWith === 'salon' ? ' active' : '') + '" data-pay="salon">' +
-      '<span class="radio"></span><div><div class="ttl">' + t('book.pay_salon') + '</div></div></div>' +
+        '<div class="sub">' + t('wallet.balance') + ': ' + money(state.user.balance) + (canBalance ? '' : ' — ' + t('book.balance_short')) + '</div></div></div>' +
+        '<div class="pay-opt' + (bk.payWith === 'salon' ? ' active' : '') + '" data-pay="salon">' +
+        '<span class="radio"></span><div><div class="ttl">' + t('book.pay_salon') + '</div></div></div>'
+        : '<p class="muted small" style="margin-top:10px">💳 ' + t('bk.pay_at_salon') + '</p>') +
+      '<p class="bk-note' + (soon ? ' warn' : '') + '">' + esc(tH(soon ? 'bk.soon_note' : 'bk.policy')) + '</p>' +
       '<button class="btn btn-primary btn-block mt" id="bkConfirm">' + t('book.confirm_btn') + '</button>';
     $app.innerHTML = html + '</div>';
     bindAppbar();
-    document.getElementById('bkBack').onclick = function () { bk.step = 3; render(); };
+    document.getElementById('bkBack').onclick = stepBack;
     $app.querySelectorAll('.pay-opt').forEach(function (po) {
       po.onclick = function () {
         var v = po.getAttribute('data-pay');
@@ -577,21 +842,40 @@
     });
     document.getElementById('bkConfirm').onclick = function () {
       var btn = this;
+      if (btn.disabled) return;
       btn.disabled = true;
       api('/api/bookings', { method: 'POST', body: { serviceId: s.id, staffId: bk.staffId, date: bk.date, time: bk.time, payWith: bk.payWith } })
         .then(function (d) {
           if (d.balance !== undefined) state.user.balance = d.balance;
-          state.bookings = null;
           if (bk.payWith === 'package') loadMyBundles();
-          toast(t('book.booked_ok'), 'ok');
+          state.bookings = null;
+          state.book = freshBook();
           setView('home');
+          openBooking(d.booking, { title: t('bk.done_title'), done: true });
         })
         .catch(function (e) {
           toast(errMsg(e), 'err');
           btn.disabled = false;
-          if (e.error === 'slot_taken') { bk.step = 3; render(); loadSlots(bk.date); }
+          if (e.error === 'slot_taken') { goStep(3); loadSlots(bk.date, 0); }
         });
     };
+  }
+  function submitMove(btn) {
+    var bk = state.book, mv = bk.move;
+    if (btn.disabled) return;
+    btn.disabled = true;
+    api('/api/bookings/' + encodeURIComponent(mv.id) + '/move', { method: 'POST', body: { date: bk.date, time: bk.time } })
+      .then(function (d) {
+        state.bookings = null;
+        state.book = freshBook();
+        setView('home');
+        openBooking(d.booking, { title: t('bk.moved_ok'), done: true });
+      })
+      .catch(function (e) {
+        toast(errMsg(e), 'err');
+        btn.disabled = false;
+        if (e.error === 'slot_taken') loadSlots(bk.date, 0);
+      });
   }
 
   /* ================= wallet view ================= */
@@ -1294,9 +1578,9 @@
 
       '<div class="o5"><div class="section-head"><h3>' + t('prof.about') + '</h3></div>' +
       '<div class="card">' +
-      '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(state.lang === 'mn' ? cfg.addressMn : cfg.addressEn) + '</span></div>' +
+      '<div class="list-row"><span class="lbl">' + t('prof.address') + '</span><span class="small">' + esc(addressText()) + '</span></div>' +
+      '<div class="list-row"><span class="lbl">' + t('prof.map') + '</span>' + mapLinkHtml() + '</div>' +
       '<div class="list-row"><span class="lbl">' + t('prof.phone') + '</span><a href="tel:' + esc(cfg.phoneTel || '') + '">' + esc(cfg.phoneDisplay || '') + '</a></div>' +
-      (cfg.mapUrl ? '<div class="list-row"><span class="lbl">' + t('prof.map') + '</span><a href="' + esc(cfg.mapUrl) + '" target="_blank" rel="noopener">' + t('prof.map_go') + '</a></div>' : '') +
       (cfg.bookingPhones ? '<div class="list-row"><span class="lbl">' + t('prof.book_phones') + '</span><span>' + String(cfg.bookingPhones).split(',').map(function (n) {
         n = n.trim(); return '<a href="tel:' + esc(n.replace(/[^\d+]/g, '')) + '">' + esc(n) + '</a>';
       }).join(', ') + '</span></div>' : '') +
@@ -1324,50 +1608,15 @@
       confirmDlg(t('prof.logout_q')).then(function (yes) { if (yes) doLogout(); });
     };
 
+    /* upcoming visits first (soonest on top), then the history (newest on top) */
     function renderBookings() {
       var host = document.getElementById('bkList');
       if (!host || state.bookings === null) return;
       if (!state.bookings.length) { host.innerHTML = '<div class="empty">' + t('prof.none') + '</div>'; return; }
-      host.innerHTML = state.bookings.map(function (b) {
-        var svc = b.service || {};
-        var canCancel = b.status === 'confirmed' && (new Date(b.date + 'T' + b.time + ':00').getTime() - Date.now()) / 3600000 >= ((state.config && state.config.cancelHours) || 24);
-        var canRate = b.status === 'done' && !b.reviewId;
-        var paidKey = 'prof.paid_' + (b.paid || 'salon');
-        var paidLabel = t(paidKey);
-        if (paidLabel === paidKey) paidLabel = b.paid;
-        return '<div class="booking-item">' +
-          '<div class="row"><div class="grow"><div style="font-weight:600">' + esc(svcName(svc)) + '</div>' +
-          '<div class="muted small">' + fmtDate(b.date) + ' · ' + b.time + ' · ' + money(b.amount) + '</div>' +
-          (b.staffName ? '<div class="muted small">👤 ' + esc(b.staffName) + '</div>' : '') +
-          '<div class="muted small">' + paidLabel + '</div></div>' +
-          '<div style="text-align:right"><span class="chip ' + b.status + '">' + t('prof.st_' + b.status) + '</span>' +
-          (canCancel ? '<div><button class="btn btn-sm btn-danger mt" data-cancel="' + esc(b.id) + '">' + t('prof.cancel') + '</button></div>' : '') +
-          (canRate ? '<div><button class="btn btn-sm btn-primary mt" data-rate="' + esc(b.id) + '">⭐ ' + t('home.rate_btn').replace('⭐ ', '') + '</button></div>' : '') +
-          (b.status === 'done' && b.reviewId ? '<div class="muted small mt">✓ ' + t('rev.done') + '</div>' : '') +
-          '</div></div></div>';
-      }).join('');
-      host.querySelectorAll('[data-cancel]').forEach(function (btn) {
-        btn.onclick = function () {
-          confirmDlg(t('prof.cancel_q')).then(function (yes) {
-            if (!yes) return;
-            api('/api/bookings/' + btn.getAttribute('data-cancel') + '/cancel', { method: 'POST' })
-              .then(function (d) {
-                state.user.balance = d.balance;
-                state.bookings = null;
-                loadMyBundles();
-                toast(t('prof.cancelled'), 'ok');
-                vProfile();
-              })
-              .catch(function (e) { toast(errMsg(e), 'err'); });
-          });
-        };
-      });
-      host.querySelectorAll('[data-rate]').forEach(function (btn) {
-        btn.onclick = function () {
-          var bk = state.bookings.find(function (x) { return x.id === btn.getAttribute('data-rate'); });
-          if (bk) openReview(bk);
-        };
-      });
+      var up = state.bookings.filter(isUpcoming).sort(function (a, b) { return startMs(a) - startMs(b); });
+      var rest = state.bookings.filter(function (b) { return !isUpcoming(b); }).sort(function (a, b) { return startMs(b) - startMs(a); });
+      host.innerHTML = up.concat(rest).map(bookingRowHtml).join('');
+      bindBookingRows(host);
     }
     renderBookings();
     if (state.bookings === null) {
@@ -1418,9 +1667,10 @@
     };
   }
 
-  function openChangePass() {
+  function openChangePass(forced) {
     var m = openModal(
       '<h3>🔑 ' + t('prof.password') + '</h3>' +
+      (forced === true ? '<p class="bk-note warn">' + esc(t('auth.must_change')) + '</p>' : '') +
       '<div class="field"><label>' + t('prof.pass_old') + '</label><input id="cpOld" type="password"></div>' +
       '<div class="field"><label>' + t('prof.pass_new') + '</label><input id="cpNew" type="password"></div>' +
       '<div class="modal-actions">' +
@@ -1432,7 +1682,7 @@
       var btn = this;
       btn.disabled = true;
       api('/api/me', { method: 'PATCH', body: { password: m.querySelector('#cpOld').value, newPassword: m.querySelector('#cpNew').value } })
-        .then(function () { closeModal(); toast(t('prof.pass_ok'), 'ok'); })
+        .then(function (d) { if (d.user) state.user = d.user; closeModal(); toast(t('prof.pass_ok'), 'ok'); })
         .catch(function (e) { toast(errMsg(e), 'err'); btn.disabled = false; });
     };
   }
@@ -1452,21 +1702,26 @@
   }
 
   /* ================= deep link ================= */
-  /* /app#book or /app#book=<serviceId> — the website's "Book" buttons land here */
+  /* /app#book or /app#book=<serviceId> — the website's "Book" buttons land here;
+     /app#bookings (my bookings, where visits are rated) and /app#chat */
   var pendingBook = null;
   (function readDeepLink() {
-    var m = /^#book(?:=([\w-]+))?$/.exec(location.hash || '');
-    if (!m) return;
-    pendingBook = m[1] || 'any';
+    var h = location.hash || '';
+    var m = /^#book(?:=([\w-]+))?$/.exec(h);
+    if (m) pendingBook = m[1] || 'any';
+    else if (h === '#bookings' || h === '#chat') pendingBook = h.slice(1);
+    else return;
     if (history.replaceState) history.replaceState(null, '', location.pathname);
   })();
   function applyPendingBook() {
     if (!pendingBook || !state.user) return false;
     var id = pendingBook;
     pendingBook = null;
+    if (id === 'bookings') { setView('profile'); return true; }
+    if (id === 'chat') { setView('chat'); return true; }
     setView('book');
     var svc = state.services.find(function (s) { return s.id === id; });
-    if (svc) { state.book.service = svc; state.book.step = 2; render(); }
+    if (svc) { state.book.service = svc; goStep(2); }
     return true;
   }
 
@@ -1488,12 +1743,22 @@
     ];
 
     Promise.all(boot).then(function () {
+      /* the QR library is only needed for wallet top-ups */
+      if (walletOn() && !window.qrcode) {
+        var qs = document.createElement('script');
+        qs.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+        qs.onerror = function () { window.__qrFailed = 1; };
+        document.head.appendChild(qs);
+      }
       if (state.token) {
         api('/api/me').then(function (d) {
           state.user = d.user;
           state.unreadChat = d.unreadChat || 0;
+          try { localStorage.setItem('bg_known', '1'); } catch (e) { /* storage blocked */ }
+          if (history.replaceState) history.replaceState({ app: 'home', step: 0 }, '');
           loadMyBundles();
           if (!applyPendingBook()) render();
+          if (d.user.mustChangePassword) openChangePass(true);
         }).catch(function () {
           state.token = null;
           localStorage.removeItem('bg_token');

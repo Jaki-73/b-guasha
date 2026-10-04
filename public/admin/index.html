@@ -191,6 +191,30 @@
   .bar-row .bar { flex: 1; height: 10px; background: var(--surface2); border-radius: 999px; overflow: hidden; }
   .bar-row .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--brand)); }
 
+  /* lists as cards: they fit a phone, and a tap opens the item */
+  .nw { white-space: nowrap; }
+  .list-h { font-size: 1.05rem; margin: 18px 0 8px; }
+  .list-day { margin: 14px 2px 6px; }
+  .cust-tools { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; margin-bottom: 12px; }
+  .cust-tools .big-check { grid-column: 1 / -1; }
+  .cust-list { display: grid; gap: 8px; }
+  @media (min-width: 900px) { .cust-list { grid-template-columns: 1fr 1fr; } }
+  .cust-card { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 12px 14px; cursor: pointer; }
+  .cust-card:hover { border-color: var(--brand); }
+  .cc-main { flex: 1; min-width: 0; display: grid; gap: 3px; }
+  .cc-desc { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+  .cc-call { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 64px; min-height: 52px; justify-content: center; border-radius: 12px; background: var(--brand-soft); text-decoration: none; font-size: 1.2rem; }
+  .cc-call span { font-size: 0.68rem; color: var(--muted); }
+  .big-check { display: flex; gap: 8px; align-items: center; cursor: pointer; min-height: 44px; }
+  .big-check input { width: 22px; height: 22px; flex: 0 0 auto; }
+  .qb-mnote { background: var(--surface2); border-radius: 10px; padding: 8px 10px; font-size: 0.85rem; margin: 0 0 10px; line-height: 1.5; }
+  .qb-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mtrack .seg.mine { top: auto; bottom: 0; height: 4px; background: var(--brand); border-radius: 2px; }
+  /* dialogs never wider than the phone; wide tables scroll inside them */
+  .modal { max-width: min(640px, 100vw); box-sizing: border-box; overflow-x: hidden; }
+  .modal table { display: block; overflow-x: auto; }
+  .modal .row { flex-wrap: wrap; min-width: 0; }
+
   .fab { display: none; }
   @media (max-width: 720px) {
     .admin-root { padding: 12px 12px calc(100px + env(safe-area-inset-bottom)); }
@@ -201,6 +225,9 @@
     .admin-tabs { flex-wrap: nowrap; overflow-x: auto; margin: 12px -12px; padding: 0 12px 4px; scrollbar-width: none; }
     .admin-tabs::-webkit-scrollbar { display: none; }
     .admin-tabs button { flex: 0 0 auto; padding: 10px 14px; }
+    .bk-actions button, .mini-btn { min-height: 40px; padding: 8px 12px; font-size: 0.85rem; }
+    #outBtn, #themeBtn, #calFeedBtn { min-height: 44px; min-width: 44px; }
+    .modal .row input.cell-input { min-width: 0 !important; flex: 1 1 160px; }
     .fab {
       display: flex; align-items: center; justify-content: center; position: fixed; z-index: 50;
       right: 16px; bottom: calc(18px + env(safe-area-inset-bottom)); width: 64px; height: 64px; border-radius: 50%;

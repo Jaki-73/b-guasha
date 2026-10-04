@@ -80,7 +80,7 @@
 
       'contact.kicker': 'Холбоо барих',
       'contact.title': 'Биднийг олох',
-      'contact.addr_t': 'Хаяг', 'contact.map': '🧭 Замаа олох ↗', 'contact.hours_t': 'Ажиллах цаг', 'contact.hours_daily': 'Өдөр бүр',
+      'contact.addr_t': 'Хаяг', 'contact.map': '🧭 Замаа олох ↗', 'contact.map_search': '🗺 Газрын зураг дээр хайх ↗', 'contact.hours_t': 'Ажиллах цаг', 'contact.hours_daily': 'Өдөр бүр',
       'contact.call_t': 'Утас', 'contact.book_phones': 'Цаг авах', 'contact.email_t': 'Имэйл', 'contact.social_t': 'Сошиал',
       'contact.book_t': 'Цагаа одоо захиалаарай', 'contact.book_d': 'Бүртгүүлээд 1 минутад цагаа баталгаажуулна.', 'contact.book_btn': 'Цаг захиалах',
 
@@ -160,7 +160,7 @@
 
       'contact.kicker': 'Contact',
       'contact.title': 'Find us',
-      'contact.addr_t': 'Address', 'contact.map': '🧭 Get directions ↗', 'contact.hours_t': 'Opening hours', 'contact.hours_daily': 'Every day',
+      'contact.addr_t': 'Address', 'contact.map': '🧭 Get directions ↗', 'contact.map_search': '🗺 Search on the map ↗', 'contact.hours_t': 'Opening hours', 'contact.hours_daily': 'Every day',
       'contact.call_t': 'Phone', 'contact.book_phones': 'Bookings', 'contact.email_t': 'Email', 'contact.social_t': 'Social',
       'contact.book_t': 'Book your visit', 'contact.book_d': 'Register and confirm your time within a minute.', 'contact.book_btn': 'Book now',
 
@@ -237,7 +237,13 @@
     if (el) el.textContent = addr;
     /* directions button only once the owner has set the real Google Maps link */
     var map = document.getElementById('contactMap');
-    if (map) { map.hidden = !cfg.mapUrl; if (cfg.mapUrl) map.href = cfg.mapUrl; }
+    /* the owner's map link once set; until then a map search for the address */
+    if (map) {
+      map.hidden = false;
+      map.href = cfg.mapUrl || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(cfg.addressMn || cfg.addressEn || '');
+      map.setAttribute('data-i18n', cfg.mapUrl ? 'contact.map' : 'contact.map_search');
+      map.textContent = t(map.getAttribute('data-i18n'));
+    }
     var hours = document.getElementById('contactHours');
     if (hours) hours.textContent = t('contact.hours_daily') + ' · ' + cfg.hoursOpen + ' – ' + cfg.hoursClose;
     document.querySelectorAll('.js-tel').forEach(function (a) { if (cfg.phoneTel) a.href = 'tel:' + cfg.phoneTel; });
@@ -320,7 +326,7 @@
       '<div class="rs-bars">' + dist.map(function (n, i) {
         return '<div class="rs-bar"><span>' + (5 - i) + '★</span><i style="--w:' + Math.round((n / max) * 100) + '%"></i><span>' + n + '</span></div>';
       }).join('') + '</div>' +
-      '<div class="rs-cta"><span>' + t('rev.cta') + '</span><a class="btn btn-ghost btn-sm" href="/app">' + t('rev.cta_btn') + '</a></div>';
+      '<div class="rs-cta"><span>' + t('rev.cta') + '</span><a class="btn btn-ghost btn-sm" href="/app#bookings">' + t('rev.cta_btn') + '</a></div>';
 
     var shown = isPhone.matches || revExpanded ? list : list.slice(0, REV_DESKTOP_LIMIT);
     wrap.innerHTML = shown.map(function (r) {
@@ -404,7 +410,7 @@
       /* tablet/phone: the help card follows the list instead of sitting in the side panel */
       '<div class="help-card"><b>' + t('faq.help_t') + '</b><p>' + t('faq.help_d') + '</p><div class="help-actions">' +
       '<a class="btn btn-primary btn-sm" href="tel:' + esc((cfg && cfg.phoneTel) || '+97691113958') + '">' + t('faq.call') + '</a>' +
-      '<a class="btn btn-ghost btn-sm" href="/app">' + t('faq.chat') + '</a></div></div>';
+      '<a class="btn btn-ghost btn-sm" href="/app#chat">' + t('faq.chat') + '</a></div></div>';
   }
 
   /* ---------- data loading ---------- */

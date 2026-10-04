@@ -95,6 +95,8 @@ a { color: var(--brand); }
 [data-theme="dark"] .btn-primary { color: #1c1610; }
 .btn-ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--line); }
 .btn-danger { background: transparent; color: var(--danger); border: 1.5px solid var(--danger); }
+/* thumb-sized on a phone */
+@media (max-width: 1023px) { .btn-sm { min-height: 40px; } .list-row a { display: inline-block; padding: 6px 0; } }
 .btn-block { width: 100%; }
 .btn-sm { padding: 8px 14px; font-size: 0.88rem; }
 
@@ -204,6 +206,27 @@ a { color: var(--brand); }
 .slot.taken { opacity: 0.35; text-decoration: line-through; cursor: not-allowed; }
 .slot.active { border-color: var(--brand); background: var(--brand); color: #fff; }
 [data-theme="dark"] .slot.active { color: #1c1610; }
+.slot small { display: block; font-weight: 500; font-size: 0.7rem; opacity: 0.7; }
+.slot.was { opacity: 1; text-decoration: none; border-style: dashed; color: var(--muted); }
+
+/* bookings: tappable rows and the booking sheet */
+.tappable { cursor: pointer; }
+.tappable:active { opacity: 0.75; }
+.booking-item .row { align-items: center; gap: 8px; }
+.appt-arr { color: var(--muted); font-size: 1.4rem; margin-left: auto; padding-left: 6px; }
+.bk-done { font-family: 'Playfair Display', serif; font-size: 1.35rem; font-weight: 700; color: var(--brand-deep, var(--brand)); margin-bottom: 12px; }
+.bk-sum { background: var(--surface2, var(--surface)); border-radius: 14px; padding: 14px; margin-bottom: 10px; display: grid; gap: 4px; justify-items: start; }
+.bk-svc { font-size: 1.05rem; }
+.bk-when { font-size: 1rem; }
+.bk-note { font-size: 0.86rem; color: var(--muted); background: var(--surface2, var(--surface)); border-radius: 12px; padding: 10px 12px; margin-top: 10px; line-height: 1.45; }
+.bk-note.warn { color: var(--ink); border-left: 4px solid var(--danger); }
+.bk-cal { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.88rem; margin: 10px 0 2px; }
+.bk-cal a { padding: 8px 0; }
+.bk-danger { color: var(--danger) !important; border-color: var(--danger) !important; }
+.form-err { color: var(--danger); font-size: 0.88rem; margin-top: 10px; line-height: 1.4; }
+.pass-field { position: relative; }
+.pass-field input { padding-right: 72px; }
+.pass-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--brand); font-weight: 600; padding: 10px; min-height: 44px; cursor: pointer; }
 
 .staff-card {
   display: flex; gap: 12px; align-items: center; border: 1.5px solid var(--line);

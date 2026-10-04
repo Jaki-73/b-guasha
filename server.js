@@ -548,7 +548,8 @@ function publicUser(u) {
     id: u.id, name: u.name, phone: u.phone, balance: u.balance, createdAt: u.createdAt, isDemo: !!u.isDemo,
     role: u.role || 'customer', disabled: !!u.disabled,
     skinType: u.skinType || '', allergies: u.allergies || '', birthday: u.birthday || '',
-    prefNote: u.prefNote || '', preferredStaffId: u.preferredStaffId || ''
+    prefNote: u.prefNote || '', preferredStaffId: u.preferredStaffId || '',
+    mustChangePassword: !!u.mustChangePassword
   };
 }
 
@@ -624,6 +625,11 @@ function newSession(map, payload) {
 }
 
 const PHONE_RE = /^\d{8}$/;
+/* people type "9511-2233", "9511 2233" or "+976 9511 2233": keep the 8 digits */
+function normPhone(v) {
+  const d = String(v == null ? '' : v).replace(/\D/g, '');
+  return d.length === 11 && d.startsWith('976') ? d.slice(3) : d;
+}
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -842,6 +848,14 @@ function evaluate(su, svc, dateStr, time, list) {
   const clash = clashFor(cand, su.id, list || reservations());
   return clash ? { error: clash } : { cand };
 }
+/* A customer cannot be in two treatments at once (with two different therapists, say).
+   Neutral on purpose: callers learn only that the customer is busy then, never with
+   whom or for what. */
+function clientBusy(userId, cand, excludeBookingId) {
+  if (!userId) return false;
+  return db.bookings.some((x) => x.userId === userId && x.id !== excludeBookingId && HOLDING.includes(x.status) &&
+    Date.parse(x.startsAt) < cand.endMs && cand.startMs < Date.parse(x.endsAt));
+}
 /* stored fields for a booking made from a checked candidate */
 function scheduleFields(cand) {
   return {
@@ -983,7 +997,9 @@ async function handleApi(req, res, pathname, q) {
       slotMinutes: c.slotMinutes, bookingDaysAhead: c.bookingDaysAhead,
       cancelHours: c.cancelHours, paymentsDemo: c.paymentsDemo,
       topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent,
-      featureWallet: c.featureWallet === true
+      featureWallet: c.featureWallet === true,
+      /* the login screen mentions the demo account only while it exists */
+      demoAccount: db.users.some((u) => u.isDemo && !u.disabled)
     });
   }
 
@@ -992,8 +1008,10 @@ async function handleApi(req, res, pathname, q) {
   if (route === 'GET /api/bundles') return json(res, 200, db.bundles.filter((b) => b.active));
 
   if (route === 'GET /api/public/reviews') {
+    /* the seeded example reviews were written for the demo, not by customers: they stay
+       in the admin (marked жишээ) but are never shown to the public as real ones */
     const list = db.reviews
-      .filter((r) => r.approved === true)
+      .filter((r) => r.approved === true && !r.sample)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 30)
       .map((r) => {
@@ -1033,7 +1051,7 @@ async function handleApi(req, res, pathname, q) {
   if (route === 'POST /api/register') {
     const b = await readJson(req);
     const name = String(b.name || '').trim();
-    const phone = String(b.phone || '').trim();
+    const phone = normPhone(b.phone);
     const password = String(b.password || '');
     if (!name || name.length > 60) return fail(res, 400, 'bad_name');
     if (!PHONE_RE.test(phone)) return fail(res, 400, 'bad_phone');
@@ -1058,7 +1076,9 @@ async function handleApi(req, res, pathname, q) {
 
   if (route === 'POST /api/login') {
     const b = await readJson(req);
-    const user = db.users.find((u) => u.phone === String(b.phone || '').trim());
+    const user = db.users.find((u) => u.phone === normPhone(b.phone));
+    /* the salon saved this number from a phone booking; the person has no password yet */
+    if (user && user.role === 'customer' && user.noLogin && !user.disabled) return fail(res, 401, 'needs_register');
     if (!user || !checkPassword(user, String(b.password || ''))) return fail(res, 401, 'invalid_credentials');
     if (user.disabled) return fail(res, 403, 'account_disabled');
     const token = newSession(db.sessions, { userId: user.id });
@@ -1094,6 +1114,7 @@ async function handleApi(req, res, pathname, q) {
       if (String(b.newPassword).length < 6) return fail(res, 400, 'bad_password');
       user.salt = crypto.randomBytes(16).toString('hex');
       user.hash = crypto.scryptSync(String(b.newPassword), user.salt, 32).toString('hex');
+      delete user.mustChangePassword;
     }
     saveDb();
     return json(res, 200, { user: publicUser(user) });
@@ -1116,12 +1137,19 @@ async function handleApi(req, res, pathname, q) {
     if (!svc) return fail(res, 400, 'bad_service');
     const staffParam = q.get('staffId') || 'any';
     const pool = staffParam === 'any' ? staffUsers() : [staffById(staffParam)].filter(Boolean);
-    const list = reservations();
+    /* rescheduling: the customer's own booking does not block its new time */
+    const me = authUser(req, q);
+    const moving = me && q.get('exclude') ? db.bookings.find((x) => x.id === q.get('exclude') && x.userId === me.id && x.status === 'confirmed') : null;
+    const list = reservations(moving ? moving.id : undefined);
     const soonest = Date.now() + 60 * MIN_MS; /* the app keeps a one-hour lead time */
-    const slots = slotTimes().map((time) => ({
-      time,
-      available: ubMs(date, time) >= soonest && pool.some((u) => !evaluate(u, svc, date, time, list).error)
-    }));
+    const slots = slotTimes().map((time) => {
+      const s0 = ubMs(date, time);
+      return {
+        time,
+        available: s0 >= soonest && pool.some((u) => !evaluate(u, svc, date, time, list).error) &&
+          !(me && clientBusy(me.id, { startMs: s0, endMs: s0 + svc.minutes * MIN_MS }, moving ? moving.id : undefined))
+      };
+    });
     return json(res, 200, { date, closed: false, slots });
   }
 
@@ -1151,6 +1179,7 @@ async function handleApi(req, res, pathname, q) {
         ev = evaluate(staffUser, svc, b.date, b.time, list);
         if (ev.error) return { status: 409, error: 'slot_taken' };
       }
+      if (clientBusy(user.id, ev.cand)) return { status: 409, error: 'client_busy' };
       let userBundleId = null;
       if (payWith === 'package') {
         const ub = usableBundleFor(user.id, svc.id);
@@ -1199,6 +1228,40 @@ async function handleApi(req, res, pathname, q) {
     refundBooking(booking);
     saveDb();
     return json(res, 200, { ok: true, balance: user.balance });
+  }
+
+  /* Customer moves their own booking. Same window as cancelling (cancelHours before the
+     old time); the new time gets the full staff + machine check with the booking's own
+     reservations left out. The same therapist is kept when free, otherwise any free one. */
+  m = pathname.match(/^\/api\/bookings\/([\w-]+)\/move$/);
+  if (m && method === 'POST') {
+    if (!user) return fail(res, 401, 'unauthorized');
+    const b = await readJson(req);
+    const booking = db.bookings.find((x) => x.id === m[1] && x.userId === user.id);
+    if (!booking) return fail(res, 404, 'not_found');
+    if (booking.status !== 'confirmed') return fail(res, 400, 'bad_request');
+    if ((Date.parse(booking.startsAt) - Date.now()) / 3600000 < c.cancelHours) return fail(res, 400, 'too_late_change');
+    const svc = db.services.find((s) => s.id === booking.serviceId);
+    if (!svc) return fail(res, 400, 'bad_service');
+    if (!validDate(b.date) || !validTime(b.time)) return fail(res, 400, 'bad_request');
+    if (!slotTimes().includes(b.time)) return fail(res, 400, 'bad_time');
+    const today = ubToday();
+    if (b.date < today || b.date > ubAddDays(today, c.bookingDaysAhead) || salonClosed(b.date)) return fail(res, 400, 'date_out_of_range');
+    if (ubMs(b.date, b.time) - Date.now() < 60 * MIN_MS) return fail(res, 400, 'too_soon');
+    const r = await serialized(() => {
+      if (booking.status !== 'confirmed') return { status: 400, error: 'bad_request' };
+      const list = reservations(booking.id);
+      const su = pickStaff(b.date, b.time, svc, booking.staffId, list);
+      if (!su) return { status: 409, error: 'slot_taken' };
+      const ev = evaluate(su, svc, b.date, b.time, list);
+      if (clientBusy(user.id, ev.cand, booking.id)) return { status: 409, error: 'client_busy' };
+      (booking.moves = booking.moves || []).push({ from: booking.startsAt, staffId: booking.staffId, by: user.id, at: nowIso() });
+      Object.assign(booking, scheduleFields(ev.cand), { staffId: su.id });
+      saveDb();
+      return {};
+    });
+    if (r.error) return fail(res, r.status, r.error);
+    return json(res, 200, { booking: bookingOut(booking) });
   }
 
   /* ----- reviews ----- */
@@ -1463,7 +1526,7 @@ async function handleApi(req, res, pathname, q) {
   /* phone + password login for every admin-side account: super admin, owner, staff */
   if (route === 'POST /api/admin/login-staff') {
     const b = await readJson(req);
-    const su = db.users.find((u) => u.phone === String(b.phone || '').trim() && ADMIN_ROLES.includes(u.role));
+    const su = db.users.find((u) => u.phone === normPhone(b.phone) && ADMIN_ROLES.includes(u.role));
     if (!su || !checkPassword(su, String(b.password || ''))) return fail(res, 401, 'invalid_credentials');
     if (su.disabled) return fail(res, 403, 'account_disabled');
     if (su.role === 'staff' && (!su.staff || su.staff.active === false)) return fail(res, 403, 'staff_inactive');
@@ -1620,7 +1683,7 @@ async function handleApi(req, res, pathname, q) {
       if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
       const today = ubToday();
       if (b.date < ubAddDays(today, -60) || b.date > ubAddDays(today, c.bookingDaysAhead)) return fail(res, 400, 'date_out_of_range');
-      const phone = String(b.phone || '').trim();
+      const phone = normPhone(b.phone);
       if (b.customerId && !db.users.some((u) => u.id === b.customerId && u.role === 'customer')) return fail(res, 404, 'not_found');
       const noteText = String(b.note || '').trim().slice(0, 500);
 
@@ -1645,6 +1708,7 @@ async function handleApi(req, res, pathname, q) {
           db.users.push(existing);
           created = true;
         }
+        if (existing && clientBusy(existing.id, ev.cand)) return { status: 409, error: 'client_busy', reason: 'client_busy' };
         const booking = {
           id: uid('bk'), userId: existing ? existing.id : null,
           walkName: existing ? '' : String(b.name || phone || 'Walk-in').trim().slice(0, 60),
@@ -1703,9 +1767,15 @@ async function handleApi(req, res, pathname, q) {
       const step = stepMinutes();
       /* today: keep the slot that is just starting, drop anything earlier */
       const notBefore = date === ubToday() ? Date.now() - step * MIN_MS : 0;
+      /* booking for a known customer: leave out times when she is already booked elsewhere */
+      const cid = q.get('customerId') || (moving && moving.userId) || '';
+      const slots = freeStarts(su, svc, date, step, notBefore, moving ? moving.id : undefined).filter((time) => {
+        const s0 = ubMs(date, time);
+        return !clientBusy(cid, { startMs: s0, endMs: s0 + svc.minutes * MIN_MS }, moving ? moving.id : undefined);
+      });
       return json(res, 200, {
         date, step, closed: salonClosed(date) || !staffWindow(su, date),
-        problem: serviceMachineProblem(svc), slots: freeStarts(su, svc, date, step, notBefore, moving ? moving.id : undefined)
+        problem: serviceMachineProblem(svc), slots
       });
     }
 
@@ -1743,7 +1813,8 @@ async function handleApi(req, res, pathname, q) {
         if (!HOLDING.includes(b.status)) continue;
         for (const h of b.machines || []) {
           const s0 = Date.parse(h.startsAt), e0 = Date.parse(h.endsAt), r0 = Date.parse(h.releasesAt);
-          if (s0 < dayE && dayS < r0) holds.push({ machine: h.machine, s: s0, e: e0, r: r0 });
+          /* `own`: the person asking made this booking — they may see their own times marked */
+          if (s0 < dayE && dayS < r0) holds.push({ machine: h.machine, s: s0, e: e0, r: r0, own: !!sess.staffUserId && b.staffId === sess.staffUserId });
         }
       }
       const clip = (x) => ubTime(ubIso(Math.min(Math.max(x, dayS), dayE - MIN_MS)));
@@ -1770,7 +1841,8 @@ async function handleApi(req, res, pathname, q) {
           return {
             id: m.id, name: m.name, units: m.units, placeholder: m.placeholder,
             busy: merged.map((x) => ({ from: clip(x.s), to: x.e >= dayE ? '24:00' : ubTime(ubIso(x.e)), inUse: x.inUse, full: x.inUse >= m.units })),
-            cleaning: mine.filter((h) => h.r > h.e).map((h) => ({ from: ubTime(ubIso(h.e)), to: ubTime(ubIso(h.r)) }))
+            cleaning: mine.filter((h) => h.r > h.e).sort((a, b) => a.e - b.e).map((h) => ({ from: ubTime(ubIso(h.e)), to: ubTime(ubIso(h.r)) })),
+            mine: mine.filter((h) => h.own).sort((a, b) => a.s - b.s).map((h) => ({ from: clip(h.s), to: ubTime(ubIso(h.e)) }))
           };
         })
       });
@@ -1882,6 +1954,7 @@ async function handleApi(req, res, pathname, q) {
           const clash = ev.error === 'staff_busy' || ev.error === 'machine_busy';
           return { status: clash ? 409 : 400, error: clash ? 'slot_taken' : ev.error, reason: ev.error };
         }
+        if (clientBusy(booking.userId, ev.cand, booking.id)) return { status: 409, error: 'client_busy', reason: 'client_busy' };
         (booking.moves = booking.moves || []).push({ from: booking.startsAt, staffId: booking.staffId, by: sess.userId || 'admin', at: nowIso() });
         Object.assign(booking, scheduleFields(ev.cand), { staffId: su.id });
         saveDb();
@@ -1924,7 +1997,7 @@ async function handleApi(req, res, pathname, q) {
     if (route === 'POST /api/admin/customers') {
       const b = await readJson(req);
       const name = String(b.name || '').trim();
-      const phone = String(b.phone || '').trim();
+      const phone = normPhone(b.phone);
       if (!name || name.length > 60) return fail(res, 400, 'bad_name');
       if (!PHONE_RE.test(phone)) return fail(res, 400, 'bad_phone');
       if (db.users.some((u) => u.phone === phone)) return fail(res, 409, 'phone_taken');
@@ -1945,7 +2018,7 @@ async function handleApi(req, res, pathname, q) {
       const b = await readJson(req);
       if (typeof b.name === 'string') { const nm = b.name.trim(); if (!nm || nm.length > 60) return fail(res, 400, 'bad_name'); u.name = nm; }
       if (b.phone !== undefined) {
-        const ph = String(b.phone).trim();
+        const ph = normPhone(b.phone);
         if (!PHONE_RE.test(ph)) return fail(res, 400, 'bad_phone');
         if (db.users.some((x) => x.phone === ph && x.id !== u.id)) return fail(res, 409, 'phone_taken');
         u.phone = ph;
@@ -1956,6 +2029,23 @@ async function handleApi(req, res, pathname, q) {
       saveDb();
       return json(res, 200, { ok: true });
     }
+    /* "I forgot my password": the customer calls, the owner gives a one-time code by phone.
+       Owner only — a password opens the customer's private progress photos. Every session
+       the customer has is ended, and they are asked to pick their own password at login. */
+    m = pathname.match(/^\/api\/admin\/customers\/([\w-]+)\/reset-password$/);
+    if (m && method === 'POST') {
+      if (!isOwner) return ownerOnly();
+      const u = db.users.find((x) => x.id === m[1] && x.role === 'customer');
+      if (!u) return fail(res, 404, 'not_found');
+      if (u.noLogin) return fail(res, 400, 'needs_register');
+      const temp = String(crypto.randomInt(100000, 1000000));
+      setPassword(u, temp);
+      u.mustChangePassword = true;
+      for (const [t, s0] of Object.entries(db.sessions)) if (s0.userId === u.id) delete db.sessions[t];
+      saveDb();
+      return json(res, 200, { ok: true, tempPassword: temp });
+    }
+
     /* repeat-service plans: "this customer should come for X every N days" */
     m = pathname.match(/^\/api\/admin\/customers\/([\w-]+)\/plans$/);
     if (m && method === 'POST') {
@@ -2142,7 +2232,7 @@ async function handleApi(req, res, pathname, q) {
       if (!isSuper) return superOnly();
       const b = await readJson(req);
       const name = String(b.name || '').trim();
-      const phone = String(b.phone || '').trim();
+      const phone = normPhone(b.phone);
       const password = String(b.password || '');
       if (!name || name.length > 60) return fail(res, 400, 'bad_name');
       if (!PHONE_RE.test(phone)) return fail(res, 400, 'bad_phone');
@@ -2204,7 +2294,7 @@ async function handleApi(req, res, pathname, q) {
       if (!isSuper) return superOnly();
       const b = await readJson(req);
       const name = String(b.name || '').trim();
-      const phone = String(b.phone || '').trim();
+      const phone = normPhone(b.phone);
       const password = String(b.password || '');
       const accRole = String(b.role || 'customer');
       if (!['customer', 'staff', 'owner'].includes(accRole)) return fail(res, 400, 'bad_role');
@@ -2234,7 +2324,7 @@ async function handleApi(req, res, pathname, q) {
         u.name = nm;
       }
       if (b.phone !== undefined) {
-        const ph = String(b.phone).trim();
+        const ph = normPhone(b.phone);
         if (!PHONE_RE.test(ph)) return fail(res, 400, 'bad_phone');
         if (db.users.some((x) => x.phone === ph && x.id !== u.id)) return fail(res, 409, 'phone_taken');
         u.phone = ph;

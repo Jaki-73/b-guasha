@@ -439,6 +439,114 @@
         "Owner calendar shows 10:15, 12:30 and 13:00 starts and a 15:00–17:30 block; the owner blocks the other therapist's 14:00–14:30 from the calendar",
         "Reload keeps the login; manifest served as application/manifest+json"
       ]
+    },
+    {
+      "id": 18,
+      "date": "2026-10-04",
+      "author": "Claude (Claude Code session)",
+      "summary": "Database upgrades keep a copy of db.json from before the upgrade",
+      "why": "An upgrade rewrites the only copy of the bookings in place, and the step 'take a Backup before deploying' depended on someone remembering it.",
+      "changes": [
+        "loadDb compares db.meta before and after migrateDb; when a version changed it writes the file exactly as it was to data/db.before-upgrade-<time>.json before saving.",
+        "If that copy cannot be written the server exits instead of upgrading."
+      ],
+      "data_impact": "One extra file in data/ per upgrade (never on an ordinary restart). data/ stays gitignored.",
+      "files": [
+        "server.js",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "The migration test finds exactly one pre-upgrade copy holding the old bare date/time booking; a restart with nothing to upgrade adds none"
+      ]
+    },
+    {
+      "id": 19,
+      "date": "2026-10-04",
+      "author": "Claude (Claude Code session)",
+      "summary": "Move a booking to another time — staff in the admin, customers in the app",
+      "why": "Both persona reviews: when a customer calls back, the only way was cancel and rebook, and the slot could be lost in between.",
+      "changes": [
+        "POST /api/admin/bookings/:id/move: the full staff + machine check inside the serialized write, with the booking's own reservations left out so it can slide over its own time. Staff move only their own bookings (another's id is a 404); the owner can also hand one to another therapist.",
+        "POST /api/bookings/:id/move for customers, within the same window as cancelling (cancelHours before); keeps the same therapist when free, otherwise any free one.",
+        "/api/admin/free and /api/slots take exclude=<bookingId> (only a booking the caller may see) so the screens offer those times.",
+        "Each move is recorded on the booking (moves: from, staff, by, at); it is never sent to the screens.",
+        "Admin: 🔁 Өөр цаг руу шилжүүлэх in the booking dialog opens the booking sheet in move mode (client and service fixed, current time dashed). App: 🔁 Цаг өөрчлөх in the booking sheet opens the date & time step."
+      ],
+      "data_impact": "Moved bookings gain a moves list. Nothing else changes.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "public/admin/index.html",
+        "public/app/app.js",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "Tests: refused into another's HIFU hour, allowed 15 minutes over its own time, old time free at once, 404 for another staff member, owner reassigns, cancelled booking not movable; customer move keeps the therapist, frees the old time, 404 for another customer",
+        "Playwright phone run of both move flows, no console errors"
+      ]
+    },
+    {
+      "id": 20,
+      "date": "2026-10-04",
+      "author": "Claude (Claude Code session)",
+      "summary": "Customer app: bookings easy to find and manage, clearer sign-up, Back button stays in the app",
+      "why": "Customer persona review (Сарнай): bookings were hidden at the bottom of Профайл, the cancel button vanished inside 24h without a word, '9511-2233' lost a digit, Android Back left the booking for the website, success was a 3-second toast, and demo leftovers showed to real customers.",
+      "changes": [
+        "Захиалга tab starts with 'Таны захиалгууд' (upcoming visits) above the service list; the home 'Дараагийн цаг' card and every booking row open a booking sheet: service, time–end, therapist, price, address with a map link, Google Calendar / .ics, the change/cancel rule, and Цаг өөрчлөх / Цуцлах — or, inside the cancel window, the rule and a call button.",
+        "After booking or moving: a confirmation sheet with the same details (taps blocked for half a second so a double tap cannot start another booking).",
+        "Step 4 shows the address, 'pay at the salon' and the cancel rule (a warning when the visit is inside the cancel window); steps 2–3 say Үргэлжлүүлэх, not Баталгаажуулах; times show their end; the time step opens on the first day with free times.",
+        "Phone numbers: spaces, dashes and +976 are accepted everywhere (server normPhone, no 8-character field limit).",
+        "A number the salon saved from a phone booking gets 'needs_register' at login and lands on sign-up with the number filled in; new visitors start on the sign-up tab; show-password toggle; errors stay under the form.",
+        "Forgot password: explains to call the salon; the owner (only) can issue a one-time 6-digit code from the customer card, which ends the customer's sessions and asks them to choose a new password at login.",
+        "Android/browser Back walks back through screens and booking steps (history entries), and closes an open sheet first.",
+        "Demo banner only when wallet payments are on; the demo-account hint only while the demo account exists; the QR library loads only when the wallet is on.",
+        "Seeded example reviews (sample: true) are no longer served to the public as real reviews; the owner still sees them marked жишээ.",
+        "Map: until the owner sets mapUrl, address links open a map search for the address (app and website).",
+        "Website: 'Үнэлгээ өгөх' opens /app#bookings, 'Апп-аар бичих' opens /app#chat; the footer no longer links to the staff area.",
+        "A customer cannot hold two overlapping visits (client_busy), and the app greys out times when she is already booked."
+      ],
+      "data_impact": "Customers whose password the owner resets get mustChangePassword until they choose one. Nothing is removed.",
+      "files": [
+        "server.js",
+        "public/app/app.js",
+        "public/app/app.css",
+        "public/app/i18n.js",
+        "public/app/index.html",
+        "public/site.js",
+        "public/index.html",
+        "public/admin/admin.js",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "Tests: phone formats, needs_register keeps history, customer move and exclude, client_busy for customer and staff, sample reviews hidden, owner one-time code (staff 403, sessions ended, must change)",
+        "Playwright phone run: sign-up with 9511-2233 from a website Book link, Back from step 3 to step 2, booking confirmation sheet, Таны захиалгууд, move, Back from Профайл to home; no console errors"
+      ]
+    },
+    {
+      "id": 21,
+      "date": "2026-10-04",
+      "author": "Claude (Claude Code session)",
+      "summary": "Staff admin on a phone: card lists, safer status buttons, clearer booking sheet and machine board",
+      "why": "Employee persona review (Оюунаа): the customer and booking lists were desktop tables 500+px wide on a phone, 'Болсон ✓' marked a future booking done in one tap, the sheet never said why a time was missing, and an evening call opened on a full today.",
+      "changes": [
+        "👤 Үйлчлүүлэгч and 📋 Захиалга are tappable cards (bookings grouped by day, same as My day; therapist shown to the owner); dialogs never get wider than the screen.",
+        "Booking dialog: Болсон / Ирээгүй appear only once the visit has started; 🔁 move is the main button.",
+        "Booking sheet: the caller's name and number stay in the header; when a machine the service needs is full the times say so, anonymously ('🔧 HIFU дүүрэн 14:15–15:15'); a full today moves on to the next day with free times until a day is picked; the times area keeps its height while another day loads; dates never break mid-number; a customer already booked elsewhere at that time is refused with a neutral reason and those times are left out (customerId on /api/admin/free).",
+        "Blocks are called 'Завгүй цаг' and removed with 'Устгах' (Хаах/Нээх were ambiguous); a block cannot run past closing time.",
+        "Machine board follows My day's date, marks 🙋 your own machine times (mine, computed only from the asker's own bookings), sorts cleaning times, says 'завгүй' / 'N/M эзэлсэн'.",
+        "Гарах asks first; notes save with Enter; bigger checkboxes and small buttons on a phone; the Google dialog points staff to Миний өдөр."
+      ],
+      "data_impact": "None.",
+      "files": [
+        "server.js",
+        "public/admin/admin.js",
+        "public/admin/index.html",
+        "test/scheduling.test.js"
+      ],
+      "verified": [
+        "Tests: board 'mine' only for the asker, cleaning sorted; client_busy and customerId filter",
+        "Playwright phone run as staff: no horizontal overflow on Clients, Bookings, client card; future booking dialog has no Болсон; Enter saves a note; board follows My day; sheet header shows the caller; no console errors"
+      ]
     }
   ]
 }

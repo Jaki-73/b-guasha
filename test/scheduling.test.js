@@ -373,6 +373,11 @@ describe('machine-aware scheduling', () => {
     for (const m of r.data.machines) {
       for (const x of m.busy) assert.deepEqual(Object.keys(x).sort(), ['from', 'full', 'inUse', 'to']);
     }
+    /* each person sees their own use marked (C has HIFU 13:00–14:00), nobody else's */
+    assert.ok(hifu.mine.some((x) => x.from === '13:00' && x.to === '14:00'));
+    const forB = (await call('GET', '/api/admin/machines/board?date=' + D, tok.B)).data.machines.find((m) => m.id === 'hifu');
+    assert.ok(!forB.mine.some((x) => x.from === '13:00'));
+    for (const m of r.data.machines) assert.deepEqual(m.cleaning, m.cleaning.slice().sort((a, b) => a.from.localeCompare(b.from)));
   });
 
   test('two staff racing for the last unit: exactly one succeeds', async () => {
@@ -492,5 +497,104 @@ describe('upgrading an existing database', () => {
     assert.equal((await call('POST', '/api/admin/logout', a)).status, 200);
     assert.equal((await call('GET', '/api/admin/myday', a)).status, 401);
     assert.equal((await call('GET', '/api/admin/myday', b)).status, 200);
+  });
+});
+
+describe('customer app and shared customers', () => {
+  let tmp, srv, call;
+  const D = ubDay(3);
+  const tok = {}, id = {};
+  before(async () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-cust-'));
+    srv = await startServer(path.join(tmp, 'data'), writeConfig(tmp));
+    call = api(srv.base);
+    const ow = (await call('POST', '/api/admin/login-staff', null, { phone: '91113958', password: 'owner123' })).data;
+    tok.owner = ow.token; id.owner = ow.staffUserId;
+    const ex = (await call('POST', '/api/admin/login-staff', null, { phone: '88000001', password: 'staff123' })).data;
+    tok.tuya = ex.token; id.tuya = ex.staffUserId;
+  });
+  after(async () => {
+    if (srv) await stopServer(srv);
+    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test('phone numbers typed with spaces, dashes or +976 are the same 8 digits', async () => {
+    const r = await call('POST', '/api/register', null, { name: 'Сарнай', phone: '+976 9511-2233', password: 'sarnai1' });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.user.phone, '95112233');
+    tok.sarnai = r.data.token; id.sarnai = r.data.user.id;
+    assert.equal((await call('POST', '/api/login', null, { phone: '9511 2233', password: 'sarnai1' })).status, 200);
+    assert.equal((await call('POST', '/api/admin/login-staff', null, { phone: '8800-0001', password: 'staff123' })).status, 200);
+  });
+
+  test('a number the salon saved from a phone booking is sent to sign-up and keeps its history', async () => {
+    const w = await call('POST', '/api/admin/walkin', tok.tuya, { staffId: id.tuya, serviceId: 'svc-facial-express', date: D, time: '12:00', phone: '8612 3456', via: 'phone' });
+    assert.equal(w.status, 200, w.text);
+    assert.equal(w.data.customerCreated, true);
+    const l = await call('POST', '/api/login', null, { phone: '86123456', password: 'whatever' });
+    assert.equal(l.status, 401);
+    assert.equal(l.data.error, 'needs_register');
+    const r = await call('POST', '/api/register', null, { name: 'Номин', phone: '86123456', password: 'nomin12' });
+    assert.equal(r.status, 200, r.text);
+    const mine = await call('GET', '/api/bookings', r.data.token);
+    assert.deepEqual(mine.data.map((b) => b.time), ['12:00']);
+  });
+
+  test('a customer moves her own booking; the old time frees up; nobody else can move it', async () => {
+    const b = await call('POST', '/api/bookings', tok.sarnai, { serviceId: 'svc-facial-signature', staffId: id.tuya, date: D, time: '15:00' });
+    assert.equal(b.status, 200, b.text);
+    const bk = b.data.booking;
+    /* her own booking does not block the times she can move to */
+    const slotsFor = async (exclude) => (await call('GET', `/api/slots?date=${D}&serviceId=svc-facial-signature&staffId=${id.tuya}` + (exclude ? '&exclude=' + exclude : ''), tok.sarnai)).data.slots;
+    assert.equal((await slotsFor()).find((x) => x.time === '15:00').available, false);
+    assert.equal((await slotsFor(bk.id)).find((x) => x.time === '15:00').available, true);
+    const mv = await call('POST', `/api/bookings/${bk.id}/move`, tok.sarnai, { date: D, time: '17:00' });
+    assert.equal(mv.status, 200, mv.text);
+    assert.equal(mv.data.booking.time, '17:00');
+    assert.equal(mv.data.booking.staffId, id.tuya, 'the same therapist is kept when free');
+    /* 15:00 is free again for anyone */
+    const w = await call('POST', '/api/admin/walkin', tok.tuya, { staffId: id.tuya, serviceId: 'svc-facial-signature', date: D, time: '15:00', phone: '99887766' });
+    assert.equal(w.status, 200, w.text);
+    /* another customer cannot touch it */
+    const other = (await call('POST', '/api/register', null, { name: 'Other', phone: '99001122', password: 'other12' })).data.token;
+    assert.equal((await call('POST', `/api/bookings/${bk.id}/move`, other, { date: D, time: '18:00' })).status, 404);
+  });
+
+  test('a customer cannot be booked into two visits at once, with any therapist', async () => {
+    /* Сарнай has 17:00–18:00 with Туяа; the owner is free then */
+    const r = await call('POST', '/api/bookings', tok.sarnai, { serviceId: 'svc-facial-express', staffId: id.owner, date: D, time: '17:00' });
+    assert.equal(r.status, 409);
+    assert.equal(r.data.error, 'client_busy');
+    const slots = (await call('GET', `/api/slots?date=${D}&serviceId=svc-facial-express&staffId=${id.owner}`, tok.sarnai)).data.slots;
+    assert.equal(slots.find((x) => x.time === '17:00').available, false);
+    assert.equal(slots.find((x) => x.time === '18:00').available, true);
+    /* staff: refused with a neutral reason, and the sheet leaves those times out */
+    const w = await call('POST', '/api/admin/walkin', tok.owner, { staffId: id.owner, serviceId: 'svc-facial-express', date: D, time: '17:30', customerId: id.sarnai });
+    assert.equal(w.status, 409);
+    assert.equal(w.data.reason, 'client_busy');
+    assert.ok(!JSON.stringify(w.data).includes('Туяа'));
+    const free = (await call('GET', `/api/admin/free?date=${D}&serviceId=svc-facial-express&staffId=${id.owner}&customerId=${id.sarnai}`, tok.owner)).data.slots;
+    assert.ok(!free.includes('17:00') && !free.includes('17:30') && free.includes('18:00') && free.includes('16:30'));
+  });
+
+  test('the seeded example reviews are never shown to the public as real ones', async () => {
+    const pub = await call('GET', '/api/public/reviews');
+    assert.equal(pub.data.count, 0);
+    const adm = await call('GET', '/api/admin/reviews', tok.owner);
+    assert.ok(adm.data.length >= 3, 'the owner still sees them, marked as examples');
+  });
+
+  test('forgot password: the owner gives a one-time code; old password and sessions stop working', async () => {
+    assert.equal((await call('POST', `/api/admin/customers/${id.sarnai}/reset-password`, tok.tuya)).status, 403);
+    const r = await call('POST', `/api/admin/customers/${id.sarnai}/reset-password`, tok.owner);
+    assert.equal(r.status, 200, r.text);
+    assert.match(r.data.tempPassword, /^\d{6}$/);
+    assert.equal((await call('GET', '/api/me', tok.sarnai)).status, 401);
+    assert.equal((await call('POST', '/api/login', null, { phone: '95112233', password: 'sarnai1' })).status, 401);
+    const l = await call('POST', '/api/login', null, { phone: '95112233', password: r.data.tempPassword });
+    assert.equal(l.status, 200);
+    assert.equal(l.data.user.mustChangePassword, true);
+    const ch = await call('PATCH', '/api/me', l.data.token, { password: r.data.tempPassword, newPassword: 'sarnai-new' });
+    assert.equal(ch.data.user.mustChangePassword, false);
   });
 });

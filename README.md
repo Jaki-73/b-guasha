@@ -29,7 +29,17 @@ Both the website and the app have two layouts that switch automatically by scree
 | **Website** (`/`) | Burger menu, a bottom bar with **📞 Call** and **Book now**, swipeable reviews and products, one-column lists | Full top menu, multi-column grids, review summary and FAQ categories in sticky side panels |
 | **App** (`/app`) | Bottom tab bar, one column | Left sidebar (with Chat, Products and FAQ), two-column dashboard and profile, wide booking grid, split login screen |
 
-Every "Book" button on the website opens the app on that service's booking step (`/app#book=<serviceId>`); if the visitor isn't logged in, it continues right after login.
+Every "Book" button on the website opens the app on that service's booking step (`/app#book=<serviceId>`); if the visitor isn't logged in, it continues right after login (new visitors start on the sign-up tab). `/app#bookings` and `/app#chat` open the customer's bookings and the chat.
+
+## Customers: finding and changing a booking
+
+- **Захиалга** tab starts with **Таны захиалгууд** (upcoming visits), then a new booking. The home screen's **Дараагийн цаг** card opens the same booking sheet.
+- The booking sheet shows the service, time and end, therapist, price, the address with a map link, **Google Calendar / .ics**, and the rule: change or cancel in the app up to `cancelHours` (24 h) before. Inside that window it says so and offers a call button instead.
+- **🔁 Цаг өөрчлөх** — move the booking: only free times, its own old time counts as free, the same therapist is kept when free.
+- After booking or moving, a confirmation sheet with the same details. Android/browser **Back** steps back through the booking instead of leaving the app.
+- Phone numbers can be typed as `9511 2233`, `9511-2233` or `+976 95112233`. A number the salon saved from a phone booking is sent to **Бүртгүүлэх** and keeps its history.
+- **Нууц үгээ мартсан уу?** — the customer calls; the owner opens the customer card → **🔑 Нэг удаагийн код** and reads out a 6-digit code. It ends the customer's sessions; they log in with it and choose a new password.
+- Until the owner sets `mapUrl`, address links open a map search for the address.
 
 ## Phone booking (staff)
 
@@ -39,7 +49,9 @@ Every "Book" button on the website opens the app on that service's booking step 
 2. **Service** — one tap. Services that use a machine show 🔧 and the machine's name.
 3. **Time** — day buttons and only the start times that are really free: the therapist is free **and** every machine the service needs has a unit free for the part of the treatment that uses it. A clash cannot be picked. Staff book for themselves; the owner taps a therapist. **Enter** books.
 
-The sheet opens on the day you are looking at. The **+** in the calendar opens it with that time and therapist filled in, and **📅 Цаг товлох** on a client card opens it with the client (and a repeat plan's service) filled in. If someone else took the time a moment earlier, the booking is refused with a clear message and the free times reload.
+The sheet opens on the day you are looking at (if that is today and nothing is free any more, it moves on to the next day with free times). The caller's name and number stay in the sheet's header. When a machine the service needs is full, the times say so without names ("🔧 HIFU дүүрэн 14:15–15:15"). A customer already booked at that time with anyone is refused with a neutral message, and those times are left out. The **+** in the calendar opens it with that time and therapist filled in, and **📅 Цаг товлох** on a client card opens it with the client (and a repeat plan's service) filled in. If someone else took the time a moment earlier, the booking is refused with a clear message and the free times reload.
+
+**Moving a booking**: tap it → **🔁 Өөр цаг руу шилжүүлэх** — the same sheet with the client and service fixed; the booking's old time and machines are freed at once. Staff move their own bookings; the owner can also give one to another therapist.
 
 ## Machines (one HIFU, two steamers…)
 
@@ -56,9 +68,9 @@ How a booking is checked: it reserves its therapist for the whole appointment an
 
 ## My day, blocking time, the machine board
 
-- **🙋 Миний өдөр** (staff land here) — your own bookings and blocks for one day, big ‹ › buttons, tap a booking to mark done / no-show / cancel (cancelling asks first and frees the time and machines at once). **📞 Захиалга нэмэх** and **🚫 Цаг хаах** are right there.
-- **🚫 Цаг хаах** — block your own time (personal, doctor, break): pick how long, then the start; times that clash with your bookings are greyed out. A block makes only you unavailable — the machines stay bookable by everyone else. The owner can block any therapist from the calendar's **+**.
-- **🔧 Машин** — the shared machine board, the same for everyone: each machine's busy windows ("HIFU — ашиглагдаж байна 14:00–15:00", how many units are taken, cleaning time). It never shows who, which client, phone or service.
+- **🙋 Миний өдөр** (staff land here) — your own bookings and blocks for one day, big ‹ › buttons, tap a booking to move or cancel it (cancelling asks first and frees the time and machines at once); **Болсон / Ирээгүй** appear once the visit has started. **📞 Захиалга нэмэх** and **🚫 Завгүй цаг** are right there.
+- **🚫 Завгүй цаг** — mark your own time busy (personal, doctor, break): pick how long, then the start; times that clash with your bookings or run past closing are greyed out. It makes only you unavailable — the machines stay bookable by everyone else. **Устгах** removes it. The owner can do this for any therapist from the calendar's **+**.
+- **🔧 Машин** — the shared machine board: each machine's busy windows ("🔴 14:15–15:15 завгүй", "🟡 1/2 эзэлсэн", cleaning time) and 🙋 your own machine times. It never shows who, which client, phone or service. It follows the day open in Миний өдөр.
 - **Privacy** — staff cannot see each other's schedules through any page or API call: the server filters every request (calendar, my day, booking lists, client cards, lookups, free times, status changes); someone else's booking id behaves like one that does not exist. The owner sees everything.
 
 ## Staff phones: Add to Home Screen
@@ -69,7 +81,7 @@ Open `/admin` on the phone → browser menu → **Add to Home Screen** (iPhone: 
 
 **📅 Google** in the admin header gives each person a private link (therapists: their own bookings; owner: also the whole salon). Add it once on a computer at calendar.google.com → Other calendars ＋ → From URL; it then shows on the phone too. Blocked times appear as 🚫 events.
 
-Google refreshes subscribed calendars on its own schedule and can lag by hours — for same-day changes the admin **Календарь** is the truth. The link is a secret; "Холбоос шинэчлэх" makes a new one and the old stops working. Blocked or deactivated accounts' links stop working at once.
+Google refreshes subscribed calendars on its own schedule and can lag by hours — for same-day changes the admin **Календарь** / **Миний өдөр** is the truth. The link is a secret; "Холбоос шинэчлэх" makes a new one and the old stops working. Blocked or deactivated accounts' links stop working at once.
 
 ## Customer records (staff)
 
@@ -88,7 +100,7 @@ In **Админ → 👤 Үйлчлүүлэгч** every admin-side user (staff i
 |---|---|---|
 | **Super admin** 🛡 | /admin (phone+password, or the PIN) | Everything the owner can, plus: turn features on/off (wallet), create/edit **every** account (customer, staff, owner), change roles, reset passwords, block accounts |
 | **Owner** 👑 | /admin | Services & prices, products ("What we use"), FAQ, address/phone/email/Facebook, opening hours & booking rules, staff schedules, bookings, reviews, reports, backup |
-| **Staff** 👤 | /admin | Only their own day, bookings, clients and chat; block their own time; the shared (anonymous) machine board |
+| **Staff** 👤 | /admin | Only their own day and bookings (and only their own visits on a client's card); mark their own busy time; the shared (anonymous) machine board. The customer list (names, phones, staff description, shared notes) and the chat inbox are shared by the whole team. |
 | **Customer** 🙂 | /app | Book, profile, chat (and wallet when it is on) |
 
 The super admin is a separate account and is not a therapist (it never appears in the booking calendar).
@@ -125,7 +137,8 @@ public/                Website (index.html, site.css, site.js)
 public/app/            Mobile app (PWA)
 public/admin/          Admin panel (owner + staff)
 public/assets/         Logo & favicon (gold brand)
-data/                  Created automatically — db.json + photos/ (your database; back it up!)
+data/                  Created automatically — db.json + photos/ (your database; back it up!).
+                       Before an upgrade changes db.json, the old file is kept as db.before-upgrade-<time>.json
 docs/                  Guides (testing, publishing & costs, QPay, ideas, info to fill in)
 test/                  Scheduling tests — run `npm test` (Node's built-in test runner, nothing to install)
 legacy/                The old v1 site & app, kept for reference

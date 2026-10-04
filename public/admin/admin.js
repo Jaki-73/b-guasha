@@ -216,9 +216,18 @@
       document.documentElement.setAttribute('data-theme', theme);
       render();
     };
-    document.getElementById('outBtn').onclick = signOut;
+    document.getElementById('outBtn').onclick = function () {
+      confirmDlg('Гарах уу? Дараа нь утас, нууц үгээ дахин оруулна.').then(function (yes) { if (yes) signOut(); });
+    };
     root.querySelectorAll('[data-tab]').forEach(function (b) {
-      b.onclick = function () { tab = b.getAttribute('data-tab'); render(); };
+      b.onclick = function () {
+        var to = b.getAttribute('data-tab');
+        /* My day and the machine board follow each other's day */
+        if (to === 'machines' && tab === 'myday') boardDate = myDate;
+        if (to === 'myday' && tab === 'machines') myDate = boardDate;
+        tab = to;
+        render();
+      };
     });
 
     var views = {
@@ -240,7 +249,7 @@
         ? '<form id="pinForm"><div class="field"><input id="pin" type="password" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:1.3rem;letter-spacing:0.4em"></div>' +
           '<button class="btn btn-primary btn-block" type="submit">Нэвтрэх</button></form>' +
           '<p class="muted small" style="margin-top:12px">PIN нь супер админы нөөц түлхүүр — config.json дотор солино</p>'
-        : '<form id="staffForm"><div class="field"><input id="sfPhone" inputmode="numeric" maxlength="8" placeholder="Утасны дугаар"></div>' +
+        : '<form id="staffForm"><div class="field"><input id="sfPhone" type="tel" inputmode="numeric" maxlength="20" autocomplete="username" placeholder="Утасны дугаар"></div>' +
           '<div class="field"><input id="sfPass" type="password" placeholder="Нууц үг"></div>' +
           '<button class="btn btn-primary btn-block" type="submit">Нэвтрэх</button></form>' +
           '<p class="muted small" style="margin-top:12px">Супер админ, эзэмшигч, ажилтан бүгд утас + нууц үгээр нэвтэрнэ. Эрхийг супер админ "Бүртгэл" хэсгээс үүсгэнэ.</p>') +
@@ -353,7 +362,7 @@
     grid += '</table></div>';
 
     c.innerHTML = head + grid +
-      '<p class="muted small" style="margin-top:10px">+ дарж захиалга нэмэх эсвэл цаг хаана. Захиалга дарж төлөв солино. 🚫 дарж хаалтыг болиулна. 🔧 = машин ашиглана.</p>';
+      '<p class="muted small" style="margin-top:10px">+ дарж захиалга нэмэх эсвэл завгүй цаг тэмдэглэнэ. Захиалга дарж төлөв солино. 🚫 дарж завгүй цагийг устгана. 🔧 = машин ашиглана.</p>';
 
     document.getElementById('calPrev').onclick = function () { shiftDate(-1); loadCalendar(); };
     document.getElementById('calNext').onclick = function () { shiftDate(1); loadCalendar(); };
@@ -368,10 +377,10 @@
     });
     c.querySelectorAll('[data-bl]').forEach(function (el) {
       el.onclick = function () {
-        confirmDlg('Энэ хаалтыг болиулах уу?').then(function (yes) {
+        confirmDlg('Энэ завгүй цагийг устгах уу? Тэр цагт дахин захиалга авч болно.').then(function (yes) {
           if (!yes) return;
           api('/api/admin/blocks/' + el.getAttribute('data-bl'), { method: 'DELETE' })
-            .then(function () { toast('Нээгдлээ ✓', 'ok'); loadCalendar(); })
+            .then(function () { toast('Устгагдлаа ✓', 'ok'); loadCalendar(); })
             .catch(function () { toast('Алдаа гарлаа', 'err'); });
         });
       };
@@ -390,7 +399,7 @@
       '<h3>' + esc(dayLabel(calDate)) + ' · ' + time + ' — ' + esc(st.name || '') + '</h3>' +
       '<div class="modal-actions" style="flex-direction:column">' +
       '<button class="btn btn-primary big-btn" id="cmAdd">📞 Захиалга нэмэх</button>' +
-      '<button class="btn btn-ghost big-btn" id="cmBlock">🚫 Цаг хаах</button></div>'
+      '<button class="btn btn-ghost big-btn" id="cmBlock">🚫 Завгүй цаг</button></div>'
     );
     m.querySelector('#cmAdd').onclick = function () { closeModal(); openQuickBook({ date: calDate, time: time, staffId: staffId }); };
     m.querySelector('#cmBlock').onclick = function () { closeModal(); openBlockSheet({ date: calDate, staffId: staffId, from: time }); };
@@ -443,7 +452,7 @@
         '<li>Зүүн талд <b>Бусад календарь ＋</b> → <b>URL-аас</b> (Other calendars → From URL).</li>' +
         '<li>Дээрх холбоосыг буулгаад <b>Календарь нэмэх</b>. Утсан дээрх Google Calendar-т өөрөө гарч ирнэ.</li></ol>' +
         '<p class="small" style="background:var(--brand-soft);border-radius:10px;padding:10px 12px">⏱ Google энэ календарийг өөрийн хуваариар (заримдаа хэдэн цагаар хоцорч) шинэчилдэг. ' +
-        'Өдөр дотор өөрчлөгдсөн захиалгыг энэ системийн <b>Календарь</b> хэсгээс шалгаарай — үнэн мэдээлэл тэнд байна.</p>' +
+        'Өдөр дотор өөрчлөгдсөн захиалгыг энэ системийн <b>' + (isOwnerRole() ? 'Календарь' : 'Миний өдөр') + '</b> хэсгээс шалгаарай — үнэн мэдээлэл тэнд байна.</p>' +
         '<p class="small muted" style="margin-top:10px">🔒 Холбоос нь нууц түлхүүр. Хэн нэгэнд санамсаргүй өгсөн бол доороос шинэчилнэ үү — хуучин холбоос ажиллахаа болино.</p>' +
         '<div class="modal-actions"><button class="btn btn-ghost" id="cfReset">Холбоос шинэчлэх</button>' +
         '<button class="btn btn-primary" id="cfClose">Хаах</button></div>'
@@ -485,8 +494,13 @@
     var st = {
       client: opts.client || null, newName: '', phone: '', serviceId: opts.serviceId || null,
       date: opts.date || todayStr(), time: opts.time || null,
-      staffId: opts.staffId || meStaffId || '', staffList: [], slots: null, slotInfo: {}, matches: [], noPhone: false, note: '', jump: null
+      staffId: opts.staffId || meStaffId || '', staffList: [], slots: null, slotInfo: {}, matches: [], noPhone: false, note: '', jump: null,
+      board: null, minH: 0, autoMoved: false
     };
+    /* opened on today with nothing left today (an evening call): show the next day with free times,
+       until the person picks a day themselves */
+    st.autoAdvance = !mv && !opts.time && st.date === todayStr();
+    var autoTries = 0;
     var lookupTimer = null, lookupSeq = 0;
     var host = openSheet('<div id="qb" class="sheet-inner"></div>').querySelector('#qb');
 
@@ -504,6 +518,13 @@
       if (mv) return st.time ? 'Шилжүүлэх → ' + dayLabel(st.date) + ' ' + st.time : 'Шинэ цагаа сонгоно уу';
       return ready() ? 'Захиалах · ' + dayLabel(st.date) + ' ' + st.time + ' · ' + (svc ? svc.nameMn : '') : missing();
     }
+    /* the caller stays in sight in the header while the sheet scrolls to the times */
+    function headTitle() {
+      if (mv) return '🔁 Цаг солих';
+      if (st.client) return '📞 ' + esc(st.client.name) + ' <span class="muted small nw">' + esc(st.client.phone) + '</span>';
+      if (st.phone.length === 8) return '📞 <span class="nw">' + esc(st.phone) + '</span> <span class="muted small">шинэ</span>';
+      return '📞 Утасны захиалга';
+    }
     function moveHtml() {
       var svc = svcById(mv.serviceId);
       return '<div class="qb-client"><div><b>' + esc(mv.user.name) + '</b>' + (mv.user.phone ? ' <span class="muted small">' + esc(mv.user.phone) + '</span>' : '') +
@@ -515,8 +536,8 @@
       var c = st.client;
       if (c) {
         return '<div class="qb-client"><div><b>' + esc(c.name) + '</b> <span class="muted small">' + esc(c.phone) + '</span>' +
-          '<br><span class="muted small">' + (c.visits ? c.visits + ' удаа ирсэн' + (c.lastVisit ? ' · сүүлд ' + esc(c.lastVisit) + (c.lastServiceName ? ' ' + esc(c.lastServiceName) : '') : '') : 'Анх удаа') +
-          (c.nextBooking ? ' · 📅 ' + esc(c.nextBooking) : '') + '</span>' +
+          '<br><span class="muted small">' + (c.visits ? c.visits + ' удаа ирсэн' + (c.lastVisit ? ' · сүүлд <span class="nw">' + esc(c.lastVisit) + '</span>' + (c.lastServiceName ? ' ' + esc(c.lastServiceName) : '') : '') : 'Анх удаа') +
+          (c.nextBooking ? ' · <span class="nw">📅 ' + esc(c.nextBooking) + '</span>' : '') + '</span>' +
           (c.desc ? '<div class="small" style="margin-top:4px">📋 ' + esc(c.desc) + '</div>' : '') + '</div>' +
           '<button type="button" class="qb-link" id="qbChange">Солих</button></div>';
       }
@@ -525,7 +546,7 @@
           '<button type="button" class="qb-link" id="qbBackPhone">← Утсаар хайх</button>';
       }
       var isNew = st.phone.length === 8 && !st.matches.some(function (x) { return x.phone === st.phone; });
-      return '<input id="qbPhone" class="qb-phone" type="tel" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Утасны дугаар" value="' + esc(st.phone) + '">' +
+      return '<input id="qbPhone" class="qb-phone" type="tel" inputmode="numeric" autocomplete="off" maxlength="20" placeholder="Утасны дугаар" value="' + esc(st.phone) + '">' +
         st.matches.map(function (x, i) {
           return '<button type="button" class="qb-match" data-match="' + i + '"><b>' + esc(x.name) + '</b> <span class="muted">' + esc(x.phone) + '</span>' +
             (x.lastVisit ? '<span class="muted small"> · сүүлд ' + esc(x.lastVisit) + '</span>' : '') + '</button>';
@@ -553,6 +574,17 @@
               esc(s.name) + (s.working ? '' : ' · амарна') + '</button>';
           }).join('') + '</div>' : '';
       var days = '<div class="qb-row qb-days">' + dayChips(st.date, 'data-day') + '</div>';
+      var notes = st.autoMoved && st.slots ? '<p class="qb-mnote">Өнөөдөр чөлөөтэй цаг үлдээгүй — хамгийн ойрын чөлөөтэй өдрийг харууллаа.</p>' : '';
+      /* why some times are missing: when a machine this service needs is fully taken (no names) */
+      var svcNow = svcById(st.serviceId);
+      var used = svcNow && svcNow.uses ? svcNow.uses.map(function (u) { return u.machine; }) : [];
+      if (used.length && st.slots && st.board && st.board.date === st.date) {
+        var lines = st.board.machines.filter(function (mc) { return used.indexOf(mc.id) >= 0; }).map(function (mc) {
+          var full = mc.busy.filter(function (x) { return x.full; });
+          return full.length ? '🔧 ' + esc(mc.name) + ' дүүрэн: ' + full.map(function (x) { return '<span class="nw">' + esc(x.from) + '–' + esc(x.to) + '</span>'; }).join(', ') : '';
+        }).filter(Boolean);
+        if (lines.length) notes += '<p class="qb-mnote">' + lines.join('<br>') + '<br><span class="muted">Энэ үйлчилгээ тэр үетэй давхцах цаг санал болгохгүй.</span></p>';
+      }
       var body;
       if (!st.serviceId) body = '<p class="muted small">Эхлээд үйлчилгээгээ сонгоно уу.</p>';
       else if (!st.staffId) body = '<p class="qb-warn">Энэ өдөр ажиллах ажилтан алга.</p>';
@@ -570,7 +602,7 @@
           }).join('') + '</div></div>';
         }).join('');
       }
-      return staffChips + days + body;
+      return staffChips + days + notes + body;
     }
 
     function draw() {
@@ -579,14 +611,14 @@
       var keep = act && host.contains(act) && act.id ? { id: act.id, pos: act.selectionStart } : null;
       keepPlace(host, function () {
         host.innerHTML =
-          '<div class="sheet-head"><b>' + (mv ? '🔁 Цаг солих' : '📞 Утасны захиалга') + '</b><button type="button" class="sheet-x" id="qbCancel" aria-label="Хаах">✕</button></div>' +
+          '<div class="sheet-head"><b class="qb-title">' + headTitle() + '</b><button type="button" class="sheet-x" id="qbCancel" aria-label="Хаах">✕</button></div>' +
           '<div class="sheet-body">' +
           (mv
             ? '<div class="qb-step"><div class="qb-body">' + moveHtml() + '</div></div>' +
               '<div class="qb-step" id="qbS3"><div class="qb-body">' + timesHtml() + '</div></div>'
             : '<div class="qb-step" id="qbS1"><span class="qb-n">1</span><div class="qb-body">' + whoHtml() + '</div></div>' +
               '<div class="qb-step" id="qbS2"><span class="qb-n">2</span><div class="qb-body">' + servicesHtml() + '</div></div>' +
-              '<div class="qb-step" id="qbS3"><span class="qb-n">3</span><div class="qb-body">' + timesHtml() + '</div></div>' +
+              '<div class="qb-step" id="qbS3"' + (st.slots === null && st.minH ? ' style="min-height:' + st.minH + 'px"' : '') + '><span class="qb-n">3</span><div class="qb-body">' + timesHtml() + '</div></div>' +
               '<details class="qb-more"' + (st.note ? ' open' : '') + '><summary>+ Тэмдэглэл</summary><input id="qbNote" class="cell-input big-input" maxlength="500" placeholder="ж: анх удаа ирнэ, хүзүү өвддөг" value="' + esc(st.note) + '"></details>') +
           '</div>' +
           '<div class="sheet-foot"><button type="button" class="btn btn-primary btn-block big-btn" id="qbOk"' + (ready() ? '' : ' disabled') + '>' + esc(okLabel()) + '</button></div>';
@@ -606,13 +638,30 @@
     }
 
     function loadSlots() {
+      var s3 = host.querySelector('#qbS3');
+      st.minH = s3 ? s3.offsetHeight : 0;
       st.slots = null;
       if (!st.serviceId || !st.staffId) { draw(); return; }
-      var key = st.date + st.serviceId + st.staffId;
+      var key = st.date + st.serviceId + st.staffId + (st.client ? st.client.id : '');
       draw();
-      api('/api/admin/free?date=' + st.date + '&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId) + (mv ? '&exclude=' + encodeURIComponent(mv.id) : ''))
+      var svc = svcById(st.serviceId);
+      /* the anonymous machine board, to say why times are missing */
+      if (svc && svc.uses && svc.uses.length && !(st.board && st.board.date === st.date)) {
+        var bd = st.date;
+        api('/api/admin/machines/board?date=' + bd).then(function (b) { if (st.date === bd) { st.board = b; if (st.slots) draw(); } }).catch(function () {});
+      }
+      api('/api/admin/free?date=' + st.date + '&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId) +
+        (mv ? '&exclude=' + encodeURIComponent(mv.id) : '') + (st.client && !mv ? '&customerId=' + encodeURIComponent(st.client.id) : ''))
         .then(function (d) {
-          if (key !== st.date + st.serviceId + st.staffId) return;
+          if (key !== st.date + st.serviceId + st.staffId + (st.client ? st.client.id : '')) return;
+          if (st.autoAdvance && !d.slots.length && !d.problem && autoTries < 7) {
+            autoTries++;
+            st.autoMoved = true;
+            st.date = addDays(st.date, 1);
+            st.time = null;
+            loadStaff();
+            return;
+          }
           st.slots = d.slots;
           st.slotInfo = { closed: d.closed, problem: d.problem };
           if (st.time && d.slots.indexOf(st.time) < 0) st.time = null;
@@ -655,7 +704,13 @@
 
     function bind() {
       var ph = host.querySelector('#qbPhone');
-      if (ph) ph.oninput = function () { st.phone = ph.value.replace(/\D/g, '').slice(0, 8); lookup(st.phone); };
+      /* "9911-2233", "9911 2233", "+976 9911 2233" all become 99112233 */
+      if (ph) ph.oninput = function () {
+        var d = ph.value.replace(/\D/g, '');
+        if (d.length > 8 && d.indexOf('976') === 0) d = d.slice(3);
+        st.phone = d.slice(0, 8);
+        lookup(st.phone);
+      };
       var nm = host.querySelector('#qbName');
       if (nm) nm.oninput = function () {
         st.newName = nm.value;
@@ -679,7 +734,7 @@
         b.onclick = function () { st.staffId = b.getAttribute('data-staff'); st.time = null; loadSlots(); };
       });
       host.querySelectorAll('[data-day]').forEach(function (b) {
-        b.onclick = function () { st.date = b.getAttribute('data-day'); st.time = null; loadStaff(); };
+        b.onclick = function () { st.date = b.getAttribute('data-day'); st.time = null; st.autoAdvance = false; st.autoMoved = false; loadStaff(); };
       });
       host.querySelectorAll('[data-time]').forEach(function (b) {
         b.onclick = function () { st.time = b.getAttribute('data-time'); draw(); };
@@ -705,7 +760,7 @@
         }).catch(function (e) {
           toast(bookingError(e), 'err');
           btn.disabled = false;
-          if (e && e.error === 'slot_taken') { st.time = null; loadSlots(); }
+          if (e && (e.error === 'slot_taken' || e.error === 'client_busy')) { st.time = null; loadSlots(); }
         });
         return;
       }
@@ -719,7 +774,7 @@
       }).catch(function (e) {
         toast(bookingError(e), 'err');
         btn.disabled = false;
-        if (e && e.error === 'slot_taken') { st.time = null; loadSlots(); }
+        if (e && (e.error === 'slot_taken' || e.error === 'client_busy')) { st.time = null; loadSlots(); }
       });
     }
 
@@ -754,6 +809,7 @@
     var reason = e && e.reason;
     if (reason === 'machine_busy') return 'Машин тэр цагт дөнгөж сая захиалагдлаа — өөр цаг сонгоно уу';
     if (reason === 'staff_busy') return 'Тэр цагт ажилтан завгүй болсон байна — өөр цаг сонгоно уу';
+    if (reason === 'client_busy' || (e && e.error === 'client_busy')) return 'Энэ үйлчлүүлэгч тэр цагт өөр захиалгатай байна — өөр цаг сонгоно уу';
     var map = {
       slot_taken: 'Энэ цаг дөнгөж сая авагдлаа — өөр цаг сонгоно уу', date_out_of_range: 'Огноо захиалгын хугацаанаас хол байна',
       bad_time: 'Цаг сонгоно уу', bad_staff: 'Ажилтан сонгоно уу', outside_hours: 'Ажлын цагаас гадуур байна', staff_off: 'Ажилтан тэр өдөр амарна', closed: 'Салон тэр өдөр амарна',
@@ -797,7 +853,7 @@
       var list = d.items.length ? d.items.map(dayItemHtml).join('') : '<div class="empty-day">Энэ өдөр захиалга алга 🌿</div>';
       c.innerHTML = dateNavHtml(myDate) + '<div class="day-meta">' + meta + '</div>' +
         (s ? '<div class="big-actions"><button class="btn btn-primary big-btn" id="mdBook">📞 Захиалга нэмэх</button>' +
-          '<button class="btn btn-ghost big-btn" id="mdBlock">🚫 Цаг хаах</button></div>' : '') +
+          '<button class="btn btn-ghost big-btn" id="mdBlock">🚫 Завгүй цаг</button></div>' : '') +
         '<div class="day-list">' + list + '</div>';
       bindDateNav(c, function () { return myDate; }, function (v) { myDate = v; }, loadMyDay);
       var mb = document.getElementById('mdBook');
@@ -813,21 +869,21 @@
       });
       c.querySelectorAll('[data-unblock]').forEach(function (b) {
         b.onclick = function () {
-          confirmDlg('Энэ хаалтыг болиулах уу?').then(function (yes) {
+          confirmDlg('Энэ завгүй цагийг устгах уу? Тэр цагт дахин захиалга авч болно.').then(function (yes) {
             if (!yes) return;
             api('/api/admin/blocks/' + b.getAttribute('data-unblock'), { method: 'DELETE' })
-              .then(function () { toast('Нээгдлээ ✓', 'ok'); loadMyDay(); })
+              .then(function () { toast('Устгагдлаа ✓', 'ok'); loadMyDay(); })
               .catch(function () { toast('Алдаа гарлаа', 'err'); });
           });
         };
       });
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
-  function dayItemHtml(x) {
+  function dayItemHtml(x, withStaff) {
     if (x.kind === 'block') {
       return '<div class="day-item is-block"><div class="di-time">' + esc(x.time) + '<small>' + esc(x.until) + '</small></div>' +
-        '<div class="di-body"><b>🚫 ' + esc(x.note || 'Хаасан цаг') + '</b><div class="muted small">Зөвхөн таны цаг — машин чөлөөтэй хэвээр</div></div>' +
-        '<button type="button" class="mini-btn di-act" data-unblock="' + esc(x.id) + '">Нээх</button></div>';
+        '<div class="di-body"><b>🚫 ' + esc(x.note || 'Завгүй') + '</b><div class="muted small">Зөвхөн таны цаг — машин чөлөөтэй хэвээр</div></div>' +
+        '<button type="button" class="mini-btn di-act" data-unblock="' + esc(x.id) + '">Устгах</button></div>';
     }
     var dim = x.status === 'cancelled' || x.status === 'noshow';
     return '<div class="day-item' + (dim ? ' is-dim' : '') + '" data-item="' + esc(x.id) + '" role="button" tabindex="0">' +
@@ -835,6 +891,7 @@
       '<div class="di-body"><b>' + esc(x.user.name) + '</b>' + (x.walkIn ? ' <span class="pill">зочин</span>' : '') +
       (x.user.phone ? ' <a class="di-call" href="tel:' + esc(x.user.phone) + '">📞 ' + esc(x.user.phone) + '</a>' : '') +
       '<div class="small">' + esc(x.service ? x.service.nameMn : '') + ' · ' + x.minutes + ' мин</div>' +
+      (withStaff && x.staffName ? '<div class="small muted"><span class="staff-dot" style="background:' + esc(x.staffColor || '#b08c46') + '"></span>' + esc(x.staffName) + '</div>' : '') +
       (x.machines && x.machines.length ? '<div class="di-mach">' + x.machines.map(function (h) {
         return '<span>🔧 ' + esc(h.name) + ' ' + esc(h.from) + '–' + esc(h.to) + '</span>';
       }).join('') + '</div>' : '') + '</div>' +
@@ -860,6 +917,7 @@
     }
     function clashes(fromMin) {
       var e = endOf(fromMin);
+      if (st.dur && e > bounds()[1]) return true; /* would run past closing */
       return busy().some(function (b) { return fromMin < b[1] && b[0] < e; });
     }
     function draw() {
@@ -871,7 +929,7 @@
       var who = st.staffId && st.staff ? ' — ' + esc(st.staff.name) : '';
       keepPlace(host, function () {
         host.innerHTML =
-          '<div class="sheet-head"><b>🚫 Цаг хаах' + who + '</b><button type="button" class="sheet-x" id="bsX" aria-label="Хаах">✕</button></div>' +
+          '<div class="sheet-head"><b>🚫 Завгүй цаг' + who + '</b><button type="button" class="sheet-x" id="bsX" aria-label="Хаах">✕</button></div>' +
           '<div class="sheet-body">' +
           '<p class="muted small" style="margin:10px 0 8px">Зөвхөн ажилтныг завгүй болгоно — машиныг бусад ажилтан ашиглаж болно.</p>' +
           '<div class="qb-row qb-days">' + dayChips(st.date, 'data-day') + '</div>' +
@@ -882,13 +940,13 @@
           (st.items === null ? '<p class="muted small">Ачаалж байна…</p>' : Object.keys(byHour).sort().map(function (h) {
             return '<div class="qb-hour"><span class="qb-h">' + h + '</span><div class="qb-slots">' + byHour[h].map(function (t) {
               var bad = clashes(t);
-              return '<button type="button" class="qb-slot' + (st.from === t ? ' on' : '') + '" data-from="' + t + '"' + (bad ? ' disabled title="Захиалга эсвэл хаалттай давхцана"' : '') + '>' + addMinutes('00:00', t) + '</button>';
+              return '<button type="button" class="qb-slot' + (st.from === t ? ' on' : '') + '" data-from="' + t + '"' + (bad ? ' disabled title="Захиалга, өөр завгүй цаг эсвэл хаах цагтай давхцана"' : '') + '>' + addMinutes('00:00', t) + '</button>';
             }).join('') + '</div></div>';
           }).join('')) +
           '<input id="bsNote" class="cell-input big-input" maxlength="100" placeholder="Шалтгаан (заавал биш): хувийн, эмч, завсарлага…" value="' + esc(st.note) + '">' +
           '</div>' +
           '<div class="sheet-foot"><button type="button" class="btn btn-primary btn-block big-btn" id="bsOk"' + (st.from !== null ? '' : ' disabled') + '>' +
-          (st.from !== null ? 'Хаах · ' + esc(dayLabel(st.date)) + ' ' + addMinutes('00:00', st.from) + '–' + addMinutes('00:00', to) : 'Эхлэх цагаа сонгоно уу') + '</button></div>';
+          (st.from !== null ? 'Завгүй · ' + esc(dayLabel(st.date)) + ' ' + addMinutes('00:00', st.from) + '–' + addMinutes('00:00', to) : 'Эхлэх цагаа сонгоно уу') + '</button></div>';
       });
       host.querySelector('#bsX').onclick = closeModal;
       host.querySelectorAll('[data-day]').forEach(function (x) {
@@ -916,10 +974,10 @@
       var body = { date: st.date, from: addMinutes('00:00', st.from), to: to >= 1440 ? '24:00' : addMinutes('00:00', to), note: st.note };
       if (st.staffId) body.staffId = st.staffId;
       api('/api/admin/blocks', { method: 'POST', body: body })
-        .then(function () { closeModal(); toast('Цаг хаагдлаа ✓', 'ok'); refreshCurrent(st.date); })
+        .then(function () { closeModal(); toast('Завгүй цаг тэмдэглэгдлээ ✓', 'ok'); refreshCurrent(st.date); })
         .catch(function (e) {
           btn.disabled = false;
-          toast(e && e.error === 'staff_busy' ? 'Энэ хугацаанд захиалга эсвэл өөр хаалт байна' : 'Алдаа гарлаа', 'err');
+          toast(e && e.error === 'staff_busy' ? 'Энэ хугацаанд захиалга эсвэл өөр завгүй цаг байна' : 'Алдаа гарлаа', 'err');
           if (e && e.error === 'staff_busy') reloadDay();
         });
     }
@@ -943,20 +1001,24 @@
         var segs = mc.busy.map(function (x) {
           var l = pct(x.from), w = Math.max(pct(x.to) - l, 0.8);
           return '<b class="seg' + (x.full ? ' full' : '') + '" style="left:' + l + '%;width:' + w + '%" title="' + esc(x.from + '–' + x.to) + '"></b>';
+        }).join('') + (mc.mine || []).map(function (x) {
+          var l = pct(x.from), w = Math.max(pct(x.to) - l, 0.8);
+          return '<b class="seg mine" style="left:' + l + '%;width:' + w + '%" title="Таны: ' + esc(x.from + '–' + x.to) + '"></b>';
         }).join('');
         return '<div class="card mboard">' +
           '<div class="mb-head"><b>' + esc(mc.name) + '</b>' + (mc.placeholder ? ' <span class="chip noshow">PLACEHOLDER</span>' : '') +
           '<span class="muted small">' + mc.units + ' ширхэг</span></div>' +
           '<div class="mtrack">' + ticks + segs + '</div>' +
           (mc.busy.length ? '<ul class="mlist">' + mc.busy.map(function (x) {
-            return '<li>' + (x.full ? '🔴' : '🟡') + ' ' + esc(mc.name) + ' — ашиглагдаж байна <b>' + esc(x.from) + '–' + esc(x.to) + '</b>' +
-              (mc.units > 1 ? ' <span class="muted">(' + x.inUse + '/' + mc.units + ')</span>' : '') + '</li>';
+            return '<li>' + (x.full ? '🔴' : '🟡') + ' <b class="nw">' + esc(x.from) + '–' + esc(x.to) + '</b> ' +
+              (x.full ? 'завгүй' : x.inUse + '/' + mc.units + ' эзэлсэн, ' + (mc.units - x.inUse) + ' сул') + '</li>';
           }).join('') + '</ul>' : '<p class="muted small">Өдөржин чөлөөтэй ✓</p>') +
+          ((mc.mine || []).length ? '<p class="small">🙋 Таны: ' + mc.mine.map(function (x) { return '<span class="nw">' + esc(x.from) + '–' + esc(x.to) + '</span>'; }).join(', ') + '</p>' : '') +
           (mc.cleaning.length ? '<p class="muted small">🧽 Цэвэрлэгээ: ' + mc.cleaning.map(function (x) { return esc(x.from) + '–' + esc(x.to); }).join(', ') + '</p>' : '') +
           '</div>';
       }).join('');
       c.innerHTML = dateNavHtml(boardDate) +
-        '<p class="muted small" style="margin:6px 0 12px">Бүх ажилтанд харагдана. Хэн, ямар үйлчлүүлэгч гэдэг нь харагдахгүй — зөвхөн машин хэзээ завгүйг.</p>' +
+        '<p class="muted small" style="margin:6px 0 12px">Бүх ажилтанд харагдана: машин хэзээ завгүй гэдэг л харагдана — хэн, ямар үйлчлүүлэгч гэдэг нь харагдахгүй. 🙋 = таны захиалга.</p>' +
         (cards || '<p class="muted">Машин бүртгэгдээгүй байна (config.json → machines).</p>');
       bindDateNav(c, function () { return boardDate; }, function (v) { boardDate = v; }, loadBoard);
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
@@ -974,6 +1036,7 @@
   }
 
   function openBookingModal(bk, after) {
+    var started = Date.parse(bk.startsAt) <= Date.now();
     var staffList = isOwnerRole() && bk.status === 'confirmed' && calCache && calCache.date === bk.date ? calCache.staff : [];
     var mach = (bk.machines || []).map(function (h) {
       return '<div>🔧 ' + esc(h.name) + ' <b>' + esc(h.from) + '–' + esc(h.to) + '</b>' +
@@ -989,12 +1052,14 @@
       (staffList.length > 1 ? '<div class="field mt"><label>Ажилтан солих</label><div class="qb-row wrap">' + staffList.map(function (s) {
         return '<button type="button" class="qb-chip' + (s.id === bk.staffId ? ' on' : '') + '" data-assign="' + esc(s.id) + '">' + esc(s.name) + '</button>';
       }).join('') + '</div></div>' : '') +
+      (bk.status === 'confirmed' ? '<button class="btn btn-primary btn-block big-btn mt" id="bmMove">🔁 Өөр цаг руу шилжүүлэх</button>' : '') +
       '<div class="bm-actions mt">' +
-      (bk.status === 'confirmed'
-        ? '<button class="btn btn-primary" data-st="done">Болсон ✓</button><button class="btn btn-ghost" data-st="noshow">Ирээгүй</button><button class="btn btn-danger" data-st="cancelled">Цуцлах</button>'
-        : '<button class="btn btn-ghost" data-st="confirmed">Сэргээх</button>') +
+      (bk.status !== 'confirmed' ? '<button class="btn btn-ghost" data-st="confirmed">Сэргээх</button>'
+        /* "done" and "no-show" only make sense once the visit has started */
+        : (started ? '<button class="btn btn-primary" data-st="done">Болсон ✓</button><button class="btn btn-ghost" data-st="noshow">Ирээгүй</button>' : '') +
+          '<button class="btn btn-danger" data-st="cancelled">Цуцлах</button>') +
       '</div>' +
-      (bk.status === 'confirmed' ? '<button class="btn btn-ghost btn-block big-btn mt" id="bmMove">🔁 Өөр цаг руу шилжүүлэх</button>' : '') +
+      (bk.status === 'confirmed' && !started ? '<p class="muted small" style="margin-top:6px">"Болсон" / "Ирээгүй" товч эхлэх цагаас (' + esc(bk.time) + ') хойш гарна.</p>' : '') +
       (bk.user.id ? '<button class="btn btn-ghost btn-block mt" id="bmProfile">👤 Үйлчлүүлэгчийн түүх</button>' : '') +
       '<div class="modal-actions"><button class="btn btn-ghost" id="bmClose">Хаах</button></div>'
     );
@@ -1022,30 +1087,38 @@
     api('/api/admin/overview').then(function (d) {
       var c = document.getElementById('content');
       var s = d.stats;
-      function bkRow(b) {
-        return '<tr><td><b>' + esc(b.date) + '</b><br>' + esc(b.time) + '–' + esc(addMinutes(b.time, b.minutes)) + '</td>' +
-          '<td>' + esc(b.user.name) + (b.walkIn ? ' <span class="pill">зочин</span>' : '') + '<br>' +
-          (b.user.phone ? '<a href="tel:' + esc(b.user.phone) + '" class="muted small">' + esc(b.user.phone) + '</a>' : '') + '</td>' +
-          '<td>' + esc(b.service ? b.service.nameMn : '?') + '<br><span class="muted small">' + money(b.amount) + ' · ' + (PAID_LABEL[b.paid] || b.paid) + '</span></td>' +
-          '<td>' + (b.staffName ? '<span class="staff-dot" style="background:' + esc(b.staffColor || '#b08c46') + '"></span>' + esc(b.staffName) : '—') + '</td>' +
-          '<td><span class="chip ' + b.status + '">' + (ST_LABEL[b.status] || b.status) + '</span><div class="bk-actions" style="margin-top:6px">' +
-          (b.status === 'confirmed' ? '<button data-st="done" data-id="' + b.id + '">Болсон ✓</button><button data-st="noshow" data-id="' + b.id + '">Ирээгүй</button><button data-st="cancelled" data-id="' + b.id + '">Цуцлах</button>' : '<button data-st="confirmed" data-id="' + b.id + '">Сэргээх</button>') +
-          '</div></td></tr>';
+      var withStaff = isOwnerRole();
+      /* cards grouped under a day heading — they fit a phone, and a tap opens the booking */
+      function grouped(list) {
+        var out = '', last = '';
+        list.forEach(function (b) {
+          if (b.date !== last) {
+            out += '<div class="list-day"><b>' + esc(dayLabel(b.date)) + '</b> <span class="muted small">' + esc(b.date) + ' · ' + WD_LONG[weekday(b.date)] + '</span></div>';
+            last = b.date;
+          }
+          out += dayItemHtml(b, withStaff);
+        });
+        return '<div class="day-list">' + out + '</div>';
       }
       c.innerHTML =
         (s ? '<div class="stat-grid">' +
           '<div class="stat"><b>' + d.upcoming.length + '</b><span>Ирэх захиалга</span></div>' +
           '<div class="stat"><b>' + s.users + '</b><span>Үйлчлүүлэгч</span></div>' +
-          '<div class="stat"><b>' + money(s.topupTotal) + '</b><span>Нийт цэнэглэлт</span></div>' +
-          '<div class="stat"><b>' + money(s.balancesTotal) + '</b><span>Хэтэвчний үлдэгдэл</span></div>' +
+          (featureWallet ? '<div class="stat"><b>' + money(s.topupTotal) + '</b><span>Нийт цэнэглэлт</span></div>' +
+            '<div class="stat"><b>' + money(s.balancesTotal) + '</b><span>Хэтэвчний үлдэгдэл</span></div>' : '') +
           '<div class="stat"><b>' + s.pendingReviews + '</b><span>Хүлээгдэж буй сэтгэгдэл</span></div>' +
           '<div class="stat"><b>' + s.unreadChats + '</b><span>Уншаагүй чат</span></div></div>' : '') +
-        '<div class="card"><h3 style="margin-bottom:10px">Ирэх захиалгууд</h3>' +
-        (d.upcoming.length ? '<table><tr><th>Огноо</th><th>Үйлчлүүлэгч</th><th>Үйлчилгээ</th><th>Ажилтан</th><th>Төлөв</th></tr>' + d.upcoming.map(bkRow).join('') + '</table>' : '<p class="muted">Одоогоор захиалга алга.</p>') + '</div>' +
-        '<div class="card"><h3 style="margin-bottom:10px">Өмнөх / бусад</h3>' +
-        (d.past.length ? '<table><tr><th>Огноо</th><th>Үйлчлүүлэгч</th><th>Үйлчилгээ</th><th>Ажилтан</th><th>Төлөв</th></tr>' + d.past.map(bkRow).join('') + '</table>' : '<p class="muted">Хоосон.</p>') + '</div>';
-      c.querySelectorAll('[data-st]').forEach(function (btn) {
-        btn.onclick = function () { setStatus(btn.getAttribute('data-id'), btn.getAttribute('data-st'), loadBookings); };
+        '<h3 class="list-h">Ирэх захиалгууд</h3>' +
+        (d.upcoming.length ? grouped(d.upcoming) : '<p class="muted">Одоогоор захиалга алга.</p>') +
+        '<h3 class="list-h">Өмнөх / бусад</h3>' +
+        (d.past.length ? grouped(d.past) : '<p class="muted">Хоосон.</p>');
+      var all = d.upcoming.concat(d.past);
+      c.querySelectorAll('[data-item]').forEach(function (el) {
+        el.onclick = function (e) {
+          if (e.target.closest('a')) return; /* tapping the phone number calls */
+          var bk = all.find(function (x) { return x.id === el.getAttribute('data-item'); });
+          if (bk) openBookingModal(bk, loadBookings);
+        };
       });
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
@@ -1067,34 +1140,34 @@
     api('/api/admin/users' + (qs.length ? '?' + qs.join('&') : '')).then(function (list) {
       var c = document.getElementById('content');
       c.innerHTML =
-        '<div class="row" style="margin-bottom:10px;flex-wrap:wrap">' +
-        '<input id="userQ" class="cell-input" style="max-width:280px" placeholder="🔍 Нэр, утас эсвэл тайлбараар хайх…" value="' + esc(q || '') + '">' +
-        '<label class="small" style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="dueOnly"' + (usersDueOnly ? ' checked' : '') + '> ⏰ Давтан үйлчилгээ ойртсон / хоцорсон</label>' +
-        '<div class="spacer" style="flex:1"></div>' +
-        '<button class="btn btn-primary btn-sm" id="addCust">＋ Шинэ үйлчлүүлэгч</button></div>' +
-        '<div class="card"><table><tr><th>Нэр</th><th>Утас</th>' + (featureWallet ? '<th>Үлдэгдэл</th>' : '') + '<th>Ирсэн</th><th>Сүүлд</th><th>Дараагийн</th><th>Давтан</th><th></th></tr>' +
-        list.map(function (u) {
-          return '<tr><td><b>' + esc(u.name) + '</b>' + (u.isDemo ? ' <span class="muted small">(demo)</span>' : '') +
-            (u.noLogin ? ' <span class="pill" title="Апп-д бүртгүүлээгүй — ажилтан үүсгэсэн">апп-гүй</span>' : '') +
-            (u.desc ? '<br><span class="muted small">' + esc(u.desc.slice(0, 70)) + (u.desc.length > 70 ? '…' : '') + '</span>' : '') + '</td>' +
-            '<td><a href="tel:' + esc(u.phone) + '">' + esc(u.phone) + '</a></td>' +
-            (featureWallet ? '<td>' + money(u.balance) + '</td>' : '') + '<td>' + u.visits + '</td>' +
-            '<td>' + esc(u.lastVisit || '—') + '</td><td>' + esc(u.nextBooking || '—') + '</td>' +
-            '<td>' + (u.nextDue ? dueChip(u.dueState, u.nextDue) + '<br><span class="muted small">' + esc(u.dueService) + '</span>' : '—') + '</td>' +
-            '<td><button class="mini-btn" data-prof="' + esc(u.id) + '">Карт →</button></td></tr>';
-        }).join('') + '</table>' + (list.length ? '' : '<p class="muted" style="padding:10px">' + (usersDueOnly ? 'Одоогоор хугацаа болсон давтан үйлчилгээ алга.' : 'Олдсонгүй.') + '</p>') + '</div>';
+        '<div class="cust-tools">' +
+        '<input id="userQ" class="cell-input big-input" type="search" placeholder="🔍 Нэр, утас эсвэл тайлбар…" value="' + esc(q || '') + '">' +
+        '<button class="btn btn-primary" id="addCust">＋ Шинэ</button>' +
+        '<label class="small big-check"><input type="checkbox" id="dueOnly"' + (usersDueOnly ? ' checked' : '') + '> ⏰ Давтан үйлчилгээ ойртсон / хоцорсон</label></div>' +
+        '<div class="cust-list">' + list.map(function (u) {
+          var meta = [u.visits ? u.visits + ' удаа ирсэн' : 'Ирж байгаагүй', u.lastVisit ? 'сүүлд ' + u.lastVisit : '', u.nextBooking ? '📅 ' + u.nextBooking : '']
+            .filter(Boolean).map(function (x) { return '<span class="nw">' + esc(x) + '</span>'; }).join(' · ');
+          return '<div class="cust-card" data-prof="' + esc(u.id) + '" role="button" tabindex="0"><div class="cc-main">' +
+            '<div><b>' + esc(u.name) + '</b>' + (u.isDemo ? ' <span class="muted small">(demo)</span>' : '') +
+            (u.noLogin ? ' <span class="pill" title="Апп-д бүртгүүлээгүй — ажилтан үүсгэсэн">апп-гүй</span>' : '') + '</div>' +
+            '<div class="muted small">' + meta + (featureWallet ? ' · ' + money(u.balance) : '') + '</div>' +
+            (u.desc ? '<div class="small cc-desc">📋 ' + esc(u.desc.slice(0, 90)) + (u.desc.length > 90 ? '…' : '') + '</div>' : '') +
+            (u.nextDue ? '<div class="small">' + dueChip(u.dueState, '').replace('<br>', ' ') + ' ' + esc(u.dueService) + ' · <span class="nw">' + esc(u.nextDue) + '</span></div>' : '') +
+            '</div><a class="cc-call" href="tel:' + esc(u.phone) + '" aria-label="Залгах">📞<span>' + esc(u.phone) + '</span></a></div>';
+        }).join('') + '</div>' +
+        (list.length ? '' : '<p class="muted" style="padding:10px">' + (usersDueOnly ? 'Одоогоор хугацаа болсон давтан үйлчилгээ алга.' : 'Олдсонгүй.') + '</p>');
       var inp = document.getElementById('userQ');
       var tmr = null;
       inp.oninput = function () {
         clearTimeout(tmr);
         tmr = setTimeout(function () { loadUsers(inp.value.trim()); }, 350);
       };
-      inp.focus();
-      if (q) inp.setSelectionRange(q.length, q.length);
+      /* keep typing after a search redraw, but don't pop the keyboard up on opening the tab */
+      if (q !== undefined) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
       document.getElementById('dueOnly').onchange = function (e) { usersDueOnly = e.target.checked; loadUsers(inp.value.trim()); };
       document.getElementById('addCust').onclick = function () { openCustomerForm(null, inp.value.trim()); };
       c.querySelectorAll('[data-prof]').forEach(function (b) {
-        b.onclick = function () { openClientProfile(b.getAttribute('data-prof')); };
+        b.onclick = function (e) { if (e.target.closest('a')) return; openClientProfile(b.getAttribute('data-prof')); };
       });
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
@@ -1260,7 +1333,8 @@
         '<button class="btn btn-ghost btn-sm" id="cpVisit">✅ Болсон үйлчилгээ бүртгэх</button>' +
         '<button class="btn btn-ghost btn-sm" id="cpPlan">🔁 Давтан үйлчилгээ</button>' +
         '<button class="btn btn-ghost btn-sm" id="cpEdit">✎ Мэдээлэл засах</button>' +
-        '<a class="btn btn-ghost btn-sm" href="tel:' + esc(u.phone) + '">📞 Залгах</a></div>' +
+        '<a class="btn btn-ghost btn-sm" href="tel:' + esc(u.phone) + '">📞 Залгах</a>' +
+        (isOwnerRole() && !d.noLogin ? '<button class="btn btn-ghost btn-sm" id="cpReset">🔑 Нэг удаагийн код</button>' : '') + '</div>' +
         '<div class="card" style="padding:12px;background:var(--brand-soft)"><b class="small">📋 Тайлбар</b> <span class="muted small">(бүх ажилтанд харагдана)</span>' +
         '<p class="small" style="margin-top:4px;white-space:pre-wrap">' + (d.desc ? esc(d.desc) : '<span class="muted">Тайлбар алга — "Мэдээлэл засах"-аар нэмнэ үү.</span>') + '</p></div>' +
         '<div class="stat-grid" style="margin:10px 0">' +
@@ -1285,7 +1359,7 @@
         '<h3 style="font-size:1rem;margin:14px 0 6px">📝 Тэмдэглэл</h3>' +
         '<div id="notesHost">' + notesHtml + sharedHtml + '</div>' +
         '<div class="row" style="flex-wrap:wrap"><input id="newNote" class="cell-input" style="flex:1;min-width:200px" maxlength="500" placeholder="ж: хүчтэй массаж таалагддаг, нуруу эмзэг…">' +
-        '<label class="small" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="noteShared" checked> 👥 багтай хуваалцах</label>' +
+        '<label class="small big-check"><input type="checkbox" id="noteShared" checked> 👥 багтай хуваалцах</label>' +
         '<button class="mini-btn" id="addNote">+ Нэмэх</button></div>' +
 
         (featureWallet ? '<h3 style="font-size:1rem;margin:14px 0 6px">🎁 Багцууд</h3>' + pkgHtml : '') +
@@ -1295,6 +1369,20 @@
 
         '<div class="modal-actions"><button class="btn btn-ghost" id="cpClose">Хаах</button></div>'
       );
+      var rs = m.querySelector('#cpReset');
+      /* "I forgot my password": the owner checks the caller is this customer, then reads the code out */
+      if (rs) rs.onclick = function () {
+        confirmDlg('Энэ үйлчлүүлэгчид нэг удаагийн нууц үг (6 оронтой код) үүсгэх үү? Хуучин нууц үг болон бүх нэвтрэлт нь хүчингүй болно. Зөвхөн ' + u.phone + ' дугаар руу нь залгаж хэлнэ үү.').then(function (yes) {
+          if (!yes) return;
+          api('/api/admin/customers/' + encodeURIComponent(u.id) + '/reset-password', { method: 'POST' }).then(function (r) {
+            var cm = openModal('<h3>🔑 Нэг удаагийн код</h3><p class="small">' + esc(u.name) + ' · ' + esc(u.phone) + '</p>' +
+              '<p style="font-size:2rem;font-weight:700;letter-spacing:0.2em;text-align:center;margin:14px 0">' + esc(r.tempPassword) + '</p>' +
+              '<p class="muted small">Үйлчлүүлэгч апп-д утас + энэ кодоор нэвтэрч, өөрийн шинэ нууц үгээ сонгоно. Энэ код дахин харагдахгүй.</p>' +
+              '<div class="modal-actions"><button class="btn btn-primary" id="tpOk">Хэлсэн</button></div>');
+            cm.querySelector('#tpOk').onclick = closeModal;
+          }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+        });
+      };
       m.querySelector('#cpClose').onclick = closeModal;
       var lastDone = d.bookings.find(function (b) { return b.status === 'done'; });
       var cu = {
@@ -1328,6 +1416,7 @@
           .catch(function (e) { toast(e && e.error === 'insufficient_balance' ? 'Үлдэгдэл хасах дүнд хүрэхгүй' : 'Алдаа гарлаа', 'err'); });
       };
 
+      m.querySelector('#newNote').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); m.querySelector('#addNote').click(); } };
       m.querySelector('#addNote').onclick = function () {
         var txt = m.querySelector('#newNote').value.trim();
         if (!txt) return;
