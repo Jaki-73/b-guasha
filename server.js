@@ -449,8 +449,12 @@ function loadDb() {
   fs.mkdirSync(PHOTOS_DIR, { recursive: true });
   if (fs.existsSync(DB_FILE)) {
     try {
-      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      const raw = fs.readFileSync(DB_FILE, 'utf8');
+      db = JSON.parse(raw);
+      const metaBefore = JSON.stringify(db.meta || null);
       migrateDb();
+      /* a migration bumped a version: keep the file exactly as it was before rewriting it */
+      if (JSON.stringify(db.meta) !== metaBefore) keepPreUpgradeCopy(raw);
       saveDb();
       return;
     } catch (e) {
@@ -461,6 +465,21 @@ function loadDb() {
   }
   db = seedDb();
   saveDb();
+}
+
+/* Upgrades rewrite db.json in place, so the version from before an upgrade is kept next
+   to it (data/db.before-upgrade-<time>.json) without anyone having to remember a backup.
+   If that copy cannot be written the upgrade does not run: better not to start at all
+   than to change the only copy of the bookings. */
+function keepPreUpgradeCopy(raw) {
+  const file = path.join(DATA, 'db.before-upgrade-' + nowIso().replace(/[:.]/g, '-') + '.json');
+  try {
+    fs.writeFileSync(file, raw);
+  } catch (e) {
+    console.error('Cannot write ' + file + ' (' + e.message + ') — refusing to upgrade the database. Free disk space and start again.');
+    process.exit(1);
+  }
+  console.log('Database upgraded; the previous version is kept at ' + file);
 }
 
 /* Boot record for the "is the data surviving restarts?" check. If the database
@@ -831,10 +850,10 @@ function scheduleFields(cand) {
   };
 }
 /* bookable start times for one staff member, service and day, on the step grid */
-function freeStarts(su, svc, dateStr, step, notBeforeMs) {
+function freeStarts(su, svc, dateStr, step, notBeforeMs, excludeBookingId) {
   const win = staffWindow(su, dateStr);
   if (!win || salonClosed(dateStr) || serviceMachineProblem(svc)) return [];
-  const list = reservations();
+  const list = reservations(excludeBookingId);
   const out = [];
   for (let t = Math.ceil(win[0] / step) * step; t + svc.minutes <= win[1]; t += step) {
     const time = hhmm(t);
@@ -1614,11 +1633,12 @@ async function handleApi(req, res, pathname, q) {
         }
         let existing = b.customerId
           ? db.users.find((u) => u.id === b.customerId && u.role === 'customer')
-          : (phone ? db.users.find((u) => u.phone === phone) : null);
+          : (phone ? db.users.find((u) => u.phone === phone && u.role === 'customer') : null);
         /* an unknown number becomes a client record as part of saving the booking,
-           so the customer list builds itself out of ordinary phone bookings */
+           so the customer list builds itself out of ordinary phone bookings. A number
+           that belongs to a staff account stays a plain name + phone on the booking. */
         let created = false;
-        if (!existing && PHONE_RE.test(phone)) {
+        if (!existing && PHONE_RE.test(phone) && !db.users.some((u) => u.phone === phone)) {
           existing = makeUser(String(b.name || '').trim().slice(0, 60) || 'Үйлчлүүлэгч ' + phone.slice(-4), phone, crypto.randomBytes(18).toString('hex'));
           existing.noLogin = true;
           existing.createdBy = sess.userId || 'admin';
@@ -1678,12 +1698,14 @@ async function handleApi(req, res, pathname, q) {
       const su = staffById(q.get('staffId') || sess.staffUserId || '');
       if (!su) return fail(res, 400, 'bad_staff');
       if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      /* moving a booking: its own current time counts as free (only a booking this person may see) */
+      const moving = q.get('exclude') ? db.bookings.find((x) => x.id === q.get('exclude') && (isOwner || x.staffId === sess.staffUserId)) : null;
       const step = stepMinutes();
       /* today: keep the slot that is just starting, drop anything earlier */
       const notBefore = date === ubToday() ? Date.now() - step * MIN_MS : 0;
       return json(res, 200, {
         date, step, closed: salonClosed(date) || !staffWindow(su, date),
-        problem: serviceMachineProblem(svc), slots: freeStarts(su, svc, date, step, notBefore)
+        problem: serviceMachineProblem(svc), slots: freeStarts(su, svc, date, step, notBefore, moving ? moving.id : undefined)
       });
     }
 
@@ -1827,6 +1849,41 @@ async function handleApi(req, res, pathname, q) {
           if (clash) return { status: 409, error: 'slot_taken', reason: clash };
         }
         booking.staffId = su.id;
+        saveDb();
+        return {};
+      });
+      if (r.error) return json(res, r.status, { error: r.error, reason: r.reason });
+      return json(res, 200, { ok: true, booking: adminBookingOut(booking) });
+    }
+
+    /* Move a confirmed booking to another day / time (and, for the owner, another
+       therapist) when the customer calls back. The new time gets the same full staff +
+       machine check as a new booking, with the booking's own old reservations left out,
+       so it can also slide by a few minutes over itself. */
+    m = pathname.match(/^\/api\/admin\/bookings\/([\w-]+)\/move$/);
+    if (m && method === 'POST') {
+      const b = await readJson(req);
+      const booking = db.bookings.find((x) => x.id === m[1]);
+      if (!booking || (!isOwner && booking.staffId !== sess.staffUserId)) return fail(res, 404, 'not_found');
+      if (booking.status !== 'confirmed') return fail(res, 400, 'not_movable');
+      const svc = db.services.find((x) => x.id === booking.serviceId);
+      if (!svc) return fail(res, 400, 'bad_service');
+      if (!validDate(b.date) || !validTime(b.time)) return fail(res, 400, 'bad_request');
+      if (toMin(b.time) % stepMinutes()) return fail(res, 400, 'bad_time');
+      const today = ubToday();
+      if (b.date < today || b.date > ubAddDays(today, c.bookingDaysAhead)) return fail(res, 400, 'date_out_of_range');
+      const su = staffById(b.staffId || booking.staffId);
+      if (!su) return fail(res, 400, 'bad_staff');
+      if (!isOwner && su.id !== sess.staffUserId) return fail(res, 403, 'forbidden');
+      const r = await serialized(() => {
+        if (booking.status !== 'confirmed') return { status: 400, error: 'not_movable' };
+        const ev = evaluate(su, svc, b.date, b.time, reservations(booking.id));
+        if (ev.error) {
+          const clash = ev.error === 'staff_busy' || ev.error === 'machine_busy';
+          return { status: clash ? 409 : 400, error: clash ? 'slot_taken' : ev.error, reason: ev.error };
+        }
+        (booking.moves = booking.moves || []).push({ from: booking.startsAt, staffId: booking.staffId, by: sess.userId || 'admin', at: nowIso() });
+        Object.assign(booking, scheduleFields(ev.cand), { staffId: su.id });
         saveDb();
         return {};
       });

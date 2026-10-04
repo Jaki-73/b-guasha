@@ -94,6 +94,7 @@
   .qb-slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .qb-slot { padding: 0; min-height: 48px; font-size: 1rem; }
   .qb-slot[disabled] { opacity: 0.3; text-decoration: line-through; cursor: not-allowed; }
+  .qb-slot.was[disabled] { opacity: 1; text-decoration: none; border-style: dashed; color: var(--muted); }
   .qb-svc.on, .qb-chip.on, .qb-slot.on { background: var(--brand); border-color: var(--brand); color: #fff; }
   .qb-svc.on small { color: rgba(255,255,255,0.85); }
   [data-theme="dark"] .qb-svc.on, [data-theme="dark"] .qb-chip.on, [data-theme="dark"] .qb-slot.on { color: #1c1610; }

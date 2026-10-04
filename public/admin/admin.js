@@ -473,6 +473,15 @@
      know becomes a client record when the booking is saved. */
   function openQuickBook(opts) {
     opts = opts || {};
+    /* move mode: the same sheet with the client and service fixed — only day, time (and, for
+       the owner, therapist) change; the booking's own old time counts as free */
+    var mv = opts.move || null;
+    if (mv) {
+      opts.client = { id: mv.user.id, name: mv.user.name, phone: mv.user.phone };
+      opts.serviceId = mv.serviceId;
+      opts.staffId = mv.staffId;
+      opts.date = mv.date < todayStr() ? todayStr() : mv.date;
+    }
     var st = {
       client: opts.client || null, newName: '', phone: '', serviceId: opts.serviceId || null,
       date: opts.date || todayStr(), time: opts.time || null,
@@ -492,7 +501,14 @@
     }
     function okLabel() {
       var svc = svcById(st.serviceId);
+      if (mv) return st.time ? 'Шилжүүлэх → ' + dayLabel(st.date) + ' ' + st.time : 'Шинэ цагаа сонгоно уу';
       return ready() ? 'Захиалах · ' + dayLabel(st.date) + ' ' + st.time + ' · ' + (svc ? svc.nameMn : '') : missing();
+    }
+    function moveHtml() {
+      var svc = svcById(mv.serviceId);
+      return '<div class="qb-client"><div><b>' + esc(mv.user.name) + '</b>' + (mv.user.phone ? ' <span class="muted small">' + esc(mv.user.phone) + '</span>' : '') +
+        '<br><span class="small">' + esc(svc ? svc.nameMn : '') + ' · ' + mv.minutes + ' мин</span>' +
+        '<br><span class="muted small">Одоогийн цаг: <s>' + esc(dayLabel(mv.date)) + ' ' + esc(mv.time) + '</s></span></div></div>';
     }
 
     function whoHtml() {
@@ -549,7 +565,8 @@
         st.slots.forEach(function (t) { (byHour[t.slice(0, 2)] = byHour[t.slice(0, 2)] || []).push(t); });
         body = Object.keys(byHour).sort().map(function (h) {
           return '<div class="qb-hour"><span class="qb-h">' + h + '</span><div class="qb-slots">' + byHour[h].map(function (t) {
-            return '<button type="button" class="qb-slot' + (t === st.time ? ' on' : '') + '" data-time="' + t + '">' + t + '</button>';
+            var was = mv && st.date === mv.date && t === mv.time && st.staffId === mv.staffId;
+            return '<button type="button" class="qb-slot' + (t === st.time ? ' on' : '') + (was ? ' was' : '') + '" data-time="' + t + '"' + (was ? ' disabled title="Одоогийн цаг"' : '') + '>' + t + '</button>';
           }).join('') + '</div></div>';
         }).join('');
       }
@@ -562,12 +579,15 @@
       var keep = act && host.contains(act) && act.id ? { id: act.id, pos: act.selectionStart } : null;
       keepPlace(host, function () {
         host.innerHTML =
-          '<div class="sheet-head"><b>📞 Утасны захиалга</b><button type="button" class="sheet-x" id="qbCancel" aria-label="Хаах">✕</button></div>' +
+          '<div class="sheet-head"><b>' + (mv ? '🔁 Цаг солих' : '📞 Утасны захиалга') + '</b><button type="button" class="sheet-x" id="qbCancel" aria-label="Хаах">✕</button></div>' +
           '<div class="sheet-body">' +
-          '<div class="qb-step" id="qbS1"><span class="qb-n">1</span><div class="qb-body">' + whoHtml() + '</div></div>' +
-          '<div class="qb-step" id="qbS2"><span class="qb-n">2</span><div class="qb-body">' + servicesHtml() + '</div></div>' +
-          '<div class="qb-step" id="qbS3"><span class="qb-n">3</span><div class="qb-body">' + timesHtml() + '</div></div>' +
-          '<details class="qb-more"' + (st.note ? ' open' : '') + '><summary>+ Тэмдэглэл</summary><input id="qbNote" class="cell-input big-input" maxlength="500" placeholder="ж: анх удаа ирнэ, хүзүү өвддөг" value="' + esc(st.note) + '"></details>' +
+          (mv
+            ? '<div class="qb-step"><div class="qb-body">' + moveHtml() + '</div></div>' +
+              '<div class="qb-step" id="qbS3"><div class="qb-body">' + timesHtml() + '</div></div>'
+            : '<div class="qb-step" id="qbS1"><span class="qb-n">1</span><div class="qb-body">' + whoHtml() + '</div></div>' +
+              '<div class="qb-step" id="qbS2"><span class="qb-n">2</span><div class="qb-body">' + servicesHtml() + '</div></div>' +
+              '<div class="qb-step" id="qbS3"><span class="qb-n">3</span><div class="qb-body">' + timesHtml() + '</div></div>' +
+              '<details class="qb-more"' + (st.note ? ' open' : '') + '><summary>+ Тэмдэглэл</summary><input id="qbNote" class="cell-input big-input" maxlength="500" placeholder="ж: анх удаа ирнэ, хүзүү өвддөг" value="' + esc(st.note) + '"></details>') +
           '</div>' +
           '<div class="sheet-foot"><button type="button" class="btn btn-primary btn-block big-btn" id="qbOk"' + (ready() ? '' : ' disabled') + '>' + esc(okLabel()) + '</button></div>';
       });
@@ -590,7 +610,7 @@
       if (!st.serviceId || !st.staffId) { draw(); return; }
       var key = st.date + st.serviceId + st.staffId;
       draw();
-      api('/api/admin/free?date=' + st.date + '&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId))
+      api('/api/admin/free?date=' + st.date + '&serviceId=' + encodeURIComponent(st.serviceId) + '&staffId=' + encodeURIComponent(st.staffId) + (mv ? '&exclude=' + encodeURIComponent(mv.id) : ''))
         .then(function (d) {
           if (key !== st.date + st.serviceId + st.staffId) return;
           st.slots = d.slots;
@@ -677,6 +697,18 @@
       if (!ready()) return;
       var btn = host.querySelector('#qbOk');
       btn.disabled = true;
+      if (mv) {
+        api('/api/admin/bookings/' + encodeURIComponent(mv.id) + '/move', { method: 'POST', body: { date: st.date, time: st.time, staffId: st.staffId } }).then(function () {
+          closeModal();
+          toast('Цаг солигдлоо ✓ ' + dayLabel(st.date) + ' ' + st.time + ' — хуучин цаг, машин чөлөөлөгдлөө', 'ok');
+          refreshCurrent(st.date);
+        }).catch(function (e) {
+          toast(bookingError(e), 'err');
+          btn.disabled = false;
+          if (e && e.error === 'slot_taken') { st.time = null; loadSlots(); }
+        });
+        return;
+      }
       var body = { serviceId: st.serviceId, staffId: st.staffId, date: st.date, time: st.time, via: 'phone', note: st.note };
       if (st.client) body.customerId = st.client.id;
       else { body.phone = st.phone; body.name = st.newName.trim(); }
@@ -725,7 +757,8 @@
     var map = {
       slot_taken: 'Энэ цаг дөнгөж сая авагдлаа — өөр цаг сонгоно уу', date_out_of_range: 'Огноо захиалгын хугацаанаас хол байна',
       bad_time: 'Цаг сонгоно уу', bad_staff: 'Ажилтан сонгоно уу', outside_hours: 'Ажлын цагаас гадуур байна', staff_off: 'Ажилтан тэр өдөр амарна', closed: 'Салон тэр өдөр амарна',
-      machine_not_configured: 'Энэ үйлчилгээний машин тохируулагдаагүй байна', machine_window_outside_service: 'Үйлчилгээний машины цаг буруу тохируулагдсан'
+      machine_not_configured: 'Энэ үйлчилгээний машин тохируулагдаагүй байна', machine_window_outside_service: 'Үйлчилгээний машины цаг буруу тохируулагдсан',
+      not_movable: 'Зөвхөн баталгаажсан захиалгыг шилжүүлнэ', not_found: 'Захиалга олдсонгүй'
     };
     return (e && map[e.error]) || 'Алдаа гарлаа';
   }
@@ -961,6 +994,7 @@
         ? '<button class="btn btn-primary" data-st="done">Болсон ✓</button><button class="btn btn-ghost" data-st="noshow">Ирээгүй</button><button class="btn btn-danger" data-st="cancelled">Цуцлах</button>'
         : '<button class="btn btn-ghost" data-st="confirmed">Сэргээх</button>') +
       '</div>' +
+      (bk.status === 'confirmed' ? '<button class="btn btn-ghost btn-block big-btn mt" id="bmMove">🔁 Өөр цаг руу шилжүүлэх</button>' : '') +
       (bk.user.id ? '<button class="btn btn-ghost btn-block mt" id="bmProfile">👤 Үйлчлүүлэгчийн түүх</button>' : '') +
       '<div class="modal-actions"><button class="btn btn-ghost" id="bmClose">Хаах</button></div>'
     );
@@ -979,6 +1013,8 @@
     });
     var pf = m.querySelector('#bmProfile');
     if (pf) pf.onclick = function () { closeModal(); openClientProfile(bk.user.id); };
+    var mvb = m.querySelector('#bmMove');
+    if (mvb) mvb.onclick = function () { closeModal(); openQuickBook({ move: bk }); };
   }
 
   /* ================= bookings list ================= */

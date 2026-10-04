@@ -329,6 +329,39 @@ describe('machine-aware scheduling', () => {
     assert.ok(ownerCu.data.bookings.some((x) => x.id === aBooking.id));
   });
 
+  test('moving a booking re-checks staff and machines and frees the old time', async () => {
+    const D5 = ubDay(5);
+    const move = (asKey, bookingId, body) => call('POST', `/api/admin/bookings/${bookingId}/move`, tok[asKey], body);
+    const freeFor = async (asKey, staffKey, service, exclude) =>
+      (await call('GET', `/api/admin/free?date=${D5}&serviceId=${svc[service]}&staffId=${id[staffKey]}&exclude=${exclude}`, tok[asKey])).data.slots;
+    const a = await bookOk('A', 'A', 'hifu60', D5, '10:00');
+    const b = await bookOk('B', 'B', 'hifu60', D5, '12:00');
+    /* into A's HIFU hour: refused */
+    let r = await move('B', b.id, { date: D5, time: '10:30' });
+    assert.equal(r.status, 409, r.text);
+    assert.equal(r.data.reason, 'machine_busy');
+    /* sliding 15 minutes over its own old time: offered when moving, and allowed */
+    assert.ok(!(await free('B', 'B', 'hifu60', D5)).includes('12:15'));
+    assert.ok((await freeFor('B', 'B', 'hifu60', b.id)).includes('12:15'));
+    /* excluding someone else's booking is ignored — it reveals nothing */
+    assert.ok(!(await freeFor('B', 'B', 'hifu60', a.id)).includes('10:30'));
+    r = await move('B', b.id, { date: D5, time: '12:15' });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.booking.time, '12:15');
+    assert.deepEqual(r.data.booking.machines.map((x) => [x.from, x.to]), [['12:15', '13:15']]);
+    /* the old 12:00–12:15 is free for someone else straight away */
+    await bookOk('C', 'C', 'hifuShort', D5, '12:00');
+    /* another staff member's booking behaves like a missing one; staff cannot hand it on, the owner can */
+    assert.equal((await move('A', b.id, { date: D5, time: '15:00' })).status, 404);
+    assert.equal((await move('B', b.id, { date: D5, time: '15:00', staffId: id.C })).status, 403);
+    r = await move('owner', b.id, { date: D5, time: '15:00', staffId: id.C });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.data.booking.staffId, id.C);
+    /* a cancelled booking holds nothing and cannot be moved */
+    await call('POST', `/api/admin/bookings/${a.id}/status`, tok.A, { status: 'cancelled' });
+    assert.equal((await move('A', a.id, { date: D5, time: '16:00' })).status, 400);
+  });
+
   test('machine board is shared but anonymous', async () => {
     const r = await call('GET', '/api/admin/machines/board?date=' + D, tok.C);
     assert.equal(r.status, 200);
@@ -424,6 +457,18 @@ describe('upgrading an existing database', () => {
     assert.equal(r.data.reason, 'staff_busy');
     const r2 = await call('POST', '/api/admin/walkin', owner.token, { staffId: owner.staffUserId, serviceId: 'svc-facial-express', date: D, time: '15:15', phone: '99555002' });
     assert.equal(r2.data.reason, 'staff_busy');
+
+    /* the file as it was before the upgrade is kept next to db.json, byte for byte */
+    const copies = fs.readdirSync(dataDir).filter((f) => f.startsWith('db.before-upgrade-'));
+    assert.equal(copies.length, 1);
+    const kept = JSON.parse(fs.readFileSync(path.join(dataDir, copies[0]), 'utf8'));
+    assert.equal(kept.bookings.find((x) => x.id === 'bk-legacy1').time, '11:00');
+    assert.ok(!('scheduleVersion' in kept.meta));
+    /* an ordinary restart with nothing to upgrade makes no new copy */
+    await stopServer(srv);
+    srv = await startServer(dataDir, cfgFile);
+    call = api(srv.base);
+    assert.equal(fs.readdirSync(dataDir).filter((f) => f.startsWith('db.before-upgrade-')).length, 1);
   });
 
   test('sessions stay valid for weeks of use and expire after 60 idle days', async () => {
