@@ -10,7 +10,7 @@
       'title': "B's Gua Sha — Гуаша гоо сайхны студи · Улаанбаатар",
       'nav.skip': 'Үндсэн агуулга руу',
       'nav.services': 'Үйлчилгээ', 'nav.reviews': 'Сэтгэгдэл', 'nav.visit': 'Анхны айлчлал', 'nav.products': 'Бүтээгдэхүүн',
-      'nav.faq': 'Асуулт', 'nav.contact': 'Холбоо барих', 'nav.book': 'Цаг захиалах', 'nav.open_app': 'Апп нээх',
+      'nav.faq': 'Асуулт', 'nav.contact': 'Холбоо барих', 'nav.book': 'Цаг захиалах', 'nav.open_app': 'Апп нээх', 'nav.signin': 'Нэвтрэх', 'nav.account': 'Миний бүртгэл',
       'bar.call': '📞 Залгах', 'bar.book': 'Цаг захиалах',
 
       'hero.eyebrow': 'Гоо сайхан, Эрүүл арьс, Итгэлтэй чи',
@@ -90,7 +90,7 @@
       'title': "B's Gua Sha — Gua sha beauty studio · Ulaanbaatar",
       'nav.skip': 'Skip to content',
       'nav.services': 'Services', 'nav.reviews': 'Reviews', 'nav.visit': 'First visit', 'nav.products': 'Products',
-      'nav.faq': 'FAQ', 'nav.contact': 'Contact', 'nav.book': 'Book now', 'nav.open_app': 'Open the app',
+      'nav.faq': 'FAQ', 'nav.contact': 'Contact', 'nav.book': 'Book now', 'nav.open_app': 'Open the app', 'nav.signin': 'Sign in', 'nav.account': 'My account',
       'bar.call': '📞 Call', 'bar.book': 'Book now',
 
       'hero.eyebrow': 'Naturally, Healthy and Beautiful',
@@ -171,6 +171,7 @@
   var lang = localStorage.getItem('bg_lang') || 'mn';
   var theme = localStorage.getItem('bg_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   var cfg = null, services = null, bundles = null, edu = null, faq = null, reviewsData = null;
+  var account = null; /* signed-in user from /api/me (the app's token is shared, same origin) */
   var featureWallet = false; /* from /api/config — the super admin toggles it */
   var svcTab = 'all', prodTab = 'all', faqTab = 'all', revExpanded = false;
   var REV_DESKTOP_LIMIT = 4;
@@ -219,6 +220,26 @@
     renderReviews();
     renderEdu();
     renderFaq();
+    renderAccount();
+  }
+
+  /* ---------- sign in / my account (header + mobile menu) ---------- */
+  function renderAccount() {
+    var first = account && account.name ? String(account.name).trim().split(/\s+/)[0] : '';
+    document.querySelectorAll('.js-account').forEach(function (a) {
+      a.href = account ? '/app' : '/app#login';
+      a.textContent = account ? '👤 ' + (first || t('nav.account')) : t('nav.signin');
+      a.title = account ? t('nav.account') : '';
+    });
+  }
+  function loadAccount() {
+    var token = null;
+    try { token = localStorage.getItem('bg_token'); } catch (e) { /* storage blocked */ }
+    if (!token) return;
+    fetch('/api/me', { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.user) { account = d.user; renderAccount(); } })
+      .catch(function () {});
   }
 
   function applyTheme() {
@@ -482,6 +503,7 @@
   /* ---------- init ---------- */
   applyTheme();
   applyLang();
+  loadAccount();
   loadAll();
   onScroll();
 })();

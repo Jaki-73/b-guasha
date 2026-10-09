@@ -97,6 +97,7 @@ button { font-family: inherit; }
 .site-nav > a.active { background: var(--brand-soft); color: var(--brand-deep); }
 .nav-mobile-extra { display: none; }
 .header-controls { display: flex; align-items: center; gap: 8px; }
+.header-controls .js-account { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ctrl-btn {
   border: 1px solid var(--line); background: var(--surface); color: var(--ink);
   border-radius: 10px; height: 38px; min-width: 38px; padding: 0 10px; cursor: pointer; font-size: 0.88rem; font-weight: 600;
@@ -359,8 +360,8 @@ button { font-family: inherit; }
 }
 @media (min-width: 1024px) { .faq-list .help-card { display: none; } }
 
-/* header collapses to a burger below 960px (6 links + controls need the room) */
-@media (max-width: 959px) {
+/* header collapses to a burger below 1200px (links + language, theme, sign in and book need the room) */
+@media (max-width: 1199px) {
   .site-nav {
     /* the header's backdrop-filter makes it the containing block, so size explicitly */
     position: fixed; top: var(--header-h); left: 0; right: 0; height: calc(100dvh - var(--header-h)); margin: 0;

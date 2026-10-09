@@ -1455,6 +1455,12 @@
   /* /app#book or /app#book=<serviceId> — the website's "Book" buttons land here */
   var pendingBook = null;
   (function readDeepLink() {
+    var a = /^#(login|register)$/.exec(location.hash || '');
+    if (a) {
+      authMode = a[1];
+      if (history.replaceState) history.replaceState(null, '', location.pathname);
+      return;
+    }
     var m = /^#book(?:=([\w-]+))?$/.exec(location.hash || '');
     if (!m) return;
     pendingBook = m[1] || 'any';
