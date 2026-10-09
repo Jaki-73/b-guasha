@@ -23,6 +23,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const { createAssistant, clientIp, NOTES_MAX_CHARS: ASSISTANT_NOTES_MAX } = require('./assistant');
+const { createWebchat } = require('./webchat');
 
 const ROOT = __dirname;
 const PUB = path.join(ROOT, 'public');
@@ -399,7 +400,8 @@ function seedDb() {
     blocks: [],
     edu: seedEdu(),
     faq: seedFaq(),
-    calFeeds: {}
+    calFeeds: {},
+    webchats: []
   };
 }
 
@@ -979,6 +981,8 @@ const pinFails = { count: 0, until: 0 };
 
 /* customer assistant — reads db through getDb so it always sees the live object */
 const assistant = createAssistant({ getDb: () => db, saveDb, cfg, walletOn, publicFaq, json, fail });
+/* website chat: saved conversations per visitor, answered by the assistant and by staff */
+const webchat = createWebchat({ getDb: () => db, saveDb, assistant, json, fail, authUser: (req) => authUser(req, null), firstName });
 
 /* ---------------- API router ---------------- */
 async function handleApi(req, res, pathname, q) {
@@ -1015,9 +1019,10 @@ async function handleApi(req, res, pathname, q) {
     });
   }
 
-  /* customer assistant (chat bubble on the website) — assistant.js. Not /api/chat,
-     which is the customer ↔ salon messaging. */
-  if (route === 'POST /api/assistant') return assistant.handlePublic(req, res, clientIp(req));
+  /* website chat bubble — webchat.js (saved conversation) answered through assistant.js.
+     Not /api/chat, which is the app's customer ↔ salon messaging. */
+  if (route === 'POST /api/assistant') return webchat.handlePost(req, res, clientIp(req));
+  if (route === 'GET /api/assistant/conversation') return webchat.handleGet(req, res, clientIp(req), q);
 
   if (route === 'GET /api/services') return json(res, 200, db.services.filter((s) => s.active));
   if (route === 'GET /api/staff') return json(res, 200, staffUsers().map(publicStaff));
@@ -1541,7 +1546,7 @@ async function handleApi(req, res, pathname, q) {
           topupTotal: paidTx.reduce((s, t) => s + t.amount, 0),
           balancesTotal: db.users.reduce((s, u) => s + u.balance, 0),
           pendingReviews: db.reviews.filter((r) => r.approved === null).length,
-          unreadChats: threadList().filter((t) => t.unread > 0).length
+          unreadChats: threadList().filter((t) => t.unread > 0).length + webchat.unreadThreads()
         } : null
       });
     }
@@ -2463,6 +2468,11 @@ async function handleApi(req, res, pathname, q) {
       return json(res, 200, msgOut(msg));
     }
 
+    /* ----- website chat conversations: every admin role can read and reply ----- */
+    if (pathname === '/api/admin/webchats' || pathname.startsWith('/api/admin/webchats/')) {
+      return webchat.handleAdmin(route, pathname, req, res, sess, isOwner, readJson);
+    }
+
     /* ----- customer assistant: status, test question, test alert (owner only) ----- */
     if (pathname === '/api/admin/assistant' || pathname.startsWith('/api/admin/assistant/')) {
       return assistant.handleAdmin(route, req, res, isOwner);
@@ -2832,6 +2842,7 @@ function serveStatic(res, pathname, req) {
 /* ---------------- server ---------------- */
 loadDb();
 recordBoot();
+webchat.prune();
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');

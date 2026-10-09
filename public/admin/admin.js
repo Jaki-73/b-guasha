@@ -1324,15 +1324,15 @@
   }
 
   /* ================= chat ================= */
+  /* Two kinds of chat in one list: app customers (key 'u:<user id>') and website visitors
+     (key 'w:<conversation id>'), where the AI answers until someone from the salon steps in. */
   function loadChat() {
-    api('/api/admin/chat').then(function (list) {
-      chatThreads = list;
+    fetchThreads().then(function () {
       renderChatShell();
       if (chatOpen) openThread(chatOpen, true);
       chatPoll = setInterval(function () {
         if (tab !== 'chat') return;
-        api('/api/admin/chat').then(function (l2) {
-          chatThreads = l2;
+        fetchThreads().then(function () {
           var host = document.getElementById('threadList');
           if (host) host.innerHTML = threadsHtml();
           bindThreads();
@@ -1341,12 +1341,26 @@
       }, 7000);
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
   }
+  function fetchThreads() {
+    return Promise.all([api('/api/admin/chat'), api('/api/admin/webchats').catch(function () { return []; })]).then(function (r) {
+      var app = r[0].map(function (th) {
+        return { key: 'u:' + th.userId, name: th.name, lastText: th.lastText, mine: th.lastFrom === 'salon', lastAt: th.lastAt, unread: th.unread };
+      });
+      var web = r[1].map(function (th) {
+        return { key: 'w:' + th.id, web: true, name: th.user ? th.user.name : 'Вэбсайт зочин', lastText: th.lastText, mine: th.lastFrom === 'staff', ai: th.lastFrom === 'ai',
+          lastAt: th.lastAt, unread: th.unread, waiting: th.waiting, aiPaused: th.aiPaused };
+      });
+      chatThreads = app.concat(web).sort(function (x, y) { return String(y.lastAt || '').localeCompare(String(x.lastAt || '')); });
+    });
+  }
 
   function threadsHtml() {
-    if (!chatThreads || !chatThreads.length) return '<p class="muted small" style="padding:10px">Чат алга. Үйлчлүүлэгч аппаасаа бичих боломжтой.</p>';
+    if (!chatThreads || !chatThreads.length) return '<p class="muted small" style="padding:10px">Чат алга. Үйлчлүүлэгч аппаас эсвэл вэбсайтын чатаас бичих боломжтой.</p>';
     return chatThreads.map(function (th) {
-      return '<div class="thread' + (chatOpen === th.userId ? ' active' : '') + '" data-th="' + esc(th.userId) + '">' +
-        '<div><div class="tn">' + esc(th.name) + '</div><div class="tl">' + (th.lastFrom === 'salon' ? 'Та: ' : '') + esc(th.lastText) + '</div></div>' +
+      return '<div class="thread' + (chatOpen === th.key ? ' active' : '') + '" data-th="' + esc(th.key) + '">' +
+        '<div style="min-width:0"><div class="tn">' + (th.web ? '🌐 ' : '') + esc(th.name) +
+        (th.waiting ? ' <span class="pill" style="font-size:.66rem">хүлээж байна</span>' : '') + '</div>' +
+        '<div class="tl">' + (th.mine ? 'Та: ' : th.ai ? '🤖 ' : '') + esc(th.lastText) + '</div></div>' +
         (th.unread ? '<span class="badge">' + th.unread + '</span>' : '') + '</div>';
     }).join('');
   }
@@ -1371,12 +1385,40 @@
         '<span class="bmeta">' + esc(msg.fromName || '') + ' · ' + fmtShort(msg.createdAt) + '</span></div>';
     }).join('');
   }
+  /* website chat: the visitor on the left; the AI and staff on the right, each labelled */
+  var WEB_AI_NOTE = { paused: 'AI зогссон үед ирсэн — та хариулна', capped: 'AI хариулаагүй: зардлын хязгаар', unavailable: 'AI хариулаагүй: туслах ажиллахгүй байна', error: 'AI хариулаагүй: алдаа', superseded: 'AI-ийн хариуг орхив — ажилтан хариулсан', pending: 'AI хариулж байна…' };
+  function webConvHtml(msgs) {
+    return msgs.map(function (msg) {
+      if (msg.from === 'visitor') {
+        var note = msg.ai && msg.ai !== 'answered' && WEB_AI_NOTE[msg.ai] ? '<span class="bmeta">⚠️ ' + esc(WEB_AI_NOTE[msg.ai]) + '</span>' : '';
+        return '<div class="bubble them" style="max-width:75%">' + esc(msg.text) + '<span class="bmeta">Зочин · ' + fmtShort(msg.at) + '</span>' + note + '</div>';
+      }
+      var isAi = msg.from === 'ai';
+      return '<div class="bubble me" style="max-width:75%' + (isAi ? ';opacity:.8' : '') + '">' + esc(msg.text) +
+        '<span class="bmeta">' + (isAi ? '🤖 AI туслах' : esc(msg.name || '')) + ' · ' + fmtShort(msg.at) + '</span></div>';
+    }).join('');
+  }
+  function webHeadHtml(d) {
+    var until = d.aiPausedUntil ? fmtShort(d.aiPausedUntil).split(' ')[1] : '';
+    return '<div class="row" style="margin-bottom:6px;flex-wrap:wrap;gap:8px"><b>🌐 ' + (d.user ? esc(d.user.name) : 'Вэбсайт зочин') + '</b>' +
+      (d.user && d.user.phone ? '<a class="muted small" href="tel:' + esc(d.user.phone) + '">📞 ' + esc(d.user.phone) + '</a>' : '<span class="muted small">' + esc(fmtShort(d.createdAt)) + '-с</span>') +
+      '<span class="spacer" style="flex:1"></span>' +
+      (d.aiPaused ? '<button class="mini-btn" id="webAiOn">🤖 AI-д буцааж өгөх</button>' : '<button class="mini-btn" id="webAiOff">✋ Би хариулъя</button>') +
+      (isOwnerRole() ? '<button class="mini-btn" id="webDel">🗑</button>' : '') + '</div>' +
+      '<p class="small" style="margin:0 0 8px;padding:6px 10px;border-radius:8px;background:var(--surface2)">' +
+      (d.aiPaused ? '✋ AI зогссон — та хариулна' + (until ? ' (' + esc(until) + ' хүртэл, дараа нь AI өөрөө үргэлжлүүлнэ)' : '') : '🤖 AI автоматаар хариулж байна. Таны хариу бичихэд AI 2 цаг зогсоно.') + '</p>';
+  }
 
-  function openThread(userId, keep) {
-    chatOpen = userId;
+  function openThread(key, keep) {
+    chatOpen = key;
+    (chatThreads || []).forEach(function (th) { if (th.key === key) th.unread = 0; }); /* opening reads it */
+    var host = document.getElementById('threadList');
+    if (host) { host.innerHTML = threadsHtml(); bindThreads(); }
+    if (key.indexOf('w:') === 0) return openWebThread(key.slice(2));
+    var userId = key.slice(2);
     api('/api/admin/chat/' + userId).then(function (d) {
       var pane = document.getElementById('convPane');
-      if (!pane) return;
+      if (!pane || chatOpen !== key) return;
       pane.innerHTML = '<div class="row" style="margin-bottom:8px"><b>' + esc(d.user.name) + '</b>' +
         '<a class="muted small" href="tel:' + esc(d.user.phone) + '">📞 ' + esc(d.user.phone) + '</a>' +
         '<span class="spacer" style="flex:1"></span>' +
@@ -1390,17 +1432,59 @@
       pane.querySelector('#convText').addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); sendThreadMsg(); }
       });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+  function openWebThread(id) {
+    api('/api/admin/webchats/' + id).then(function (d) {
+      var pane = document.getElementById('convPane');
+      if (!pane || chatOpen !== 'w:' + id) return;
+      pane.innerHTML = '<div id="webHead">' + webHeadHtml(d) + '</div>' +
+        '<div class="conv" id="convList">' + webConvHtml(d.messages) + '</div>' +
+        '<div class="chat-input" style="position:static;margin-top:10px"><input id="convText" maxlength="1000" placeholder="Хариу бичих… (AI 2 цаг зогсоно)"><button id="convSend">➤</button></div>';
+      var list = pane.querySelector('#convList');
+      list.scrollTop = list.scrollHeight;
+      bindWebHead(id);
+      pane.querySelector('#convSend').onclick = sendThreadMsg;
+      pane.querySelector('#convText').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); sendThreadMsg(); }
+      });
+    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+  function bindWebHead(id) {
+    function setAi(paused) {
+      api('/api/admin/webchats/' + id + '/ai', { method: 'POST', body: { paused: paused } })
+        .then(function () { toast(paused ? 'AI зогслоо — та хариулна' : 'AI дахин хариулна', 'ok'); refreshConv(); })
+        .catch(function () { toast('Алдаа гарлаа', 'err'); });
+    }
+    var off = document.getElementById('webAiOff'), on = document.getElementById('webAiOn'), del = document.getElementById('webDel');
+    if (off) off.onclick = function () { setAi(true); };
+    if (on) on.onclick = function () { setAi(false); };
+    if (del) del.onclick = function () {
+      confirmDlg('Энэ яриаг бүрмөсөн устгах уу? Зочны талд ч алга болно.').then(function (yes) {
+        if (!yes) return;
+        api('/api/admin/webchats/' + id + '/delete', { method: 'POST', body: {} })
+          .then(function () { chatOpen = null; toast('Устгалаа', 'ok'); loadChatList(); })
+          .catch(function () { toast('Алдаа гарлаа', 'err'); });
+      });
+    };
+  }
+  function loadChatList() {
+    fetchThreads().then(function () {
       var host = document.getElementById('threadList');
       if (host) { host.innerHTML = threadsHtml(); bindThreads(); }
-    }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+      var pane = document.getElementById('convPane');
+      if (pane && !chatOpen) pane.innerHTML = '<p class="muted">Харилцан яриа сонгоно уу.</p>';
+    }).catch(function () {});
   }
   function refreshConv() {
     if (!chatOpen) return;
-    api('/api/admin/chat/' + chatOpen).then(function (d) {
+    var key = chatOpen, web = key.indexOf('w:') === 0;
+    api(web ? '/api/admin/webchats/' + key.slice(2) : '/api/admin/chat/' + key.slice(2)).then(function (d) {
       var list = document.getElementById('convList');
-      if (!list) return;
+      if (!list || chatOpen !== key) return;
       var atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
-      list.innerHTML = convHtml(d.messages);
+      list.innerHTML = web ? webConvHtml(d.messages) : convHtml(d.messages);
+      if (web) { var h = document.getElementById('webHead'); if (h) { h.innerHTML = webHeadHtml(d); bindWebHead(key.slice(2)); } }
       if (atBottom) list.scrollTop = list.scrollHeight;
     }).catch(function () {});
   }
@@ -1409,7 +1493,8 @@
     var text = (inp.value || '').trim();
     if (!text || !chatOpen) return;
     inp.value = '';
-    api('/api/admin/chat/' + chatOpen, { method: 'POST', body: { text: text } })
+    var key = chatOpen, web = key.indexOf('w:') === 0;
+    api(web ? '/api/admin/webchats/' + key.slice(2) + '/reply' : '/api/admin/chat/' + key.slice(2), { method: 'POST', body: { text: text } })
       .then(function () { refreshConv(); })
       .catch(function () { toast('Алдаа гарлаа', 'err'); inp.value = text; });
   }
@@ -2403,9 +2488,10 @@
         '<div id="aiStatus">' + aiStatusHtml(st) + '</div>' +
         '<div class="row"><div class="field grow"><label>Сарын дээд хязгаар (USD)</label><input type="number" id="aiCap" class="cell-input" min="0.01" max="100" step="0.5" value="' + (s.assistantMonthlyCapUsd === null ? '' : esc(String(s.assistantMonthlyCapUsd))) + '" placeholder="' + esc(String(s.assistantMonthlyCapDefaultUsd)) + ' (config.json)">' +
         '<span class="muted small">Хоосон орхивол config.json-ий утга (' + esc(usd(s.assistantMonthlyCapDefaultUsd, 2)) + ') үйлчилнэ.</span></div></div>' +
-        '<div class="field"><label>Нэмэлт мэдээлэл туслахад (зогсоол, давхар, баярын цаг гэх мэт)</label>' +
+        '<div class="field"><label>Туслахад зориулсан нэмэлт мэдээлэл</label>' +
+        '<span class="muted small" style="display:block;margin-bottom:4px">Facebook пост, шинэ эмчилгээ, бүтээгдэхүүн, зогсоол, баярын цаг… — хуулж буулгаад Хадгалах дарна. Үнэ бичээгүй зүйлийн үнийг туслах хэлэхгүй, утсаар лавлахыг санал болгоно. Энд бичсэн нь хуучин мэдээллээс давуу эрхтэй.</span>' +
         '<span class="muted small" style="display:block;margin-bottom:4px">⚠️ Энд бичсэн бүхнийг үйлчлүүлэгч туслахаас асууж мэдэж болно — нууц зүйл бүү бич.</span>' +
-        '<textarea id="aiNotes" class="cell-input" rows="4" maxlength="' + st.notesMaxChars + '" placeholder="Жишээ: Хас Мөнх төвийн урд талд үнэгүй зогсоол бий.">' + esc(s.assistantNotes || '') + '</textarea>' +
+        '<textarea id="aiNotes" class="cell-input" rows="14" style="min-height:240px;font-size:.92rem;line-height:1.45" maxlength="' + st.notesMaxChars + '" placeholder="Жишээ:\nAquapeel — гүн цэвэрлэгээ, … (үнэ: утсаар лавлана)\nХас Мөнх төвийн урд талд үнэгүй зогсоол бий.">' + esc(s.assistantNotes || '') + '</textarea>' +
         '<span class="muted small" id="aiNotesN"></span></div>' +
         '<div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary" id="aiSave">Хадгалах</button>' +
         '<button class="btn btn-ghost" id="aiAlert"' + (st.telegramConfigured ? '' : ' disabled') + '>Туршилтын мэдэгдэл</button></div>' +
@@ -2416,7 +2502,7 @@
         '<p id="aiA" style="white-space:pre-wrap;margin-top:8px"></p><p class="muted small" id="aiAm"></p>' +
         '</div>';
       var notes = document.getElementById('aiNotes'), notesN = document.getElementById('aiNotesN');
-      function count() { notesN.textContent = notes.value.length + ' / ' + st.notesMaxChars; }
+      function count() { notesN.textContent = notes.value.length.toLocaleString('en-US') + ' / ' + st.notesMaxChars.toLocaleString('en-US') + ' тэмдэгт'; }
       notes.oninput = count; count();
       document.getElementById('aiSave').onclick = function () {
         var on = document.getElementById('aiOn').checked;

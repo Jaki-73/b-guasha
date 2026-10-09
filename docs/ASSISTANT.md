@@ -2,21 +2,23 @@
 
 A small chat bubble on the website (`/`) that answers the questions the salon gets over and over: prices, durations, opening hours, where we are, what a treatment feels like, aftercare, whether men can come. It replies in the customer's language and script (Mongolian in Cyrillic or Latin letters, or English). Anything it doesn't know goes to the phone.
 
+Each visitor's chat is **saved**: they can close the page and come back to it, and staff can open it in **Админ → 💬 Чат** and reply themselves (see "Website chat" below).
+
 It is **off by default**. The owner turns it on in **Админ → ⚙️ Тохиргоо → 🤖 Туслах (AI)**.
 
 ## How it works
 
-1. A customer types a question in the bubble. The website sends it, plus the last few turns of the conversation, to `POST /api/assistant`.
+1. A customer types a question in the bubble. The website sends just that message to `POST /api/assistant`; the server adds it to the visitor's saved conversation and takes the last few turns from there (the browser can't send a made-up history).
 2. The server checks the switch, the rate limits and the message, then builds the **salon information** fresh from the database:
    - salon name, slogans, address, phones, email, Facebook/Instagram, map link, salon opening hours, weekly closed days, closed dates in the next 30 days, cancellation hours
    - active services (names, descriptions, duration, price)
    - active FAQ answers for the current wallet setting
    - active products, tools and machines (Админ → 🛍 Бүтээгдэхүүн)
-   - the owner's free-text notes (parking, floor, holiday hours…)
+   - the owner's notes (pasted Facebook posts, new treatments and products, parking, holiday hours…)
 3. It reserves the worst-case cost of the call in the spending ledger, calls the model, then replaces the reservation with the real cost.
 4. The reply is shown in the bubble as plain text.
 
-**What the model never sees:** customers, staff, staff hours, bookings, blocks, machines, reviews, chat messages, notes, photos, transactions, gift cards, promo codes, any other setting, `config.json` secrets, or anything in `.env`. These are not "hidden by the prompt": they are never put into the request, so they cannot leak however the model is asked. The instructions to the model are only a second layer.
+**What the model never sees:** customers, staff, staff hours, bookings, blocks, machines, reviews, app chat messages, other visitors' website chats, notes, photos, transactions, gift cards, promo codes, any other setting, `config.json` secrets, or anything in `.env`. It sees only the current visitor's own conversation. These are not "hidden by the prompt": they are never put into the request, so they cannot leak however the model is asked. The instructions to the model are only a second layer.
 
 Because prices come straight from the database, editing a price in Админ → Үйлчилгээ changes the assistant's answer immediately.
 
@@ -38,9 +40,24 @@ Before turning it on, check that services, prices, FAQ and products are real (se
 
 Typical cost: about **$0.0025 at most per short question** on gpt-5.4-nano with today's data (the real cost is lower, especially with prompt caching; a long conversation reserves more). The admin card shows the current worst case.
 
-**Owner notes** are sent to the model with every question, so customers can get anything written there out of the assistant. Never put private information in them.
+**Owner notes** (Админ → Тохиргоо → 🤖 Туслах, up to 12,000 characters) are where new information goes: paste a Facebook post about a new treatment or product and press Хадгалах. Where the notes disagree with older data, the assistant follows the notes, and it never makes up a price that isn't written anywhere (it says to call instead). The notes are sent with every question, so customers can get anything written there out of the assistant: never put private information in them. Longer notes make each question a little dearer; the card shows the current worst case per question, and the salon information as a whole is capped at 48 KB (the notes are cut first if it is over).
 
 **Rate limits** count each visitor's IP address as Caddy reports it (IPv6 addresses by /64). This relies on Caddy replacing any `X-Forwarded-For` a visitor sends, which is its default; keep `trusted_proxies` out of the `Caddyfile`, and never expose the app container without Caddy in front. If an IPv6 (AAAA) record is ever added for bguasha.com, check first that Caddy sees real IPv6 addresses (Docker's proxy can make them all look the same, which would put every IPv6 visitor in one bucket).
+
+## Website chat (saved conversations)
+
+- **One conversation per visitor.** The browser keeps a random token; the server keeps the messages (`db.webchats`) and only a hash of the token. "Шинэ яриа" in the bubble starts a fresh one. A visitor signed in on the site is linked to their account, so staff see their name and phone.
+- **The AI answers automatically**, through exactly the same knowledge, spending cap and rate limits as before.
+- **Staff answer in Админ → 💬 Чат** (owner and staff alike). Website chats are marked 🌐 next to the app chats, with an unread count and "хүлээж байна" when a visitor is waiting for a person.
+- **No talking over each other:**
+  - a staff reply pauses the AI in that conversation for 2 hours (counted from the last staff reply);
+  - **✋ Би хариулъя** pauses it before you start typing, and **🤖 AI-д буцааж өгөх** hands back early;
+  - if the AI was still writing when staff answered, its reply is dropped;
+  - the visitor sees who wrote what ("AI туслах" or the staff member's first name) and a "staff are answering" line;
+  - when the AI resumes it knows what staff said and won't contradict it.
+- **When the AI can't answer** (paused, cap reached, no key, an error), the visitor's question is still saved, the visitor is told staff will reply here or to call, and staff get a Telegram message ("a visitor is waiting", no message text; at most once per conversation per 30 minutes and 10 an hour).
+- **Polling:** the open bubble checks for new messages every 8 s, a closed one every 60 s (for the unread badge).
+- **Storage limits:** conversations idle for 90 days are deleted; one conversation keeps its last 200 messages; all website chats together are capped at about 2 million characters (oldest go first). The owner can delete a conversation (🗑). Conversations are personal data: they are in the admin backup, and the switch turning off closes the bubble but keeps them for staff.
 
 ## Changing the model
 

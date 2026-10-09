@@ -482,6 +482,41 @@
         "Playwright 390×844 and 1280×860, MN and EN, mock mode: no console errors, no horizontal overflow, sending disabled while pending, markup in replies shown as text, input visible with a 420 px viewport, bubble sits above the phone call/book bar; admin card as owner on phone and desktop",
         "text/plain post → 415; a body dribbled 1 byte/s is cut off after 10 s"
       ]
+    },
+    {
+      "id": 19,
+      "date": "2026-10-09",
+      "author": "Claude (Claude Code session)",
+      "summary": "Website chat becomes a saved conversation per visitor that staff can read and answer; bigger owner-notes box for pasted Facebook content",
+      "why": "The bubble was one question in, one answer out, with nothing saved and nothing for staff to see. The salon wants visitors to come back to their chat, the AI to keep answering, and staff to step in without the AI talking over them. New treatments and products should be paste-and-save, not code.",
+      "changes": [
+        "webchat.js (new): db.webchats, one conversation per visitor found by a random token (only its SHA-256 is stored). POST /api/assistant now takes just { message } and answers from the stored history; GET /api/assistant/conversation?after= for new messages. Reuses assistant.answer() (knowledge whitelist, spending cap, reservations), its per-IP/global question limits, JSON-only body reader and Telegram sender; adds a polling limit (900/hour per address).",
+        "Staff hand-off: a staff reply pauses the AI in that conversation for 2 hours (sliding); 'I'll answer' / 'hand back to AI' buttons; an AI reply that arrives after a staff answer is dropped (still charged); staff turns reach the model as developer notes ('Salon staff member <name> wrote…'), with a new rule not to contradict or impersonate them.",
+        "When the AI can't answer (paused, capped, unavailable, error) the question is kept, the visitor is told staff will reply here or to call, and staff get a Telegram ping without message text (once per conversation per 30 min, 10/hour).",
+        "Storage bounded: 90-day retention, 200 messages per conversation, ~2M characters overall (oldest conversations first). Owner can delete a conversation.",
+        "Админ → 💬 Чат lists website chats (🌐) with the app chats: unread count, 'waiting' tag, AI status, reply, take over / hand back, owner delete. Overview unread count includes website chats.",
+        "Widget: loads the saved conversation, polls every 8 s open / 60 s closed, unread badge for staff replies, labels 'AI туслах' and the staff member's name, 'staff are answering' line, 'New chat'; the note says the chat is saved and staff may reply. Signed-in visitors are linked to their account.",
+        "Owner notes: 3,000 → 12,000 characters, a large paste box with guidance; salon information cap 24 KB → 48 KB; the model follows OWNER NOTES where they disagree with older data.",
+        "Tests: shared helpers moved to test/helpers.js; test/webchat.test.js (14); assistant tests updated to the new contract."
+      ],
+      "data_impact": "New db.webchats (created on first use). The old browser-only chat history (sessionStorage) is dropped. No existing data changes.",
+      "files": [
+        "webchat.js",
+        "assistant.js",
+        "server.js",
+        "public/site.js",
+        "public/site.css",
+        "public/admin/admin.js",
+        "test/helpers.js",
+        "test/assistant.test.js",
+        "test/webchat.test.js",
+        "docs/ASSISTANT.md",
+        "log.json"
+      ],
+      "verified": [
+        "npm test: 66/66, three runs (14 new website-chat tests)",
+        "Playwright, mock mode: visitor on 390×844 asks, reloads (conversation kept); staff on 1280×860 open 🌐 chat, reply; the open widget shows 'Туяа · B's Gua Sha' within 8 s and 'staff are answering'; a message while paused gets 'staff will reply here'; badge 1 after a staff reply while closed, cleared on open; hand-back → AI answers again; English on desktop; admin chat on a phone; no console errors, no horizontal overflow"
+      ]
     }
   ]
 }
