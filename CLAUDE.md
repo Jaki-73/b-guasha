@@ -19,4 +19,5 @@ Live at **https://bguasha.com**, hosted on a Contabo VPS. Full details: `docs/HO
 - Never commit `.env`, `data/`, keys or passwords. Run `git status` before every commit.
 - Don't print the contents of `.env`, or app logs that contain the admin PIN, into chat. The app prints the PIN and super admin password at startup, so don't show `docker compose logs app` output unfiltered.
 - Deploy with: `git pull && docker compose up -d --build`
+- You are on the hosting VPS to deploy: once tests pass, merge to `main`, push, deploy and check the live site yourself. Hold back only when the owner says not to deploy for that specific task.
 - Record infrastructure changes in the "Server changelog" in `docs/HOSTING-GUIDE.md`.
