@@ -1,0 +1,9 @@
+.git
+.github
+.env
+data
+legacy
+docs
+test
+*.bat
+*-backup-*.json

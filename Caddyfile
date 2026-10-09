@@ -1,0 +1,15 @@
+# HTTPS certificates are issued automatically once DNS points at this server.
+bguasha.com {
+	encode gzip
+	reverse_proxy app:3000
+}
+
+www.bguasha.com {
+	redir https://bguasha.com{uri} permanent
+}
+
+# Plain-HTTP access by IP, for testing before DNS is switched.
+http://169.58.153.224 {
+	encode gzip
+	reverse_proxy app:3000
+}
