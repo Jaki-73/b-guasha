@@ -54,6 +54,7 @@ async function startFake() {
     req.on('end', async () => {
       const send = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
       if (req.url.startsWith('/bot')) {
+        if (state.telegramFails) return send(500, { ok: false });
         state.telegram.push({ url: req.url, body: JSON.parse(raw || '{}') });
         return send(200, { ok: true, result: {} });
       }
@@ -67,6 +68,9 @@ async function startFake() {
       if (mode === '401') return send(401, { error: { message: 'Incorrect API key provided: ' + KEY + '. You can find your API key at …', type: 'invalid_request_error', param: null, code: 'invalid_api_key' } });
       if (mode === 'quota') return send(429, { error: { message: 'You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota', param: null, code: 'insufficient_quota' } });
       if (mode === '500') return send(500, { error: { message: 'The server had an error while processing your request.', type: 'server_error', param: null, code: null } });
+      if (mode === 'rate') return send(429, { error: { message: 'Rate limit reached for requests', type: 'requests', param: null, code: 'rate_limit_exceeded' } });
+      if (mode === 'empty') return send(200, { id: 'resp_empty', object: 'response', status: 'completed', output: [], usage: state.usage });
+      if (mode === 'drop') { req.socket.destroy(); return; }
       if (mode === 'incomplete') {
         return send(200, { id: 'resp_inc', object: 'response', status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [], usage: state.usage });
       }
@@ -240,9 +244,19 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
       assert.equal(r.status, 403, m + ' ' + u + ' as staff: ' + r.text);
     }
     assert.equal(fake.state.requests.length, 0, 'staff ask must not reach the model');
-    assert.equal((await call('POST', '/api/admin/settings', su, { assistantMonthlyCapUsd: 0 })).status, 400);
-    assert.equal((await call('POST', '/api/admin/settings', su, { assistantMonthlyCapUsd: 101 })).status, 400);
-    assert.equal((await call('POST', '/api/admin/settings', su, { assistantNotes: 'x'.repeat(3001) })).status, 400);
+    for (const bad of [{ assistantMonthlyCapUsd: 0 }, { assistantMonthlyCapUsd: 0.004 }, { assistantMonthlyCapUsd: 101 }, { assistantMonthlyCapUsd: '3' },
+      { assistantNotes: 'x'.repeat(3001) }, { assistantNotes: 12345 }, { assistantEnabled: 'yes' }]) {
+      assert.equal((await call('POST', '/api/admin/settings', su, bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+    }
+    /* a save that fails validation changes nothing, not even the fields before the bad one */
+    assert.equal((await call('POST', '/api/admin/settings', su, { assistantEnabled: true, assistantMonthlyCapUsd: 0 })).status, 400);
+    assert.equal((await call('POST', '/api/admin/settings', su, { assistantMonthlyCapUsd: 77, assistantNotes: 'x'.repeat(3001) })).status, 400);
+    assert.equal((await call('POST', '/api/admin/settings', su, { hoursOpen: '09:00', assistantMonthlyCapUsd: -1 })).status, 400);
+    const unchanged = (await call('GET', '/api/admin/settings', su)).data;
+    assert.equal(unchanged.assistantEnabled, false);
+    assert.equal(unchanged.assistantMonthlyCapUsd, null);
+    assert.equal(unchanged.hoursOpen, '10:00');
+    assert.equal((await call('GET', '/api/config')).data.assistantEnabled, false);
     const ok = await call('POST', '/api/admin/settings', su, { assistantEnabled: true, assistantNotes: 'Free parking in front. MARKER_OWNER_NOTE_OK' });
     assert.equal(ok.status, 200, ok.text);
     const c = await call('GET', '/api/config');
@@ -250,7 +264,14 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
     assert.equal(c.data.assistantAvailable, true);
     const s = await call('GET', '/api/admin/settings', su);
     assert.equal(s.data.assistantEnabled, true);
-    assert.equal(s.data.assistantMonthlyCapUsd, 5);
+    assert.equal(s.data.assistantMonthlyCapUsd, null, 'no override until the owner sets one');
+    assert.equal(s.data.assistantMonthlyCapDefaultUsd, 5);
+    assert.equal((await call('GET', '/api/admin/assistant', su)).data.monthlyCapUsd, 5);
+    /* an override, then back to the config value */
+    assert.equal((await call('POST', '/api/admin/settings', su, { assistantMonthlyCapUsd: 4.5 })).status, 200);
+    assert.equal((await call('GET', '/api/admin/assistant', su)).data.monthlyCapUsd, 4.5);
+    assert.equal((await call('POST', '/api/admin/settings', su, { assistantMonthlyCapUsd: null })).status, 200);
+    assert.equal((await call('GET', '/api/admin/assistant', su)).data.monthlyCapUsd, 5);
   });
 
   test('the model sees only whitelisted salon data', async () => {
@@ -335,7 +356,9 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
       { message: 'hi', history: [{ role: 'user', content: 'x'.repeat(501) }] },
       { message: 'hi', history: [{ role: 'assistant', content: 'x'.repeat(2001) }] },
       { message: 'hi', history: Array.from({ length: 51 }, () => ({ role: 'user', content: 'x' })) },
-      { message: 'hi', history: [null] }
+      { message: 'hi', history: [null] },
+      { message: 'hi', extra: 1 },
+      { message: 'hi', history: [{ role: 'user', content: 'x', name: 'system' }] }
     ];
     for (const b of bad) {
       const r = await call('POST', '/api/assistant', null, b);
@@ -343,6 +366,9 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
     }
     assert.equal((await call('POST', '/api/assistant', null, '{"message":')).status, 400);
     assert.equal((await call('POST', '/api/assistant', null, { message: 'hi', pad: 'x'.repeat(70000) })).status, 413);
+    /* JSON only: a plain form or text/plain post from another site is refused */
+    assert.equal((await call('POST', '/api/assistant', null, { message: 'hi' }, { 'Content-Type': 'text/plain' })).status, 415);
+    assert.equal((await call('POST', '/api/assistant', null, 'message=hi', { 'Content-Type': 'application/x-www-form-urlencoded' })).status, 415);
     assert.equal(fake.state.requests.length, n);
     /* a long valid history is trimmed to historyTurns */
     const hist = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: 'turn ' + i }));
@@ -353,14 +379,19 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
     assert.equal(sentInput[0].content, 'turn 14');
   });
 
+  /* error alerts: at most one an hour overall, so only the first error here alerts
+     (the hourly reset is covered by a unit test at the end) */
   for (const c of [
-    { mode: '401', kind: 'auth', status: 401, code: 'invalid_api_key', charge: 'none' },
-    { mode: 'quota', kind: 'quota', status: 429, code: 'insufficient_quota', charge: 'none' },
-    { mode: '500', kind: 'server', status: 500, code: 'server_error', charge: 'reservation' },
-    { mode: 'timeout', kind: 'timeout', status: 0, code: 'timeout', charge: 'reservation' },
-    { mode: 'incomplete', kind: 'incomplete', status: 200, code: 'max_output_tokens', charge: 'usage' }
+    { mode: '401', kind: 'auth', status: 401, code: 'invalid_api_key', charge: 'none', alerts: 1 },
+    { mode: 'quota', kind: 'quota', status: 429, code: 'insufficient_quota', charge: 'none', alerts: 0 },
+    { mode: 'rate', kind: 'rate', status: 429, code: 'rate_limit_exceeded', charge: 'none', alerts: 0 },
+    { mode: '500', kind: 'server', status: 500, code: 'server_error', charge: 'reservation', alerts: 0 },
+    { mode: 'timeout', kind: 'timeout', status: 0, code: 'timeout', charge: 'reservation', alerts: 0 },
+    { mode: 'drop', kind: 'network', status: 0, code: 'network', charge: 'reservation', alerts: 0 },
+    { mode: 'incomplete', kind: 'incomplete', status: 200, code: 'max_output_tokens', charge: 'usage', alerts: 0 },
+    { mode: 'empty', kind: 'empty', status: 200, code: 'empty_output', charge: 'usage', alerts: 0 }
   ]) {
-    test('model error ' + c.mode + ' → friendly fallback, alert, lastError, correct charge', async () => {
+    test('model error ' + c.mode + ' → friendly fallback, lastError, correct charge' + (c.alerts ? ', one alert' : ', alert throttled'), async () => {
       fake.state.mode = c.mode;
       const tg0 = fake.state.telegram.length;
       const s0 = (await call('GET', '/api/admin/assistant', su)).data;
@@ -378,23 +409,31 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
       if (c.charge === 'none') assert.ok(near(delta, 0, 1e-9), 'released: ' + delta);
       if (c.charge === 'reservation') assert.ok(delta > 0 && delta <= worst, 'kept reservation: ' + delta);
       if (c.charge === 'usage') assert.ok(near(delta, 0.0022, 2e-6), 'billed usage: ' + delta);
-      assert.ok(await waitFor(() => fake.state.telegram.length === tg0 + 1), 'one alert for ' + c.kind);
-      const msg = fake.state.telegram[fake.state.telegram.length - 1];
-      assert.equal(msg.body.chat_id, TG_CHAT);
-      assert.ok(msg.url.includes(TG_TOKEN));
-      /* the same error again within the hour: no second alert */
+      if (c.alerts) {
+        assert.ok(await waitFor(() => fake.state.telegram.length === tg0 + 1), 'one alert for ' + c.kind);
+        const msg = fake.state.telegram[fake.state.telegram.length - 1];
+        assert.equal(msg.body.chat_id, TG_CHAT);
+        assert.ok(msg.url.includes(TG_TOKEN));
+        assert.match(msg.body.text, /401/);
+      }
+      /* the same or another error within the hour: no further alert */
       await call('POST', '/api/assistant', null, { message: 'again' });
       await sleep(150);
-      assert.equal(fake.state.telegram.length, tg0 + 1, 'error alerts at most once an hour per kind');
+      assert.equal(fake.state.telegram.length, tg0 + c.alerts, 'error alerts at most once an hour');
+      assert.equal((await call('GET', '/api/admin/assistant', su)).data.lastAlert.kind, 'error_auth');
       fake.state.mode = 'ok';
     });
   }
 
-  test('test alert button reaches Telegram', async () => {
+  test('test alert button reaches Telegram, and says so when it does not', async () => {
     const n = fake.state.telegram.length;
     const r = await call('POST', '/api/admin/assistant/test-alert', su, {});
     assert.deepEqual(r.data, { configured: true, sent: true });
     assert.equal(fake.state.telegram.length, n + 1);
+    fake.state.telegramFails = true;
+    const r2 = await call('POST', '/api/admin/assistant/test-alert', su, {});
+    fake.state.telegramFails = false;
+    assert.deepEqual(r2.data, { configured: true, sent: false });
   });
 
   test('switch off again → 403 and the widget flag is false', async () => {
@@ -560,6 +599,7 @@ describe('assistant: hard caps, alerts, restart, concurrency', () => {
       fake.state.mode = 'ok';
       fake.state.delayMs = 300;
       fake.state.usage = usageCosting(R * 0.99); /* real cost almost the full reservation */
+      const capAlerts0 = alerts(/Monthly cap reached/);
       const n0 = fake.state.requests.length;
       const res = await Promise.all(Array.from({ length: 12 }, () => call('POST', '/api/assistant', null, { message: Q })));
       fake.state.delayMs = 0;
@@ -569,6 +609,12 @@ describe('assistant: hard caps, alerts, restart, concurrency', () => {
       assert.ok(sentToModel <= Math.floor(capNow / R), sentToModel + ' calls for a cap of ' + capNow);
       const st = (await call('GET', '/api/admin/assistant', su)).data;
       assert.ok(st.monthUsd <= capNow + 1e-9, 'spent ' + st.monthUsd + ' > cap ' + capNow);
+      /* the refusals during the burst were caused by calls in flight, not by real spend */
+      await sleep(150);
+      assert.equal(alerts(/Monthly cap reached/), capAlerts0, 'no "cap reached" alert for a passing burst');
+      const after = await call('POST', '/api/assistant', null, { message: Q });
+      assert.equal(after.data.reason, 'capped');
+      assert.ok(await waitFor(() => alerts(/Monthly cap reached/) === capAlerts0 + 1), 'real cap → one alert');
     } finally { await stopServer(srv); }
   });
 });
@@ -666,5 +712,100 @@ describe('assistant: unit — client IP, UB month rollover', () => {
     const big = a.reserve(0.9, s);
     assert.ok(!big.refused);
     assert.equal(a.reserve(0.01, s).refused, 'month');
+  });
+
+  function unit(env, config, clockRef) {
+    const db = { faq: [], services: [], edu: [], settings: {} };
+    const quiet = { log() {}, warn() {}, error() {} };
+    const a = A.createAssistant({
+      getDb: () => db, saveDb: () => {}, cfg: () => config, walletOn: () => false, publicFaq: () => [],
+      json: () => {}, fail: () => {}, now: () => clockRef.t, env, log: quiet
+    });
+    return { a, db };
+  }
+  const baseCfg = () => ({ assistantEnabled: true, phoneDisplay: '+976 9111-3958', assistant: { model: 'm', priceUsdPerMTok: { ...PRICE }, monthlyCapUsd: 1, dailyCapUsd: 1, maxOutputTokens: 400, maxMessageChars: 500, historyTurns: 6 } });
+
+  test('a clock stepping back never reopens a used-up month or day', () => {
+    const clock = { t: Date.parse('2026-11-10T04:00:00Z') };
+    const { a } = unit({ ASSISTANT_MOCK: '1' }, baseCfg(), clock);
+    const s = a.settings();
+    assert.ok(!a.reserve(0.95, s).refused);
+    clock.t = Date.parse('2026-10-20T04:00:00Z'); /* back to October */
+    assert.equal(a.ledger().month, '2026-11');
+    assert.ok(a.ledger().monthUsd >= 0.95);
+    assert.equal(a.reserve(0.1, s).refused, 'month');
+    clock.t = Date.parse('2026-11-10T05:00:00Z'); /* forward again, same day */
+    assert.equal(a.reserve(0.1, s).refused, 'month', 'still blocked');
+  });
+
+  test('a corrupted ledger amount blocks instead of resetting to zero', () => {
+    const clock = { t: Date.parse('2026-11-10T04:00:00Z') };
+    const { a, db } = unit({ ASSISTANT_MOCK: '1' }, baseCfg(), clock);
+    a.ledger();
+    db.assistantUsage.monthUsd = null; /* what Infinity becomes in JSON */
+    assert.equal(a.reserve(0.01, a.settings()).refused, 'month');
+  });
+
+  test('cached input dearer than input, or a missing price, makes the assistant unavailable', () => {
+    const clock = { t: Date.now() };
+    for (const price of [{ input: 0.2, cachedInput: 0.5, output: 1 }, { input: 0.2, output: 1 }, { input: 0, cachedInput: 0, output: 1 }]) {
+      const cfg = baseCfg(); cfg.assistant.priceUsdPerMTok = price;
+      const { a } = unit({ ASSISTANT_MOCK: '1' }, cfg, clock);
+      assert.equal(a.status().unavailableReason, 'bad_prices', JSON.stringify(price));
+    }
+  });
+
+  test('error alerts: one an hour overall, then the next error alerts again', async () => {
+    const clock = { t: Date.parse('2026-11-10T04:00:00Z') };
+    /* a closed port: every call fails fast with a network error; no Telegram configured */
+    const { a, db } = unit({ OPENAI_API_KEY: 'k', OPENAI_BASE_URL: 'http://127.0.0.1:9' }, baseCfg(), clock);
+    const ask = () => a.answer({ message: 'hi', history: [] });
+    assert.equal((await ask()).reason, 'error');
+    const first = db.assistantUsage.lastAlert;
+    assert.equal(first.kind, 'error_network');
+    assert.equal(first.telegram, false);
+    clock.t += 30 * 60000;
+    await ask();
+    assert.equal(db.assistantUsage.lastAlert, first, 'no second alert within the hour');
+    clock.t += 31 * 60000;
+    await ask();
+    assert.notEqual(db.assistantUsage.lastAlert, first, 'alerts again after an hour');
+    /* a network error may have been billed: each kept its reservation */
+    assert.ok(db.assistantUsage.monthUsd > 0);
+  });
+
+  test('customer text is estimated at one token per byte, salon text at bytes ÷ 2', () => {
+    assert.equal(A.estimateInputTokens(['ab'.repeat(500)], []), 500 + 8 + 32);
+    assert.equal(A.estimateInputTokens([], ['ab'.repeat(500)]), 1000 + 8 + 32);
+    assert.equal(A.estimateInputTokens([], ['ө'.repeat(10)]), 20 + 8 + 32);
+  });
+});
+
+/* ========================================================================== */
+describe('assistant: config.json prices belong to the model', () => {
+  test('a model named without its prices is unavailable, not priced as nano', async () => {
+    const fake = await startFake();
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-ai-cfg-'));
+    let srv;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+      cfg.assistant = { model: 'some-expensive-model' };
+      const file = path.join(tmp, 'config.test.json');
+      fs.writeFileSync(file, JSON.stringify(cfg));
+      srv = await startServer(path.join(tmp, 'data'), file, fake.base, { OPENAI_API_KEY: KEY });
+      const call = api(srv.base);
+      const su = await adminLogin(call);
+      const st = (await call('GET', '/api/admin/assistant', su)).data;
+      assert.equal(st.model, 'some-expensive-model');
+      assert.equal(st.unavailableReason, 'bad_prices');
+      assert.equal((await call('POST', '/api/admin/settings', su, { assistantEnabled: true })).status, 200);
+      const r = await call('POST', '/api/assistant', null, { message: 'hi' });
+      assert.equal(r.data.reason, 'unavailable');
+      assert.equal(fake.state.requests.length, 0);
+    } finally {
+      await stopServer(srv);
+      await fake.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

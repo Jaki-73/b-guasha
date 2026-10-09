@@ -2363,7 +2363,8 @@
     bad_prices: 'config.json → assistant.priceUsdPerMTok буруу — зардлын хязгаар ажиллахгүй тул туслах зогссон.',
     bad_caps: 'Сар/өдрийн хязгаар 0-ээс их байх ёстой.'
   };
-  function usd(x, d) { return '$' + (Number(x) || 0).toFixed(d === undefined ? 2 : d); }
+  /* spend is often a fraction of a cent: three decimals below $10 */
+  function usd(x, d) { var n = Number(x) || 0; return '$' + n.toFixed(d === undefined ? (Math.abs(n) < 10 ? 3 : 2) : d); }
   /* spend, limits and health — re-rendered on its own after a test question */
   function aiStatusHtml(st) {
     var pct = st.monthlyCapUsd > 0 ? Math.min(100, Math.round(st.monthUsd / st.monthlyCapUsd * 100)) : 0;
@@ -2373,10 +2374,10 @@
     return (st.unavailableReason ? note('⚠️ ' + esc(AI_REASON[st.unavailableReason] || st.unavailableReason)) : '') +
       (st.mock ? note('🧪 Туршилтын горим (mock): жинхэнэ AI-д хандахгүй, бэлэн хариу өгнө.') : '') +
       (st.knowledgeTruncated || st.notesTruncated ? note('⚠️ Салоны мэдээлэл ' + Math.round(st.knowledgeLimitBytes / 1024) + ' KB-аас хэтэрсэн тул ' + (st.knowledgeTruncated ? 'төгсгөлийг' : 'тэмдэглэлийг') + ' таслав. Тэмдэглэлээ богиносгоно уу.') : '') +
-      '<div style="margin-bottom:6px"><b>Энэ сар: ' + usd(st.monthUsd) + ' / ' + usd(st.monthlyCapUsd) + '</b> <span class="muted small">(' + pct + '%)</span></div>' +
+      '<div style="margin-bottom:6px"><b>Энэ сар: ' + usd(st.monthUsd) + ' / ' + usd(st.monthlyCapUsd, 2) + '</b> <span class="muted small">(' + pct + '%)</span></div>' +
       '<div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-bottom:10px"><div style="height:100%;width:' + pct + '%;background:' + (pct >= 80 ? '#c0573e' : 'var(--brand)') + '"></div></div>' +
       '<table class="small" style="margin-bottom:12px">' +
-      row('Өнөөдөр', usd(st.dayUsd, 3) + ' / ' + usd(st.dailyCapUsd)) +
+      row('Өнөөдөр', usd(st.dayUsd) + ' / ' + usd(st.dailyCapUsd, 2)) +
       row('Асуулт', st.calls + ' энэ сар · ' + st.callsToday + ' өнөөдөр') +
       row('Загвар', esc(st.model) + (st.reasoningEffort ? ' · reasoning ' + esc(st.reasoningEffort) : '')) +
       row('Нэг асуултын дээд зардал', '≈ ' + usd(st.worstCaseUsdPerMessage, 4)) +
@@ -2400,8 +2401,10 @@
         '<input type="checkbox" id="aiOn"' + (s.assistantEnabled ? ' checked' : '') + ' style="margin-top:3px">' +
         '<span><b>Асаах — вэбсайт дээр чатын товч харагдана</b><br><span class="muted">Анхдагчаар унтраалттай.</span></span></label>' +
         '<div id="aiStatus">' + aiStatusHtml(st) + '</div>' +
-        '<div class="row"><div class="field grow"><label>Сарын дээд хязгаар (USD)</label><input type="number" id="aiCap" class="cell-input" min="0.1" max="100" step="0.5" value="' + esc(String(s.assistantMonthlyCapUsd)) + '"></div></div>' +
+        '<div class="row"><div class="field grow"><label>Сарын дээд хязгаар (USD)</label><input type="number" id="aiCap" class="cell-input" min="0.01" max="100" step="0.5" value="' + (s.assistantMonthlyCapUsd === null ? '' : esc(String(s.assistantMonthlyCapUsd))) + '" placeholder="' + esc(String(s.assistantMonthlyCapDefaultUsd)) + ' (config.json)">' +
+        '<span class="muted small">Хоосон орхивол config.json-ий утга (' + esc(usd(s.assistantMonthlyCapDefaultUsd, 2)) + ') үйлчилнэ.</span></div></div>' +
         '<div class="field"><label>Нэмэлт мэдээлэл туслахад (зогсоол, давхар, баярын цаг гэх мэт)</label>' +
+        '<span class="muted small" style="display:block;margin-bottom:4px">⚠️ Энд бичсэн бүхнийг үйлчлүүлэгч туслахаас асууж мэдэж болно — нууц зүйл бүү бич.</span>' +
         '<textarea id="aiNotes" class="cell-input" rows="4" maxlength="' + st.notesMaxChars + '" placeholder="Жишээ: Хас Мөнх төвийн урд талд үнэгүй зогсоол бий.">' + esc(s.assistantNotes || '') + '</textarea>' +
         '<span class="muted small" id="aiNotesN"></span></div>' +
         '<div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary" id="aiSave">Хадгалах</button>' +
@@ -2417,7 +2420,8 @@
       notes.oninput = count; count();
       document.getElementById('aiSave').onclick = function () {
         var on = document.getElementById('aiOn').checked;
-        var body = { assistantEnabled: on, assistantMonthlyCapUsd: Number(document.getElementById('aiCap').value), assistantNotes: notes.value };
+        var capRaw = document.getElementById('aiCap').value.trim();
+        var body = { assistantEnabled: on, assistantMonthlyCapUsd: capRaw === '' ? null : Number(capRaw), assistantNotes: notes.value };
         var go = (on && !s.assistantEnabled)
           ? confirmDlg('Анхаар: үйлчилгээ, үнэ, асуулт, бүтээгдэхүүний зарим мэдээлэл одоогоор жишээ (placeholder) хэвээр байна (docs/INFO-TO-FILL-IN.md). Туслах эдгээр үнийг үйлчлүүлэгчдэд яг тэр чигээр нь хэлнэ. Шалгасан бол асаах уу?')
           : Promise.resolve(true);
@@ -2426,7 +2430,7 @@
           api('/api/admin/settings', { method: 'POST', body: body })
             .then(function () { toast('Хадгалагдлаа ✓', 'ok'); loadAssistantCard(); })
             .catch(function (e) {
-              toast(e && e.error === 'bad_cap' ? 'Хязгаар 0.1–100 USD байх ёстой' : e && e.error === 'notes_too_long' ? 'Тэмдэглэл хэт урт байна' : 'Алдаа гарлаа', 'err');
+              toast(e && e.error === 'bad_cap' ? 'Хязгаар 0.01–100 USD байх ёстой' : e && e.error === 'notes_too_long' ? 'Тэмдэглэл хэт урт байна' : 'Алдаа гарлаа', 'err');
             });
         });
       };

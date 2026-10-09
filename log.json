@@ -439,6 +439,49 @@
         "Owner calendar shows 10:15, 12:30 and 13:00 starts and a 15:00–17:30 block; the owner blocks the other therapist's 14:00–14:30 from the calendar",
         "Reload keeps the login; manifest served as application/manifest+json"
       ]
+    },
+    {
+      "id": 18,
+      "date": "2026-10-09",
+      "author": "Claude (Claude Code session)",
+      "summary": "Customer assistant: an AI chat bubble on the website that answers FAQs from the salon's own data, with a hard spending cap (phase 1, mock mode, off by default)",
+      "why": "The salon answers the same questions (prices, hours, location, aftercare, men welcome?) over and over by phone. The bubble answers them at any hour and sends everything else to the phone. Two things matter more than features: it must never reveal private data and never cost more than the cap.",
+      "changes": [
+        "assistant.js (new, zero-dependency): buildKnowledge() is an explicit field whitelist built from the db at request time (salon info, active services, FAQ for the current wallet state, active products, owner notes), capped at 24 KB with owner notes truncated first. callModel() is the only OpenAI call (Responses API, store:false, 20 s timeout, no retries, mock mode with ASSISTANT_MOCK=1).",
+        "Budget: every call reserves its worst case (UTF-8 bytes ÷ 2 tokens + maxOutputTokens) in db.assistantUsage before calling, keyed by Ulaanbaatar month and day; the real cost replaces it afterwards; unknown outcomes keep the reservation; calls that would pass the daily or monthly cap are never made.",
+        "Abuse limits: 20 questions per IP per hour (X-Forwarded-For last entry, trusted only from the proxy; IPv6 by /64), 30 per minute overall, 64 KB body, strict message/history validation.",
+        "Telegram alerts at 80% and 100% of the monthly cap, the daily cap, and API errors (once an hour per kind). lastError keeps only status, code and time.",
+        "Website: chat bubble on / when enabled (MN/EN, AI note, call and book buttons always visible, replies via textContent, phone full screen following the visual viewport, sessionStorage history).",
+        "Админ → ⚙️ Тохиргоо → 🤖 Туслах (AI): switch (warns about placeholder data), monthly cap, notes, spend vs caps, model, key/mock/Telegram status, last error, test question, test alert. Owner and super admin only.",
+        "server.js: assistant config block (also in config.json, no secrets), publicFaq() shared by /api/public/faq and the assistant, POST /api/assistant, /api/admin/assistant*, settings fields, two booleans in /api/config.",
+        "scripts/assistant-eval.js + .json: ~45 questions through the real endpoint and budget, refuses over $0.20, report to data/eval/.",
+        "test/assistant.test.js: fake OpenAI/Telegram server; child env stripped of real keys. The scheduling tests strip them too.",
+        "After an independent review and a red-team run: owner settings now save all-or-nothing (a 400 used to keep the fields before the bad one — this also fixes the older settings fields); the cap field stores an override only when the owner types one; customer-sent text is reserved at one token per byte (true worst case); a price block without the model's prices, or cached input dearer than input, disables the assistant; ledger periods only move forward and a corrupt amount blocks instead of resetting; 'cap reached' alerts only for real spend, not calls in flight; one error alert an hour overall; failed Telegram sends are retried; JSON-only requests (415 otherwise); unknown fields rejected; slow request bodies cut off after 10 s."
+      ],
+      "data_impact": "New db.assistantUsage (ledger) and db.settings.assistantEnabled / assistantMonthlyCapUsd / assistantNotes, created on first use. Nothing existing changes. Off by default: the website is unchanged until the owner switches it on.",
+      "files": [
+        "assistant.js",
+        "server.js",
+        "config.json",
+        "public/site.js",
+        "public/site.css",
+        "public/admin/admin.js",
+        "test/assistant.test.js",
+        "test/scheduling.test.js",
+        "scripts/assistant-eval.js",
+        "scripts/assistant-eval.json",
+        "docs/ASSISTANT.md",
+        "docs/HOSTING-GUIDE.md",
+        "docs/INFO-TO-FILL-IN.md",
+        "README.md"
+      ],
+      "verified": [
+        "npm test: 51/51 pass (32 assistant tests, 19 existing), three runs",
+        "Planted markers (customer, staff, staff hours, booking, note, promo, review, message, block, gift card, transaction, other setting, qpay credentials, inactive service/FAQ/product, wallet-only FAQ, far closed date, admin PIN, passwords, API key, bot token) never reach the fake model",
+        "Independent review subagent (diff vs spec) and red-team subagent (mock server attacked with curl: oversized/malformed bodies, forged history, XFF spoofing, 25-way burst at the cap, staff toggling) — every confirmed finding fixed; the burst at a $0.01 cap answered exactly 4 and never passed the cap",
+        "Playwright 390×844 and 1280×860, MN and EN, mock mode: no console errors, no horizontal overflow, sending disabled while pending, markup in replies shown as text, input visible with a 420 px viewport, bubble sits above the phone call/book bar; admin card as owner on phone and desktop",
+        "text/plain post → 415; a body dribbled 1 byte/s is cut off after 10 s"
+      ]
     }
   ]
 }

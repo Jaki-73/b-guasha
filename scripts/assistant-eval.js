@@ -101,7 +101,7 @@ function check(q, reply) {
     /* worst case, the same way the server reserves: prompt + date line + question */
     const prompt = 'x'.repeat(st.promptBytes);
     const dateLine = 'Current date and time in Ulaanbaatar: Wednesday 2026-10-07 12:00.';
-    const estimate = qs.reduce((sum, q) => sum + reservationUsd(estimateInputTokens([prompt, dateLine, q.q]), st.maxOutputTokens, st.price), 0);
+    const estimate = qs.reduce((sum, q) => sum + reservationUsd(estimateInputTokens([prompt, dateLine], [q.q]), st.maxOutputTokens, st.price), 0);
     console.log(qs.length + ' questions · worst-case estimate $' + estimate.toFixed(4) + ' (limit $' + maxUsd.toFixed(2) + ')');
     if (estimate > maxUsd) {
       console.error('Refusing to run: the estimate is over $' + maxUsd.toFixed(2) + '. Pick fewer questions with --only.');

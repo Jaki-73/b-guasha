@@ -26,19 +26,28 @@ const NOTES_MAX_CHARS = 3000;             /* owner's free-text notes (Админ
 const BODY_MAX_BYTES = 64 * 1024;         /* request body of POST /api/assistant */
 const HISTORY_MAX_ITEMS = 50;             /* more than this is rejected; fewer are trimmed to historyTurns */
 const HISTORY_ITEM_MAX_CHARS = 2000;      /* a model reply is at most ~maxOutputTokens long */
+const BODY_TIMEOUT_MS = 10000;            /* the whole request body must arrive within this */
 const TIMEOUT_MS = Number(process.env.ASSISTANT_TIMEOUT_MS) || 20000; /* env override is for tests */
 const ERROR_ALERT_EVERY_MS = 3600000;     /* one Telegram alert per error kind per hour */
 const MONTHS_KEPT = 12;                   /* spend history shown to the owner */
 
-/* Worst-case token estimate: UTF-8 bytes ÷ 2. Cyrillic is 2 bytes a character, so this
-   assumes one token per Cyrillic character and one per two ASCII characters — both well
-   above what the tokenizer really produces. Plus a little per message for the framing. */
+/* Worst-case token estimate. Text the salon controls (instructions, salon information,
+   the date line) counts as UTF-8 bytes ÷ 2: Cyrillic is 2 bytes a character, so that is
+   one token per Cyrillic character and one per two ASCII characters, both well above what
+   the tokenizer produces for normal text. Text the customer controls (the question and
+   the history the browser sends) counts as one token per byte, the true worst case for a
+   byte-level tokenizer, so crafted input cannot cost more than its reservation.
+   Plus a little per message for the framing. */
 const TOKENS_PER_MESSAGE = 8;
 const TOKENS_FIXED = 32;
-function estimateInputTokens(texts) {
-  let bytes = 0;
-  for (const t of texts) bytes += Buffer.byteLength(String(t || ''), 'utf8');
-  return Math.ceil(bytes / 2) + TOKENS_PER_MESSAGE * texts.length + TOKENS_FIXED;
+const MAX_USAGE_TOKENS = 10000000; /* larger usage figures are clamped, so a cost is always finite */
+function utf8Bytes(t) { return Buffer.byteLength(String(t == null ? '' : t), 'utf8'); }
+function estimateInputTokens(fixedTexts, clientTexts) {
+  const client = clientTexts || [];
+  let fixed = 0, cust = 0;
+  for (const t of fixedTexts) fixed += utf8Bytes(t);
+  for (const t of client) cust += utf8Bytes(t);
+  return Math.ceil(fixed / 2) + cust + TOKENS_PER_MESSAGE * (fixedTexts.length + client.length) + TOKENS_FIXED;
 }
 function costUsd(usage, price) {
   const input = Math.max(0, usage.inputTokens || 0);
@@ -126,7 +135,8 @@ function createAssistant(deps) {
   function configProblem(s) {
     if (!s.model) return 'no_model';
     const p = s.price;
-    if (!(p.input > 0) || !(p.output > 0) || !(p.cachedInput >= 0)) return 'bad_prices';
+    /* the reservation prices every input token at the full input rate */
+    if (!(p.input > 0) || !(p.output > 0) || !(p.cachedInput >= 0) || p.cachedInput > p.input) return 'bad_prices';
     if (!(s.monthlyCapUsd > 0) || !(s.dailyCapUsd > 0)) return 'bad_caps';
     return null;
   }
@@ -236,10 +246,11 @@ function createAssistant(deps) {
   function baseUrl() { return String(env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, ''); }
   function parseUsage(u) {
     if (!u || typeof u !== 'object') return null;
+    const clamp = (n) => Math.min(MAX_USAGE_TOKENS, Math.max(0, n));
     const inputTokens = Number(u.input_tokens), outputTokens = Number(u.output_tokens);
     if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens)) return null;
     const cached = Number(u.input_tokens_details && u.input_tokens_details.cached_tokens);
-    return { inputTokens, cachedTokens: Number.isFinite(cached) ? cached : 0, outputTokens };
+    return { inputTokens: clamp(inputTokens), cachedTokens: Number.isFinite(cached) ? clamp(cached) : 0, outputTokens: clamp(outputTokens) };
   }
   function outputText(data) {
     if (!data || !Array.isArray(data.output)) return '';
@@ -265,7 +276,7 @@ function createAssistant(deps) {
       /* canned reply with realistic usage numbers; no network */
       await new Promise((r) => setTimeout(r, 150));
       const last = input.length ? String(input[input.length - 1].content || '') : '';
-      const est = estimateInputTokens([instructions, ...input.map((m) => m.content)]);
+      const est = estimateInputTokens([instructions], input.map((m) => m.content));
       const inputTokens = Math.ceil(est * 0.6);
       const cachedTokens = mockCalls++ > 0 ? Math.floor(inputTokens * 0.85) : 0;
       const c = cfg();
@@ -312,38 +323,50 @@ function createAssistant(deps) {
   }
 
   /* ---------- ledger: survives restarts and deploys (it lives in db.json) ---------- */
-  let pendingMonth = { key: '', usd: 0 }; /* reservations in flight, so thresholds use real spend */
+  /* reservations still in flight, per period, so refusals and alerts can tell real spend from pending */
+  const pending = { month: { key: '', usd: 0 }, day: { key: '', usd: 0 } };
+  function addPending(p, key, usd) { if (p.key !== key) { p.key = key; p.usd = 0; } p.usd += usd; }
+  function subPending(p, key, usd) { if (p.key === key) p.usd = Math.max(0, p.usd - usd); }
+  function pendingOf(p, key) { return p.key === key ? p.usd : 0; }
+  const BLOCKED_USD = 1e6; /* a corrupted amount blocks the period instead of resetting it */
   function ledger() {
     const db = getDb();
     const t = ubParts(now());
     let L = db.assistantUsage;
     if (!L || typeof L !== 'object') {
-      L = db.assistantUsage = { month: t.month, day: t.day, monthUsd: 0, dayUsd: 0, calls: 0, callsToday: 0, alerted: {}, errorAlertAt: {}, history: {}, lastError: null, lastAlert: null };
+      L = db.assistantUsage = { month: t.month, day: t.day, monthUsd: 0, dayUsd: 0, calls: 0, callsToday: 0, alerted: {}, lastErrorAlertAt: 0, history: {}, lastError: null, lastAlert: null };
     }
     if (!L.alerted || typeof L.alerted !== 'object') L.alerted = {};
-    if (!L.errorAlertAt || typeof L.errorAlertAt !== 'object') L.errorAlertAt = {};
     if (!L.history || typeof L.history !== 'object') L.history = {};
-    if (!Number.isFinite(L.monthUsd) || L.monthUsd < 0) L.monthUsd = 0;
-    if (!Number.isFinite(L.dayUsd) || L.dayUsd < 0) L.dayUsd = 0;
-    if (L.month !== t.month) {
-      if (L.month) L.history[L.month] = { usd: round6(L.monthUsd), calls: L.calls || 0 };
+    for (const k of ['monthUsd', 'dayUsd']) {
+      if (L[k] === undefined) L[k] = 0;
+      else if (typeof L[k] !== 'number' || !Number.isFinite(L[k])) {
+        log.warn('assistant: spending ledger value ' + k + ' is invalid — blocking the assistant until the period ends');
+        L[k] = BLOCKED_USD;
+      } else if (L[k] < 0) L[k] = 0;
+    }
+    /* periods only move forward: a clock stepping back never reopens a used-up month */
+    if (!/^\d{4}-\d{2}$/.test(L.month || '') || t.month > L.month) {
+      if (/^\d{4}-\d{2}$/.test(L.month || '')) L.history[L.month] = { usd: round6(L.monthUsd), calls: L.calls || 0 };
       const keep = Object.keys(L.history).sort().slice(-MONTHS_KEPT);
       L.history = Object.fromEntries(keep.map((k) => [k, L.history[k]]));
       L.month = t.month; L.monthUsd = 0; L.calls = 0;
     }
-    if (L.day !== t.day) { L.day = t.day; L.dayUsd = 0; L.callsToday = 0; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(L.day || '') || t.day > L.day) { L.day = t.day; L.dayUsd = 0; L.callsToday = 0; }
     return L;
   }
   function round6(x) { return Math.round(x * 1e6) / 1e6; }
   /* Synchronous check-and-charge: Node runs this without interruption, so parallel
-     requests cannot both see the same headroom. */
+     requests cannot both see the same headroom. A refusal says whether real spend has
+     reached the cap ("real") or only reservations still in flight fill it. */
   function reserve(usd, s) {
     const L = ledger();
-    if (L.monthUsd + usd > s.monthlyCapUsd) return { refused: 'month' };
-    if (L.dayUsd + usd > s.dailyCapUsd) return { refused: 'day' };
+    if (!(usd >= 0) || !Number.isFinite(usd)) return { refused: 'month', real: false };
+    if (L.monthUsd + usd > s.monthlyCapUsd) return { refused: 'month', real: L.monthUsd - pendingOf(pending.month, L.month) + usd > s.monthlyCapUsd };
+    if (L.dayUsd + usd > s.dailyCapUsd) return { refused: 'day', real: L.dayUsd - pendingOf(pending.day, L.day) + usd > s.dailyCapUsd };
     L.monthUsd += usd; L.dayUsd += usd; L.calls = (L.calls || 0) + 1; L.callsToday = (L.callsToday || 0) + 1;
-    if (pendingMonth.key !== L.month) pendingMonth = { key: L.month, usd: 0 };
-    pendingMonth.usd += usd;
+    addPending(pending.month, L.month, usd);
+    addPending(pending.day, L.day, usd);
     saveDb(); /* before the call: a crash mid-call leaves the reservation charged */
     return { usd, month: L.month, day: L.day };
   }
@@ -357,10 +380,12 @@ function createAssistant(deps) {
     else if (delta > 0) L.monthUsd += delta;
     if (L.day === res.day) L.dayUsd = Math.max(0, L.dayUsd + delta);
     else if (delta > 0) L.dayUsd += delta;
-    if (pendingMonth.key === res.month) pendingMonth.usd = Math.max(0, pendingMonth.usd - res.usd);
+    subPending(pending.month, res.month, res.usd);
+    subPending(pending.day, res.day, res.usd);
     saveDb();
   }
-  function spentThisMonth(L) { return Math.max(0, L.monthUsd - (pendingMonth.key === L.month ? pendingMonth.usd : 0)); }
+  function spentThisMonth(L) { return Math.max(0, L.monthUsd - pendingOf(pending.month, L.month)); }
+  function spentToday(L) { return Math.max(0, L.dayUsd - pendingOf(pending.day, L.day)); }
 
   /* ---------- Telegram alerts ---------- */
   let warnedNoTelegram = false;
@@ -388,34 +413,49 @@ function createAssistant(deps) {
       return false;
     } finally { clearTimeout(timer); }
   }
-  function alert(kind, text) {
+  /* lastAlert shows in the admin card whether Telegram is set up and whether the message
+     arrived. If a configured send fails, undo() clears the "already sent" mark so the next
+     check tries again. */
+  function alert(kind, text, undo) {
     const L = ledger();
-    L.lastAlert = { kind, at: new Date(now()).toISOString(), telegram: telegramConfigured() };
+    const configured = telegramConfigured();
+    const rec = { kind, at: new Date(now()).toISOString(), telegram: configured, delivered: configured ? null : false };
+    L.lastAlert = rec;
     saveDb();
-    sendTelegram("B's Gua Sha AI туслах: " + text).catch(() => {});
+    sendTelegram("B's Gua Sha AI туслах: " + text).then((ok) => {
+      rec.delivered = ok;
+      if (!ok && configured && undo) undo();
+      saveDb();
+    }).catch(() => {});
   }
   function money(x) { return '$' + (Math.round(x * 100) / 100).toFixed(2); }
+  const CAP_TEXT = (spent, cap) => 'сарын дээд хязгаарт хүрлээ (' + money(spent) + ' / ' + money(cap) + ') — туслах зогсож, "утсаар залгана уу" гэж харуулна. / Monthly cap reached: the assistant is paused until next month.';
+  function unmark(key, period) { return () => { const L = getDb().assistantUsage; if (L && L.alerted && L.alerted[key] === period) delete L.alerted[key]; }; }
   function checkThresholds(s) {
     const L = ledger();
     const spent = spentThisMonth(L);
     if (spent >= 0.8 * s.monthlyCapUsd && L.alerted.m80 !== L.month) {
       L.alerted.m80 = L.month;
-      alert('month_80', 'энэ сарын зардал 80%-д хүрлээ (' + money(spent) + ' / ' + money(s.monthlyCapUsd) + '). / Monthly spend reached 80%.');
+      alert('month_80', 'энэ сарын зардал 80%-д хүрлээ (' + money(spent) + ' / ' + money(s.monthlyCapUsd) + '). / Monthly spend reached 80%.', unmark('m80', L.month));
     }
     if (spent >= s.monthlyCapUsd && L.alerted.m100 !== L.month) {
       L.alerted.m100 = L.month;
-      alert('month_100', 'сарын дээд хязгаарт хүрлээ (' + money(spent) + ' / ' + money(s.monthlyCapUsd) + ') — туслах зогсож, "утсаар залгана уу" гэж харуулна. / Monthly cap reached: the assistant is paused.');
+      alert('month_100', CAP_TEXT(spent, s.monthlyCapUsd), unmark('m100', L.month));
     }
   }
-  function capRefused(which, s) {
+  /* Only a refusal caused by real spend means the cap is reached; one caused by calls
+     still in flight passes in a moment and sends nothing. */
+  function capRefused(res, s) {
+    if (!res.real) return;
     const L = ledger();
-    if (which === 'month' && L.alerted.m100 !== L.month) {
-      L.alerted.m100 = L.month; L.alerted.m80 = L.month;
-      alert('month_100', 'сарын дээд хязгаарт хүрлээ (' + money(spentThisMonth(L)) + ' / ' + money(s.monthlyCapUsd) + ') — туслах зогсож, "утсаар залгана уу" гэж харуулна. / Monthly cap reached: the assistant is paused.');
+    if (res.refused === 'month' && L.alerted.m100 !== L.month) {
+      L.alerted.m100 = L.month;
+      if (L.alerted.m80 !== L.month) L.alerted.m80 = L.month; /* 100% supersedes 80% */
+      alert('month_100', CAP_TEXT(spentThisMonth(L), s.monthlyCapUsd), unmark('m100', L.month));
     }
-    if (which === 'day' && L.alerted.day !== L.day) {
+    if (res.refused === 'day' && L.alerted.day !== L.day) {
       L.alerted.day = L.day;
-      alert('day_cap', 'өнөөдрийн дээд хязгаарт хүрлээ (' + money(L.dayUsd) + ' / ' + money(s.dailyCapUsd) + ') — маргааш дахин ажиллана. / Daily cap reached: paused until tomorrow.');
+      alert('day_cap', 'өнөөдрийн дээд хязгаарт хүрлээ (' + money(spentToday(L)) + ' / ' + money(s.dailyCapUsd) + ') — маргааш дахин ажиллана. / Daily cap reached: paused until tomorrow.', unmark('day', L.day));
     }
   }
   const ERROR_TEXT = {
@@ -429,13 +469,16 @@ function createAssistant(deps) {
     empty: 'Хоосон хариулт ирлээ. / The reply was empty.',
     request: 'OpenAI хүсэлтийг хүлээж авсангүй (4xx) — загварын нэр эсвэл тохиргоог шалгана уу. / The request was rejected; check the model settings.'
   };
+  /* Error alerts: at most one an hour, whatever the error. The admin card always shows the
+     latest error, and the next alert after the hour names whatever is failing then. */
   function recordError(err) {
     const L = ledger();
     L.lastError = { status: err.httpStatus || 0, code: safeCode(err.code) || err.kind, at: new Date(now()).toISOString() };
-    const last = Number(L.errorAlertAt[err.kind]) || 0;
-    if (now() - last >= ERROR_ALERT_EVERY_MS) {
-      L.errorAlertAt[err.kind] = now();
-      alert('error_' + err.kind, (ERROR_TEXT[err.kind] || 'алдаа / error') + ' [' + (err.httpStatus || '-') + ' ' + (safeCode(err.code) || err.kind) + ']');
+    const prev = Number(L.lastErrorAlertAt) || 0;
+    if (now() - prev >= ERROR_ALERT_EVERY_MS) {
+      L.lastErrorAlertAt = now();
+      alert('error_' + err.kind, (ERROR_TEXT[err.kind] || 'алдаа / error') + ' [' + (err.httpStatus || '-') + ' ' + (safeCode(err.code) || err.kind) + ']',
+        () => { const L2 = getDb().assistantUsage; if (L2) L2.lastErrorAlertAt = prev; });
     } else saveDb();
     log.warn('assistant: model call failed (' + err.kind + ', HTTP ' + (err.httpStatus || '-') + ')');
   }
@@ -453,12 +496,11 @@ function createAssistant(deps) {
     const sp = systemPrompt();
     const input = history.map((h) => ({ role: h.role, content: h.content }))
       .concat([{ role: 'developer', content: dateLine() }, { role: 'user', content: message }]);
-    const estTokens = estimateInputTokens([sp.instructions, ...input.map((m) => m.content)]);
+    const estTokens = estimateInputTokens([sp.instructions, input[input.length - 2].content], history.map((h) => h.content).concat([message]));
     const resUsd = reservationUsd(estTokens, s.maxOutputTokens, s.price);
     const res = reserve(resUsd, s);
     if (res.refused) {
-      capRefused(res.refused, s);
-      saveDb();
+      capRefused(res, s);
       return { reply: fallbackText(), fallback: true, reason: 'capped', detail: res.refused };
     }
     let out;
@@ -513,6 +555,9 @@ function createAssistant(deps) {
     return new Promise((resolve, reject) => {
       let size = 0, done = false;
       const chunks = [];
+      /* a body dribbled in slowly is cut off instead of holding the connection for minutes */
+      const timer = setTimeout(() => { if (!done) { done = true; reject(new Error('slow_body')); req.destroy(); } }, BODY_TIMEOUT_MS);
+      req.on('close', () => clearTimeout(timer));
       req.on('data', (c) => {
         if (done) return;
         size += c.length;
@@ -520,6 +565,7 @@ function createAssistant(deps) {
         chunks.push(c);
       });
       req.on('end', () => {
+        clearTimeout(timer);
         if (done) return;
         done = true;
         const buf = Buffer.concat(chunks);
@@ -529,10 +575,12 @@ function createAssistant(deps) {
       req.on('error', (e) => { if (!done) { done = true; reject(e); } });
     });
   }
+  function isJson(req) { return /^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] || '')); }
   function chars(s) { return Array.from(s).length; }
   function clean(s) { return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim(); }
   function validate(b, s) {
     if (!b || typeof b !== 'object' || Array.isArray(b)) return { error: 'bad_request' };
+    if (Object.keys(b).some((k) => k !== 'message' && k !== 'history')) return { error: 'bad_request' };
     if (typeof b.message !== 'string') return { error: 'bad_message' };
     const message = clean(b.message);
     if (!message || chars(message) > s.maxMessageChars) return { error: 'bad_message' };
@@ -541,6 +589,7 @@ function createAssistant(deps) {
       if (!Array.isArray(b.history) || b.history.length > HISTORY_MAX_ITEMS) return { error: 'bad_history' };
       for (const h of b.history) {
         if (!h || typeof h !== 'object' || Array.isArray(h)) return { error: 'bad_history' };
+        if (Object.keys(h).some((k) => k !== 'role' && k !== 'content')) return { error: 'bad_history' };
         if (h.role !== 'user' && h.role !== 'assistant') return { error: 'bad_history' };
         if (typeof h.content !== 'string') return { error: 'bad_history' };
         const content = clean(h.content);
@@ -557,11 +606,15 @@ function createAssistant(deps) {
   async function handlePublic(req, res, ip) {
     const s = settings();
     if (!s.enabled) return fail(res, 403, 'assistant_off');
+    /* JSON only: another website can't make its visitors' browsers send application/json
+       here without a CORS preflight, and the preflight is refused */
+    if (!isJson(req)) return fail(res, 415, 'json_only');
     const rl = rateLimit(ip, s);
     if (rl) return fail(res, 429, rl);
     let body;
     try { body = await readSmallJson(req); } catch (e) {
       if (e.message === 'too_large') return fail(res, 413, 'too_large');
+      if (e.message === 'slow_body') return;
       return fail(res, 400, 'bad_json');
     }
     const v = validate(body, s);
@@ -576,7 +629,7 @@ function createAssistant(deps) {
     const s = settings();
     const L = ledger();
     const sp = systemPrompt();
-    const est = estimateInputTokens([sp.instructions, dateLine(), 'x'.repeat(100)]);
+    const est = estimateInputTokens([sp.instructions, dateLine()], ['x'.repeat(100)]);
     return {
       enabled: s.enabled,
       available: s.enabled && !unavailableReason(s),
@@ -585,7 +638,7 @@ function createAssistant(deps) {
       price: s.price,
       mock: mockMode(), keyPresent: !!apiKey(), telegramConfigured: telegramConfigured(),
       month: L.month, day: L.day,
-      monthUsd: round6(spentThisMonth(L)), dayUsd: round6(L.dayUsd),
+      monthUsd: round6(spentThisMonth(L)), dayUsd: round6(spentToday(L)),
       monthlyCapUsd: s.monthlyCapUsd, configMonthlyCapUsd: s.configMonthlyCapUsd, dailyCapUsd: s.dailyCapUsd,
       calls: L.calls || 0, callsToday: L.callsToday || 0,
       lastError: L.lastError || null, lastAlert: L.lastAlert || null,
@@ -605,11 +658,13 @@ function createAssistant(deps) {
       /* the owner's "Туршиж асуух" box and the eval script: works while the switch is
          off (to try it first), same budget and caps, global limit but no per-IP limit */
       const s = settings();
+      if (!isJson(req)) return fail(res, 415, 'json_only');
       const rl = rateLimit('owner', s, { skipIp: true });
       if (rl) return fail(res, 429, rl);
       let body;
       try { body = await readSmallJson(req); } catch (e) {
         if (e.message === 'too_large') return fail(res, 413, 'too_large');
+        if (e.message === 'slow_body') return;
         return fail(res, 400, 'bad_json');
       }
       const v = validate(body, s);
@@ -631,7 +686,7 @@ function createAssistant(deps) {
     if (!s.enabled) return { assistantEnabled: false, assistantAvailable: false };
     if (unavailableReason(s)) return { assistantEnabled: true, assistantAvailable: false };
     const L = ledger();
-    const est = estimateInputTokens([systemPrompt().instructions, dateLine(), 'x'.repeat(100)]);
+    const est = estimateInputTokens([systemPrompt().instructions, dateLine()], ['x'.repeat(100)]);
     const r = reservationUsd(est, s.maxOutputTokens, s.price);
     const fits = L.monthUsd + r <= s.monthlyCapUsd && L.dayUsd + r <= s.dailyCapUsd;
     return { assistantEnabled: true, assistantAvailable: fits };

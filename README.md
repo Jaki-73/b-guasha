@@ -163,4 +163,5 @@ Payments run in **demo mode** (`"paymentsDemo": true` in config.json): the QR is
 - **docs/INFO-TO-FILL-IN.md** — what to replace before going live (prices, staff, passwords)
 - **docs/PUBLISHING-AND-COSTS.md** — hosting, domain, app stores, costs
 - **docs/PAYMENTS-QPAY.md** — getting real QPay payments
+- **docs/ASSISTANT.md** — the AI chat bubble: how it works, the spending cap, changing the model, the eval
 - **docs/NAMES-AND-IDEAS.md** — future feature ideas & roadmap

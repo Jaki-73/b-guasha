@@ -82,10 +82,18 @@ try {
 } catch (e) {
   console.warn('config.json missing or invalid — using defaults');
 }
-/* a partial "assistant" block in config.json keeps the defaults for what it leaves out */
+/* A partial "assistant" block in config.json keeps the defaults for what it leaves out,
+   except the prices: they belong to the model. A block that names a model or touches the
+   prices must give all three, or the assistant stays unavailable (wrong prices = wrong cap). */
 {
   const a = config.assistant && typeof config.assistant === 'object' ? config.assistant : {};
-  config.assistant = { ...DEFAULT_CONFIG.assistant, ...a, priceUsdPerMTok: { ...DEFAULT_CONFIG.assistant.priceUsdPerMTok, ...(a.priceUsdPerMTok || {}) } };
+  const p = a.priceUsdPerMTok;
+  const complete = p && typeof p === 'object' && ['input', 'cachedInput', 'output'].every((k) => typeof p[k] === 'number');
+  const price = complete ? { input: p.input, cachedInput: p.cachedInput, output: p.output }
+    : (a.model === undefined && p === undefined) ? { ...DEFAULT_CONFIG.assistant.priceUsdPerMTok }
+    : { input: NaN, cachedInput: NaN, output: NaN };
+  if (!complete && !(a.model === undefined && p === undefined)) console.warn('config.json: assistant.priceUsdPerMTok must list input, cachedInput and output for the model — the assistant is unavailable until it does');
+  config.assistant = { ...DEFAULT_CONFIG.assistant, ...a, priceUsdPerMTok: price };
 }
 /* config.json is in git, so its PIN is public; on a host set ADMIN_PIN instead */
 if (process.env.ADMIN_PIN) config.adminPin = String(process.env.ADMIN_PIN);
@@ -2472,14 +2480,16 @@ async function handleApi(req, res, pathname, q) {
         canToggleFeatures: isSuper,
         contact: Object.fromEntries(CONTACT_FIELDS.map((k) => [k, c[k] || ''])),
         assistantEnabled: c.assistantEnabled === true,
-        assistantMonthlyCapUsd: assistant.settings().monthlyCapUsd,
+        assistantMonthlyCapUsd: typeof db.settings.assistantMonthlyCapUsd === 'number' ? db.settings.assistantMonthlyCapUsd : null,
+        assistantMonthlyCapDefaultUsd: config.assistant.monthlyCapUsd,
         assistantNotes: c.assistantNotes || ''
       });
     }
     if (route === 'POST /api/admin/settings') {
       if (!isOwner) return ownerOnly();
       const b = await readJson(req);
-      const s = db.settings;
+      /* work on a copy: a request that fails validation half-way changes nothing */
+      const s = { ...db.settings };
       if (b.hoursOpen !== undefined) { if (!TIME_RE.test(b.hoursOpen)) return fail(res, 400, 'bad_request'); s.hoursOpen = b.hoursOpen; }
       if (b.hoursClose !== undefined) { if (!TIME_RE.test(b.hoursClose)) return fail(res, 400, 'bad_request'); s.hoursClose = b.hoursClose; }
       const effOpen = s.hoursOpen || c.hoursOpen, effClose = s.hoursClose || c.hoursClose;
@@ -2508,21 +2518,26 @@ async function handleApi(req, res, pathname, q) {
           s[k] = v;
         }
       }
-      /* customer assistant: switch, monthly cap (USD) and free-text notes for the model */
-      if (b.assistantEnabled !== undefined) s.assistantEnabled = b.assistantEnabled === true;
+      /* customer assistant: switch, monthly cap (USD; null = use config.json) and notes */
+      if (b.assistantEnabled !== undefined) {
+        if (typeof b.assistantEnabled !== 'boolean') return fail(res, 400, 'bad_request');
+        s.assistantEnabled = b.assistantEnabled;
+      }
       if (b.assistantMonthlyCapUsd !== undefined) {
         if (b.assistantMonthlyCapUsd === null) delete s.assistantMonthlyCapUsd;
         else {
-          const v = Number(b.assistantMonthlyCapUsd);
-          if (!Number.isFinite(v) || v <= 0 || v > 100) return fail(res, 400, 'bad_cap');
-          s.assistantMonthlyCapUsd = Math.round(v * 100) / 100;
+          const v = typeof b.assistantMonthlyCapUsd === 'number' ? Math.round(b.assistantMonthlyCapUsd * 100) / 100 : NaN;
+          if (!Number.isFinite(v) || v < 0.01 || v > 100) return fail(res, 400, 'bad_cap');
+          s.assistantMonthlyCapUsd = v;
         }
       }
       if (b.assistantNotes !== undefined) {
-        const v = String(b.assistantNotes || '').trim();
+        if (typeof b.assistantNotes !== 'string') return fail(res, 400, 'bad_request');
+        const v = b.assistantNotes.trim();
         if (v.length > ASSISTANT_NOTES_MAX) return fail(res, 400, 'notes_too_long');
         s.assistantNotes = v;
       }
+      db.settings = s;
       saveDb();
       return json(res, 200, { ok: true });
     }

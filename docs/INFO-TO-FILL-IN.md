@@ -33,6 +33,8 @@ Also from the page (added in September 2026):
 11. **FAQ policies** — Админ → ❓ Асуулт. The answers are written as sensible defaults; check the ones that state salon policy (who shouldn't be treated, payment, cancellation, aftercare) and change anything that doesn't match how you work.
 12. **Machines (PLACEHOLDER)** — `config.json` → `"machines"` ships with two made-up entries (a HIFU and two steamers) so the scheduling can be tried out. Replace them with the machines the salon really has — a short `id`, the name staff will see, how many of each (`units`) and any cleaning time after each use (`bufferMinutes`) — and delete `"placeholder": true`. Then, for every service that uses a machine: Админ → 🌿 Үйлчилгээ → 🔧 Машин → which machine, from which minute, for how long. Until this is done the owner sees a warning, and no booking is checked against a machine it doesn't know it uses.
 
+13. **AI chat bubble (off until you turn it on)** — it quotes services, prices, FAQ and products exactly, so fix items 5, 9 and 11 first. Then: add parking/floor/holiday notes in Админ → Тохиргоо → 🤖 Туслах (AI); replace the five made-up Latin-letter examples in `assistant.js` with real spellings from the salon's Facebook messages; try questions in the "Туршиж асуух" box; tick Асаах. See docs/ASSISTANT.md.
+
 ## 🟡 When you're ready for real money
 
 - QPay merchant contract → fill `config.json` → `qpay` → set `"paymentsDemo": false` (see docs/PAYMENTS-QPAY.md).
