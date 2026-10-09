@@ -11,6 +11,13 @@
       'nav.skip': 'Үндсэн агуулга руу',
       'nav.services': 'Үйлчилгээ', 'nav.reviews': 'Сэтгэгдэл', 'nav.visit': 'Анхны айлчлал', 'nav.products': 'Бүтээгдэхүүн',
       'nav.faq': 'Асуулт', 'nav.contact': 'Холбоо барих', 'nav.book': 'Цаг захиалах', 'nav.open_app': 'Апп нээх', 'nav.signin': 'Нэвтрэх', 'nav.account': 'Миний бүртгэл',
+      'ai.fab': 'Асуух', 'ai.title': "B's Gua Sha туслах", 'ai.note': 'AI туслах — алдаа гаргаж болзошгүй. Чухал зүйлийг утсаар лавлаарай.',
+      'ai.hello': 'Сайн байна уу! Үнэ, цагийн хуваарь, байршил, эмчилгээний талаар асуугаарай.', 'ai.placeholder': 'Асуултаа бичнэ үү…',
+      'ai.send': 'Илгээх', 'ai.close': 'Хаах', 'ai.thinking': 'Бичиж байна…', 'ai.restart': 'Шинээр эхлэх',
+      'ai.fallback': 'Уучлаарай, одоогоор хариулж чадахгүй байна. Утсаар залгана уу: {phones}',
+      'ai.unavailable': 'Туслах одоогоор ажиллахгүй байна. Асуух зүйлээ утсаар лавлаарай: {phones}',
+      'ai.limited': 'Олон асуулт ирлээ. Түр хүлээгээд дахин оролдох эсвэл утсаар залгаарай: {phones}',
+      'ai.neterr': 'Холболт тасарлаа. Дахин оролдох эсвэл утсаар залгаарай: {phones}',
       'bar.call': '📞 Залгах', 'bar.book': 'Цаг захиалах',
 
       'hero.eyebrow': 'Гоо сайхан, Эрүүл арьс, Итгэлтэй чи',
@@ -91,6 +98,13 @@
       'nav.skip': 'Skip to content',
       'nav.services': 'Services', 'nav.reviews': 'Reviews', 'nav.visit': 'First visit', 'nav.products': 'Products',
       'nav.faq': 'FAQ', 'nav.contact': 'Contact', 'nav.book': 'Book now', 'nav.open_app': 'Open the app', 'nav.signin': 'Sign in', 'nav.account': 'My account',
+      'ai.fab': 'Ask us', 'ai.title': "B's Gua Sha assistant", 'ai.note': 'AI assistant — it can make mistakes. Please call us to confirm anything important.',
+      'ai.hello': 'Hello! Ask me about prices, opening hours, where we are or our treatments.', 'ai.placeholder': 'Type your question…',
+      'ai.send': 'Send', 'ai.close': 'Close', 'ai.thinking': 'Typing…', 'ai.restart': 'Start over',
+      'ai.fallback': "Sorry, I can't answer right now. Please call us: {phones}",
+      'ai.unavailable': 'The assistant is not available right now. Please call us: {phones}',
+      'ai.limited': 'Too many questions just now. Please try again later or call us: {phones}',
+      'ai.neterr': 'Connection problem. Please try again or call us: {phones}',
       'bar.call': '📞 Call', 'bar.book': 'Book now',
 
       'hero.eyebrow': 'Naturally, Healthy and Beautiful',
@@ -221,6 +235,7 @@
     renderEdu();
     renderFaq();
     renderAccount();
+    aiLabels();
   }
 
   /* ---------- sign in / my account (header + mobile menu) ---------- */
@@ -428,6 +443,174 @@
       '<a class="btn btn-ghost btn-sm" href="/app">' + t('faq.chat') + '</a></div></div>';
   }
 
+  /* ---------- customer assistant: chat bubble (only when the owner has switched it on) ----------
+     Replies are model output: they are only ever rendered with textContent. */
+  var AI_KEY = 'bg_ai';
+  var AI_HISTORY = 6;          /* the server trims to its own historyTurns anyway */
+  var AI_MAX = 500;            /* message length, same as the server's default */
+  var ai = null;               /* { el: {...}, msgs: [], busy, available } once built */
+  function aiPhones() {
+    if (!cfg) return '';
+    return [cfg.phoneDisplay, cfg.bookingPhones].filter(Boolean).join(', ');
+  }
+  function aiText(key) { return t(key).replace('{phones}', aiPhones()); }
+  function aiLoad() {
+    try { var v = JSON.parse(sessionStorage.getItem(AI_KEY) || '[]'); return Array.isArray(v) ? v.slice(-40) : []; } catch (e) { return []; }
+  }
+  function aiSave() {
+    try { sessionStorage.setItem(AI_KEY, JSON.stringify(ai.msgs.slice(-40))); } catch (e) { /* storage blocked */ }
+  }
+  function aiBubble(role, text, extraClass) {
+    var d = document.createElement('div');
+    d.className = 'ai-msg ' + (role === 'user' ? 'ai-user' : 'ai-bot') + (extraClass ? ' ' + extraClass : '');
+    d.textContent = text;
+    return d;
+  }
+  function aiRender() {
+    var log = ai.el.log;
+    log.textContent = '';
+    log.appendChild(aiBubble('assistant', t('ai.hello')));
+    ai.msgs.forEach(function (m) {
+      log.appendChild(aiBubble(m.role, m.local ? aiText(m.key || 'ai.fallback') : m.content, m.local ? 'ai-fallback' : ''));
+    });
+    var last = ai.msgs[ai.msgs.length - 1];
+    if (!ai.available && !(last && last.local && last.key === 'ai.unavailable')) log.appendChild(aiBubble('assistant', aiText('ai.unavailable'), 'ai-fallback'));
+    if (ai.busy) log.appendChild(aiBubble('assistant', t('ai.thinking'), 'ai-typing'));
+    ai.el.form.hidden = !ai.available;
+    ai.el.restart.hidden = !ai.msgs.length;
+    log.scrollTop = log.scrollHeight;
+  }
+  function aiLabels() {
+    if (!ai) return;
+    var e = ai.el;
+    e.fabLabel.textContent = t('ai.fab');
+    e.fab.setAttribute('aria-label', t('ai.title'));
+    e.panel.setAttribute('aria-label', t('ai.title'));
+    e.title.textContent = t('ai.title');
+    e.note.textContent = t('ai.note');
+    e.close.setAttribute('aria-label', t('ai.close'));
+    e.close.title = t('ai.close');
+    e.restart.textContent = t('ai.restart');
+    e.call.textContent = t('bar.call');
+    if (cfg && cfg.phoneTel) e.call.href = 'tel:' + cfg.phoneTel;
+    e.book.textContent = t('bar.book');
+    e.input.placeholder = t('ai.placeholder');
+    e.send.setAttribute('aria-label', t('ai.send'));
+    e.send.title = t('ai.send');
+    aiRender();
+  }
+  /* phone: the panel follows the visual viewport so the keyboard never covers the input */
+  function aiFit() {
+    if (!ai) return;
+    var vv = window.visualViewport;
+    var p = ai.el.panel.style;
+    if (vv && isPhone.matches) {
+      p.setProperty('--ai-h', Math.round(vv.height) + 'px');
+      p.setProperty('--ai-top', Math.round(vv.offsetTop) + 'px');
+    } else { p.removeProperty('--ai-h'); p.removeProperty('--ai-top'); }
+  }
+  function aiOpen(open) {
+    var e = ai.el;
+    e.panel.hidden = !open;
+    e.fab.hidden = open;
+    e.fab.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('ai-open', open);
+    if (open) {
+      aiFit(); aiRender();
+      if (ai.available && !isPhone.matches) e.input.focus();
+    } else e.fab.focus();
+  }
+  function aiSend() {
+    var e = ai.el;
+    var text = e.input.value.replace(/\s+$/, '').replace(/^\s+/, '');
+    if (!text || ai.busy || !ai.available) return;
+    if (text.length > AI_MAX) text = text.slice(0, AI_MAX);
+    var history = ai.msgs.filter(function (m) { return !m.local; }).slice(-AI_HISTORY)
+      .map(function (m) { return { role: m.role, content: String(m.content).slice(0, m.role === 'user' ? AI_MAX : 2000) }; });
+    var mine = { role: 'user', content: text };
+    ai.msgs.push(mine);
+    e.input.value = ''; aiGrow();
+    ai.busy = true; e.send.disabled = true; e.input.disabled = true;
+    aiRender(); aiSave();
+    function done(reply, localKey) {
+      ai.busy = false; e.send.disabled = false; e.input.disabled = false;
+      if (localKey) { mine.local = true; ai.msgs.push({ role: 'assistant', local: true, key: localKey }); }
+      else ai.msgs.push({ role: 'assistant', content: String(reply) });
+      aiSave(); aiRender();
+      if (!isPhone.matches) e.input.focus();
+    }
+    fetch('/api/assistant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text, history: history }) })
+      .then(function (r) {
+        if (r.status === 403) { ai.available = false; return done(null, 'ai.unavailable'); }
+        if (r.status === 429) return done(null, 'ai.limited');
+        if (!r.ok) return done(null, 'ai.fallback');
+        return r.json().then(function (d) {
+          if (!d || typeof d.reply !== 'string') return done(null, 'ai.fallback');
+          if (d.fallback) {
+            if (d.reason === 'capped' || d.reason === 'unavailable') ai.available = false;
+            return done(null, d.reason === 'error' ? 'ai.fallback' : 'ai.unavailable');
+          }
+          done(d.reply);
+        });
+      })
+      .catch(function () { done(null, 'ai.neterr'); });
+  }
+  function aiGrow() {
+    var i = ai.el.input;
+    i.style.height = 'auto';
+    i.style.height = Math.min(i.scrollHeight, 120) + 'px';
+  }
+  function initAssistant(c) {
+    if (!c || c.assistantEnabled !== true) {
+      if (ai) { ai.el.fab.remove(); ai.el.panel.remove(); document.body.classList.remove('ai-open'); ai = null; }
+      return;
+    }
+    if (ai) { ai.available = c.assistantAvailable === true; aiLabels(); return; }
+    var fab = document.createElement('button');
+    fab.type = 'button'; fab.className = 'ai-fab'; fab.id = 'aiFab';
+    fab.setAttribute('aria-controls', 'aiPanel'); fab.setAttribute('aria-expanded', 'false');
+    fab.innerHTML = '<span class="ai-fab-icon" aria-hidden="true">💬</span><span class="ai-fab-label"></span>';
+    var panel = document.createElement('section');
+    panel.className = 'ai-panel'; panel.id = 'aiPanel'; panel.hidden = true;
+    panel.setAttribute('role', 'dialog');
+    /* static markup only — every text is set below with textContent */
+    panel.innerHTML =
+      '<div class="ai-head"><div class="ai-head-t"><b></b><span class="ai-note"></span></div>' +
+      '<button type="button" class="ai-close">×</button></div>' +
+      '<div class="ai-log" role="log" aria-live="polite"></div>' +
+      '<div class="ai-actions"><a class="btn btn-ghost btn-sm ai-call" href="tel:+97691113958"></a>' +
+      '<a class="btn btn-primary btn-sm ai-book" href="/app#book"></a>' +
+      '<button type="button" class="ai-restart"></button></div>' +
+      '<form class="ai-form" autocomplete="off"><textarea rows="1" maxlength="' + AI_MAX + '" enterkeyhint="send"></textarea>' +
+      '<button type="submit" class="ai-send">➤</button></form>';
+    document.body.appendChild(fab);
+    document.body.appendChild(panel);
+    ai = {
+      msgs: aiLoad(), busy: false, available: c.assistantAvailable === true,
+      el: {
+        fab: fab, fabLabel: fab.querySelector('.ai-fab-label'), panel: panel,
+        title: panel.querySelector('.ai-head-t b'), note: panel.querySelector('.ai-note'), close: panel.querySelector('.ai-close'),
+        log: panel.querySelector('.ai-log'), call: panel.querySelector('.ai-call'), book: panel.querySelector('.ai-book'),
+        restart: panel.querySelector('.ai-restart'), form: panel.querySelector('.ai-form'),
+        input: panel.querySelector('textarea'), send: panel.querySelector('.ai-send')
+      }
+    };
+    fab.addEventListener('click', function () { aiOpen(true); });
+    ai.el.close.addEventListener('click', function () { aiOpen(false); });
+    ai.el.restart.addEventListener('click', function () { ai.msgs = []; aiSave(); aiRender(); });
+    panel.addEventListener('keydown', function (e) { if (e.key === 'Escape') aiOpen(false); });
+    ai.el.form.addEventListener('submit', function (e) { e.preventDefault(); aiSend(); });
+    ai.el.input.addEventListener('input', aiGrow);
+    ai.el.input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); aiSend(); }
+    });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', aiFit);
+      window.visualViewport.addEventListener('scroll', aiFit);
+    }
+    aiLabels();
+  }
+
   /* ---------- data loading ---------- */
   function getJson(url) { return fetch(url).then(function (r) { return r.json(); }); }
   function loadAll() {
@@ -435,6 +618,7 @@
       cfg = c;
       featureWallet = c.featureWallet === true;
       applyLang();
+      initAssistant(c);
     }).catch(function () {});
     getJson('/api/services').then(function (l) { services = Array.isArray(l) ? l : []; renderServices(); })
       .catch(function () { services = []; renderServices(); });

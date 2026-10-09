@@ -480,3 +480,63 @@ button { font-family: inherit; }
   .feature-list { grid-template-columns: 1fr; }
 }
 @media (min-width: 1280px) { .prod-grid { grid-template-columns: repeat(4, 1fr); } }
+
+/* =================== customer assistant (chat bubble) =================== */
+.ai-fab {
+  position: fixed; right: 24px; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 46;
+  display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px;
+  border: none; border-radius: 999px; cursor: pointer; font: inherit; font-weight: 600;
+  background: linear-gradient(135deg, var(--gold), var(--brand)); color: #fff;
+  box-shadow: 0 8px 24px rgba(154, 123, 60, 0.35); transition: bottom 0.25s, transform 0.15s;
+}
+[data-theme="dark"] .ai-fab { color: #1c1610; }
+.ai-fab:active { transform: scale(0.96); }
+.ai-fab-icon { font-size: 1.15rem; line-height: 1; }
+.ai-panel {
+  position: fixed; right: 24px; bottom: 24px; z-index: 60;
+  width: min(390px, calc(100vw - 32px)); height: min(620px, calc(100dvh - 48px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.ai-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 14px 12px 18px; border-bottom: 1px solid var(--line); background: var(--bg-tint); }
+.ai-head-t { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.ai-head-t b { font-family: 'Playfair Display', serif; font-size: 1.08rem; }
+.ai-note { font-size: 0.78rem; color: var(--muted); line-height: 1.35; }
+.ai-close {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 1.35rem; line-height: 1;
+}
+.ai-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ai-msg { max-width: 86%; padding: 9px 13px; border-radius: 16px; line-height: 1.45; font-size: 0.95rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-bot { align-self: flex-start; background: var(--bg-tint); border-bottom-left-radius: 4px; }
+.ai-user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+[data-theme="dark"] .ai-user { color: #1c1610; }
+.ai-fallback { background: var(--brand-soft); color: var(--brand-deep); }
+.ai-typing { color: var(--muted); font-style: italic; }
+.ai-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.ai-actions .btn { padding: 8px 14px; font-size: 0.88rem; }
+.ai-restart { margin-left: auto; padding: 6px 2px; background: none; border: none; cursor: pointer; font: inherit; font-size: 0.82rem; color: var(--muted); text-decoration: underline; }
+.ai-form { display: flex; align-items: flex-end; gap: 8px; padding: 0 14px 14px; }
+.ai-form textarea {
+  flex: 1; min-width: 0; max-height: 120px; resize: none; font: inherit; font-size: 1rem; line-height: 1.4;
+  padding: 10px 14px; border: 1.5px solid var(--line); border-radius: 20px; background: var(--bg); color: var(--ink);
+}
+.ai-form textarea:focus { outline: none; border-color: var(--brand); }
+.ai-send {
+  flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; border: none; cursor: pointer; font-size: 1.1rem;
+  background: linear-gradient(135deg, var(--gold), var(--brand)); color: #fff;
+}
+[data-theme="dark"] .ai-send { color: #1c1610; }
+.ai-send:disabled, .ai-form textarea:disabled { opacity: 0.55; cursor: default; }
+
+@media (max-width: 719px) {
+  /* round button above the bottom call/book bar once that bar slides in */
+  .ai-fab { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 54px; height: 54px; padding: 0; justify-content: center; }
+  .ai-fab-label { display: none; }
+  .ai-fab-icon { font-size: 1.4rem; }
+  #mobileBar.show ~ .ai-fab { bottom: calc(84px + env(safe-area-inset-bottom)); }
+  /* full screen, sized to the visual viewport (site.js) so the keyboard never covers the input */
+  .ai-panel { left: 0; right: 0; top: var(--ai-top, 0px); bottom: auto; width: 100%; height: var(--ai-h, 100dvh); border: none; border-radius: 0; }
+  .ai-form { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  body.ai-open { overflow: hidden; }
+}

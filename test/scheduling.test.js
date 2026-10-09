@@ -52,7 +52,7 @@ function writeConfig(dir) {
 async function startServer(dataDir, configFile) {
   const port = await freePort();
   const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
-    env: { ...process.env, PORT: String(port), BG_DATA_DIR: dataDir, BG_CONFIG: configFile, SUPER_ADMIN_PASSWORD: SUPER_PASS, ADMIN_PIN: '975310', TZ: 'America/Los_Angeles' },
+    env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(OPENAI_|TELEGRAM_|ASSISTANT_)/.test(k))), PORT: String(port), BG_DATA_DIR: dataDir, BG_CONFIG: configFile, SUPER_ADMIN_PASSWORD: SUPER_PASS, ADMIN_PIN: '975310', TZ: 'America/Los_Angeles' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let log = '';

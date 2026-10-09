@@ -2290,7 +2290,9 @@
           : '<p class="small" style="margin:8px 0">Хэтэвч: <b>' + (s.featureWallet ? 'асаалттай' : 'унтраалттай') + '</b> <span class="muted">— зөвхөн супер админ өөрчилнө</span></p>') +
         '<button class="btn btn-primary mt" id="stSave">Хадгалах</button>' +
         '<p class="muted small" style="margin-top:12px">PIN, QPay тохиргоог <b>config.json</b> файлд солино.</p>' +
-        '</div>';
+        '</div>' +
+        '<div id="aiCard"></div>';
+      loadAssistantCard();
       function renderCd() {
         document.getElementById('cdList').innerHTML = closedDates.map(function (d) {
           return '<span class="datechip">' + d + ' <b data-rm="' + d + '">×</b></span>';
@@ -2352,6 +2354,108 @@
           });
       };
     }).catch(function () { toast('Алдаа гарлаа', 'err'); });
+  }
+
+  /* ----- customer assistant (AI): switch, cap, notes, spend, test question ----- */
+  var AI_REASON = {
+    no_key: 'OpenAI API түлхүүр алга (.env → OPENAI_API_KEY). Асаасан ч вэбсайт "утсаар залгана уу" гэж харуулна.',
+    no_model: 'config.json → assistant.model хоосон байна.',
+    bad_prices: 'config.json → assistant.priceUsdPerMTok буруу — зардлын хязгаар ажиллахгүй тул туслах зогссон.',
+    bad_caps: 'Сар/өдрийн хязгаар 0-ээс их байх ёстой.'
+  };
+  function usd(x, d) { return '$' + (Number(x) || 0).toFixed(d === undefined ? 2 : d); }
+  /* spend, limits and health — re-rendered on its own after a test question */
+  function aiStatusHtml(st) {
+    var pct = st.monthlyCapUsd > 0 ? Math.min(100, Math.round(st.monthUsd / st.monthlyCapUsd * 100)) : 0;
+    var row = function (k, v) { return '<tr><td class="muted" style="padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">' + k + '</td><td style="padding:3px 0">' + v + '</td></tr>'; };
+    var err = st.lastError ? esc(String(st.lastError.status || '-') + ' ' + (st.lastError.code || '')) + ' · ' + esc(fmtShort(st.lastError.at)) : '—';
+    var note = function (txt) { return '<p class="small" style="background:var(--brand-soft);padding:8px 12px;border-radius:10px;margin-bottom:10px">' + txt + '</p>'; };
+    return (st.unavailableReason ? note('⚠️ ' + esc(AI_REASON[st.unavailableReason] || st.unavailableReason)) : '') +
+      (st.mock ? note('🧪 Туршилтын горим (mock): жинхэнэ AI-д хандахгүй, бэлэн хариу өгнө.') : '') +
+      (st.knowledgeTruncated || st.notesTruncated ? note('⚠️ Салоны мэдээлэл ' + Math.round(st.knowledgeLimitBytes / 1024) + ' KB-аас хэтэрсэн тул ' + (st.knowledgeTruncated ? 'төгсгөлийг' : 'тэмдэглэлийг') + ' таслав. Тэмдэглэлээ богиносгоно уу.') : '') +
+      '<div style="margin-bottom:6px"><b>Энэ сар: ' + usd(st.monthUsd) + ' / ' + usd(st.monthlyCapUsd) + '</b> <span class="muted small">(' + pct + '%)</span></div>' +
+      '<div style="height:8px;border-radius:6px;background:var(--line);overflow:hidden;margin-bottom:10px"><div style="height:100%;width:' + pct + '%;background:' + (pct >= 80 ? '#c0573e' : 'var(--brand)') + '"></div></div>' +
+      '<table class="small" style="margin-bottom:12px">' +
+      row('Өнөөдөр', usd(st.dayUsd, 3) + ' / ' + usd(st.dailyCapUsd)) +
+      row('Асуулт', st.calls + ' энэ сар · ' + st.callsToday + ' өнөөдөр') +
+      row('Загвар', esc(st.model) + (st.reasoningEffort ? ' · reasoning ' + esc(st.reasoningEffort) : '')) +
+      row('Нэг асуултын дээд зардал', '≈ ' + usd(st.worstCaseUsdPerMessage, 4)) +
+      row('Туршилтын горим', st.mock ? 'тийм' : 'үгүй') +
+      row('API түлхүүр', st.keyPresent ? 'байна' : 'байхгүй') +
+      row('Telegram мэдэгдэл', (st.telegramConfigured ? 'тохируулсан' : 'тохируулаагүй — мэдэгдэл зөвхөн энд харагдана') + (st.lastAlert ? '<br><span class="muted">Сүүлд: ' + esc(st.lastAlert.kind) + ' · ' + esc(fmtShort(st.lastAlert.at)) + '</span>' : '')) +
+      row('Сүүлийн алдаа', err) +
+      row('Салоны мэдээлэл', Math.round(st.knowledgeBytes / 102.4) / 10 + ' KB / ' + Math.round(st.knowledgeLimitBytes / 1024) + ' KB') +
+      '</table>';
+  }
+  function loadAssistantCard() {
+    var host = document.getElementById('aiCard');
+    if (!host) return;
+    Promise.all([api('/api/admin/assistant'), api('/api/admin/settings')]).then(function (r) {
+      var st = r[0], s = r[1];
+      host.innerHTML =
+        '<div class="card" style="max-width:640px;margin-top:16px">' +
+        '<h3 style="margin-bottom:6px">🤖 Туслах (AI)</h3>' +
+        '<p class="muted small" style="margin-bottom:10px">Вэбсайт дээрх чат. Үнэ, цаг, байршил, эмчилгээ, арчилгааны асуултад зөвхөн салоны мэдээллээс (үйлчилгээ, асуулт, бүтээгдэхүүн, доорх тэмдэглэл) хариулж, мэдэхгүй зүйлд утасны дугаар өгнө. Үйлчлүүлэгч, захиалга, ажилтны мэдээлэл түүнд огт очдоггүй.</p>' +
+        '<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin:4px 0 12px;cursor:pointer">' +
+        '<input type="checkbox" id="aiOn"' + (s.assistantEnabled ? ' checked' : '') + ' style="margin-top:3px">' +
+        '<span><b>Асаах — вэбсайт дээр чатын товч харагдана</b><br><span class="muted">Анхдагчаар унтраалттай.</span></span></label>' +
+        '<div id="aiStatus">' + aiStatusHtml(st) + '</div>' +
+        '<div class="row"><div class="field grow"><label>Сарын дээд хязгаар (USD)</label><input type="number" id="aiCap" class="cell-input" min="0.1" max="100" step="0.5" value="' + esc(String(s.assistantMonthlyCapUsd)) + '"></div></div>' +
+        '<div class="field"><label>Нэмэлт мэдээлэл туслахад (зогсоол, давхар, баярын цаг гэх мэт)</label>' +
+        '<textarea id="aiNotes" class="cell-input" rows="4" maxlength="' + st.notesMaxChars + '" placeholder="Жишээ: Хас Мөнх төвийн урд талд үнэгүй зогсоол бий.">' + esc(s.assistantNotes || '') + '</textarea>' +
+        '<span class="muted small" id="aiNotesN"></span></div>' +
+        '<div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn btn-primary" id="aiSave">Хадгалах</button>' +
+        '<button class="btn btn-ghost" id="aiAlert"' + (st.telegramConfigured ? '' : ' disabled') + '>Туршилтын мэдэгдэл</button></div>' +
+        '<hr style="border:none;border-top:1px solid var(--line);margin:16px 0">' +
+        '<label class="small" style="font-weight:600;color:var(--muted)">Туршиж асуух (унтраалттай үед ч ажиллана, зардал энэ сард тооцогдоно)</label>' +
+        '<div class="row" style="margin-top:6px"><input id="aiQ" class="cell-input grow" maxlength="' + st.maxMessageChars + '" placeholder="une hed ve / Үнэ хэд вэ? / Do you treat men?">' +
+        '<button class="btn btn-ghost" id="aiAsk">Туршиж асуух</button></div>' +
+        '<p id="aiA" style="white-space:pre-wrap;margin-top:8px"></p><p class="muted small" id="aiAm"></p>' +
+        '</div>';
+      var notes = document.getElementById('aiNotes'), notesN = document.getElementById('aiNotesN');
+      function count() { notesN.textContent = notes.value.length + ' / ' + st.notesMaxChars; }
+      notes.oninput = count; count();
+      document.getElementById('aiSave').onclick = function () {
+        var on = document.getElementById('aiOn').checked;
+        var body = { assistantEnabled: on, assistantMonthlyCapUsd: Number(document.getElementById('aiCap').value), assistantNotes: notes.value };
+        var go = (on && !s.assistantEnabled)
+          ? confirmDlg('Анхаар: үйлчилгээ, үнэ, асуулт, бүтээгдэхүүний зарим мэдээлэл одоогоор жишээ (placeholder) хэвээр байна (docs/INFO-TO-FILL-IN.md). Туслах эдгээр үнийг үйлчлүүлэгчдэд яг тэр чигээр нь хэлнэ. Шалгасан бол асаах уу?')
+          : Promise.resolve(true);
+        go.then(function (yes) {
+          if (!yes) return;
+          api('/api/admin/settings', { method: 'POST', body: body })
+            .then(function () { toast('Хадгалагдлаа ✓', 'ok'); loadAssistantCard(); })
+            .catch(function (e) {
+              toast(e && e.error === 'bad_cap' ? 'Хязгаар 0.1–100 USD байх ёстой' : e && e.error === 'notes_too_long' ? 'Тэмдэглэл хэт урт байна' : 'Алдаа гарлаа', 'err');
+            });
+        });
+      };
+      document.getElementById('aiAlert').onclick = function () {
+        api('/api/admin/assistant/test-alert', { method: 'POST', body: {} })
+          .then(function (d) { toast(d.sent ? 'Telegram мэдэгдэл илгээгдлээ ✓' : 'Илгээж чадсангүй — токен, chat ID-гаа шалгана уу', d.sent ? 'ok' : 'err'); })
+          .catch(function () { toast('Алдаа гарлаа', 'err'); });
+      };
+      document.getElementById('aiAsk').onclick = function () {
+        var q = document.getElementById('aiQ').value.trim();
+        var a = document.getElementById('aiA'), am = document.getElementById('aiAm'), btn = this;
+        if (!q) return;
+        btn.disabled = true; a.textContent = '…'; am.textContent = '';
+        api('/api/admin/assistant/ask', { method: 'POST', body: { message: q } })
+          .then(function (d) {
+            a.textContent = d.reply || '';
+            var u = d.usage;
+            am.textContent = (d.fallback ? '⚠️ ' + (d.reason || '') + (d.detail ? ' (' + d.detail + ')' : '') + ' · ' : '') +
+              (u ? 'tokens: ' + u.inputTokens + ' in (' + u.cachedTokens + ' cached) · ' + u.outputTokens + ' out · ' : '') +
+              (d.costUsd !== undefined ? usd(d.costUsd, 5) : '');
+          })
+          .catch(function (e) { a.textContent = ''; am.textContent = e && e.error === 'busy' ? 'Түр хүлээгээд дахин оролдоно уу' : 'Алдаа: ' + ((e && e.error) || ''); })
+          .then(function () {
+            btn.disabled = false;
+            return api('/api/admin/assistant').then(function (st2) { var box = document.getElementById('aiStatus'); if (box) box.innerHTML = aiStatusHtml(st2); });
+          })
+          .catch(function () {});
+      };
+    }).catch(function () { host.innerHTML = ''; });
   }
 
   document.addEventListener('keydown', function (e) {

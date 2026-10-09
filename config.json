@@ -51,5 +51,23 @@
     "password": "",
     "invoiceCode": "",
     "callbackBaseUrl": ""
+  },
+  "_assistant": "Customer assistant (chat bubble on the website, see docs/ASSISTANT.md). No secrets here: the API key and Telegram token live in .env. The owner switches it on and can lower/raise the monthly cap in Admin -> Tohirgoo; those choices are stored in data/db.json and override monthlyCapUsd below.",
+  "assistant": {
+    "_comment": "Changing the model? Update priceUsdPerMTok to that model's prices from https://developers.openai.com/api/docs/pricing in the same edit, or the spending cap is calculated wrong. reasoningEffort: the lowest value the model supports ('none' for gpt-5.4-nano / gpt-5.4-mini), or null to leave it out.",
+    "model": "gpt-5.4-nano",
+    "reasoningEffort": "none",
+    "priceUsdPerMTok": {
+      "input": 0.2,
+      "cachedInput": 0.02,
+      "output": 1.25
+    },
+    "monthlyCapUsd": 3,
+    "dailyCapUsd": 0.5,
+    "maxOutputTokens": 400,
+    "maxMessageChars": 500,
+    "historyTurns": 6,
+    "perIpPerHour": 20,
+    "globalPerMinute": 30
   }
 }

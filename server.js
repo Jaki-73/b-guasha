@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const { createAssistant, clientIp, NOTES_MAX_CHARS: ASSISTANT_NOTES_MAX } = require('./assistant');
 
 const ROOT = __dirname;
 const PUB = path.join(ROOT, 'public');
@@ -60,13 +61,31 @@ const DEFAULT_CONFIG = {
   featureWallet: false,
   machines: [],
   bookingStepMinutes: 15,
-  qpay: { baseUrl: 'https://merchant-sandbox.qpay.mn', username: '', password: '', invoiceCode: '', callbackBaseUrl: '' }
+  qpay: { baseUrl: 'https://merchant-sandbox.qpay.mn', username: '', password: '', invoiceCode: '', callbackBaseUrl: '' },
+  /* customer assistant (assistant.js). Prices must match the model, or the cap is wrong. */
+  assistant: {
+    model: 'gpt-5.4-nano',
+    reasoningEffort: 'none',
+    priceUsdPerMTok: { input: 0.20, cachedInput: 0.02, output: 1.25 },
+    monthlyCapUsd: 3,
+    dailyCapUsd: 0.5,
+    maxOutputTokens: 400,
+    maxMessageChars: 500,
+    historyTurns: 6,
+    perIpPerHour: 20,
+    globalPerMinute: 30
+  }
 };
 let config = { ...DEFAULT_CONFIG };
 try {
   config = { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
 } catch (e) {
   console.warn('config.json missing or invalid — using defaults');
+}
+/* a partial "assistant" block in config.json keeps the defaults for what it leaves out */
+{
+  const a = config.assistant && typeof config.assistant === 'object' ? config.assistant : {};
+  config.assistant = { ...DEFAULT_CONFIG.assistant, ...a, priceUsdPerMTok: { ...DEFAULT_CONFIG.assistant.priceUsdPerMTok, ...(a.priceUsdPerMTok || {}) } };
 }
 /* config.json is in git, so its PIN is public; on a host set ADMIN_PIN instead */
 if (process.env.ADMIN_PIN) config.adminPin = String(process.env.ADMIN_PIN);
@@ -80,6 +99,22 @@ function cfg() { return db && db.settings ? { ...config, ...db.settings } : conf
 /* salon texts the owner edits in Admin → Тохиргоо (stored in db.settings, override config.json) */
 const CONTACT_FIELDS = ['addressMn', 'addressEn', 'phoneDisplay', 'phoneTel', 'bookingPhones', 'mapUrl', 'email', 'facebook'];
 function walletOn() { return cfg().featureWallet === true; }
+
+/* FAQ as customers see it: active, matching the wallet state, placeholders filled.
+   Shared by GET /api/public/faq and the assistant's knowledge. */
+function publicFaq() {
+  const c = cfg();
+  const fill = (txt) => String(txt || '')
+    .replace(/\{cancelHours\}/g, String(c.cancelHours))
+    .replace(/\{phone\}/g, c.phoneDisplay || '')
+    .replace(/\{hoursOpen\}/g, c.hoursOpen || '')
+    .replace(/\{hoursClose\}/g, c.hoursClose || '');
+  const w = walletOn();
+  return db.faq
+    .filter((f) => f.active && (f.show === 'always' || (f.show === 'wallet_on') === w))
+    .sort((a, b) => (a.order || 0) - (b.order || 0))
+    .map((f) => ({ id: f.id, group: f.group, qMn: f.qMn, qEn: f.qEn, aMn: fill(f.aMn), aEn: fill(f.aEn) }));
+}
 
 /* ---------------- image guards ----------------
    The browser downscales before uploading (public/assets/imgtools.js), but the
@@ -934,6 +969,9 @@ function creditInvoice(inv) {
 /* ---------------- admin pin rate limit ---------------- */
 const pinFails = { count: 0, until: 0 };
 
+/* customer assistant — reads db through getDb so it always sees the live object */
+const assistant = createAssistant({ getDb: () => db, saveDb, cfg, walletOn, publicFaq, json, fail });
+
 /* ---------------- API router ---------------- */
 async function handleApi(req, res, pathname, q) {
   const method = req.method;
@@ -964,9 +1002,14 @@ async function handleApi(req, res, pathname, q) {
       slotMinutes: c.slotMinutes, bookingDaysAhead: c.bookingDaysAhead,
       cancelHours: c.cancelHours, paymentsDemo: c.paymentsDemo,
       topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent,
-      featureWallet: c.featureWallet === true
+      featureWallet: c.featureWallet === true,
+      ...assistant.publicFlags()
     });
   }
+
+  /* customer assistant (chat bubble on the website) — assistant.js. Not /api/chat,
+     which is the customer ↔ salon messaging. */
+  if (route === 'POST /api/assistant') return assistant.handlePublic(req, res, clientIp(req));
 
   if (route === 'GET /api/services') return json(res, 200, db.services.filter((s) => s.active));
   if (route === 'GET /api/staff') return json(res, 200, staffUsers().map(publicStaff));
@@ -994,18 +1037,7 @@ async function handleApi(req, res, pathname, q) {
     return json(res, 200, { average: avg, count: list.length, distribution, reviews: list });
   }
 
-  if (route === 'GET /api/public/faq') {
-    const fill = (txt) => String(txt || '')
-      .replace(/\{cancelHours\}/g, String(c.cancelHours))
-      .replace(/\{phone\}/g, c.phoneDisplay || '')
-      .replace(/\{hoursOpen\}/g, c.hoursOpen || '')
-      .replace(/\{hoursClose\}/g, c.hoursClose || '');
-    const w = walletOn();
-    return json(res, 200, db.faq
-      .filter((f) => f.active && (f.show === 'always' || (f.show === 'wallet_on') === w))
-      .sort((a, b) => (a.order || 0) - (b.order || 0))
-      .map((f) => ({ id: f.id, group: f.group, qMn: f.qMn, qEn: f.qEn, aMn: fill(f.aMn), aEn: fill(f.aEn) })));
-  }
+  if (route === 'GET /api/public/faq') return json(res, 200, publicFaq());
 
   if (route === 'GET /api/public/edu') {
     return json(res, 200, db.edu.filter((e) => e.active).sort((a, b) => (a.order || 0) - (b.order || 0)));
@@ -2423,6 +2455,11 @@ async function handleApi(req, res, pathname, q) {
       return json(res, 200, msgOut(msg));
     }
 
+    /* ----- customer assistant: status, test question, test alert (owner only) ----- */
+    if (pathname === '/api/admin/assistant' || pathname.startsWith('/api/admin/assistant/')) {
+      return assistant.handleAdmin(route, req, res, isOwner);
+    }
+
     /* ----- settings ----- */
     if (route === 'GET /api/admin/settings') {
       if (!isOwner) return ownerOnly();
@@ -2433,7 +2470,10 @@ async function handleApi(req, res, pathname, q) {
         topupBonusThreshold: c.topupBonusThreshold, topupBonusPercent: c.topupBonusPercent,
         featureWallet: c.featureWallet === true,
         canToggleFeatures: isSuper,
-        contact: Object.fromEntries(CONTACT_FIELDS.map((k) => [k, c[k] || '']))
+        contact: Object.fromEntries(CONTACT_FIELDS.map((k) => [k, c[k] || ''])),
+        assistantEnabled: c.assistantEnabled === true,
+        assistantMonthlyCapUsd: assistant.settings().monthlyCapUsd,
+        assistantNotes: c.assistantNotes || ''
       });
     }
     if (route === 'POST /api/admin/settings') {
@@ -2467,6 +2507,21 @@ async function handleApi(req, res, pathname, q) {
           if (k === 'bookingPhones' && v && !/^[\d\s+,\-]{6,120}$/.test(v)) return fail(res, 400, 'bad_phone');
           s[k] = v;
         }
+      }
+      /* customer assistant: switch, monthly cap (USD) and free-text notes for the model */
+      if (b.assistantEnabled !== undefined) s.assistantEnabled = b.assistantEnabled === true;
+      if (b.assistantMonthlyCapUsd !== undefined) {
+        if (b.assistantMonthlyCapUsd === null) delete s.assistantMonthlyCapUsd;
+        else {
+          const v = Number(b.assistantMonthlyCapUsd);
+          if (!Number.isFinite(v) || v <= 0 || v > 100) return fail(res, 400, 'bad_cap');
+          s.assistantMonthlyCapUsd = Math.round(v * 100) / 100;
+        }
+      }
+      if (b.assistantNotes !== undefined) {
+        const v = String(b.assistantNotes || '').trim();
+        if (v.length > ASSISTANT_NOTES_MAX) return fail(res, 400, 'notes_too_long');
+        s.assistantNotes = v;
       }
       saveDb();
       return json(res, 200, { ok: true });
@@ -2805,6 +2860,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  Demo customer : 99000000 / demo123');
   console.log('  Super admin : ' + SUPER_PHONE + ' / ' + SUPER_PASSWORD + '  (default — change it in Admin → Бүртгэл)');
   console.log('  Owner       : 91113958 / owner123   |   Example staff : 88000001 / staff123');
+  console.log('  ' + assistant.startupLine());
   console.log('  Payments are in DEMO mode (no real money). See docs/PAYMENTS-QPAY.md');
   console.log('');
 });
