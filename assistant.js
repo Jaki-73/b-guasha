@@ -61,10 +61,9 @@ function reservationUsd(inputTokens, maxOutputTokens, price) {
 
 /* ---------- reply language ----------
    gpt-5.4-nano answers well in Cyrillic Mongolian and in English, but drifts between
-   scripts when asked to match the customer and garbles Mongolian in Latin letters. So the
-   server decides: Cyrillic message → Mongolian; Latin letters → English or Mongolian by
-   the words used; and for Mongolian typed in Latin letters the model still writes
-   Cyrillic and the server converts the reply, the way customers spell it (ү→u, ө→o, х→h). */
+   scripts when left to match the customer. So the server decides: Cyrillic → Mongolian;
+   Latin letters → English or Mongolian by the words used. Mongolian is always answered in
+   Cyrillic, also when the customer typed it in Latin letters (the owner's choice). */
 const EN_WORDS = new Set(('the a an is are am was were be do does did you your yours i my me we our us what where when how why which who whom ' +
   'can could would should will shall have has had there here this that these those it its of for to in on at by from with and or not no yes ' +
   'please price prices cost costs much many open opening hours hour located location address book booking appointment men man women woman ' +
@@ -91,21 +90,9 @@ function detectLanguage(message) {
   if (en > mn) return 'en';
   return /(uu|ii|aa|oo)/.test(s.toLowerCase()) ? 'mn_latin' : 'en';
 }
-const CYR_TO_LAT = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', ө: 'o',
-  п: 'p', р: 'r', с: 's', т: 't', у: 'u', ү: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'ii', ь: 'i', э: 'e', ю: 'yu', я: 'ya'
-};
-function toLatin(text) {
-  return String(text || '').replace(/[\u0400-\u04FF]/g, (ch) => {
-    const low = ch.toLowerCase();
-    const out = CYR_TO_LAT[low];
-    if (out === undefined) return ch;
-    return ch === low || !out ? out : out[0].toUpperCase() + out.slice(1);
-  });
-}
 const LANGUAGE_NOTE = {
   mn: 'Reply language: Mongolian, written in Cyrillic.',
-  mn_latin: 'Reply language: Mongolian, written in Cyrillic (the customer typed Mongolian in Latin letters; the website converts your reply for them).',
+  mn_latin: 'Reply language: Mongolian, written in Cyrillic (the customer typed Mongolian in Latin letters, but the salon answers in Cyrillic).',
   en: 'Reply language: English. The customer wrote in English, so reply only in English, even though much of the salon information is in Mongolian.'
 };
 
@@ -135,7 +122,7 @@ RULES
 
 LANGUAGE
 - Customers write Mongolian in Cyrillic or in Latin letters with loose spelling: ө and ү are often written o, u or v; х as h or kh; ж as j; ц as ts; ч as ch; ш as sh; я as ya; ё as yo; й as i or y. Treat Latin-letter Mongolian as Mongolian, never as English.
-- Reply in the language named by the "Reply language" note after the customer's message: Mongolian (always written in Cyrillic, even when the customer used Latin letters; the website converts it for them) or English.
+- Reply in the language named by the "Reply language" note after the customer's message: Mongolian (always written in Cyrillic, even when the customer used Latin letters) or English.
 - Examples of Latin-letter Mongolian (illustrative only; real customers may spell differently):
   "sain uu" = "Сайн байна уу" (hello)
   "une hed ve" = "Үнэ хэд вэ?" (how much is it?)
@@ -585,8 +572,7 @@ function createAssistant(deps) {
     const meta = { usage: out.usage, costUsd: round6(actual), reservedUsd: round6(res.usd), estimatedInputTokens: estTokens, status: out.status, model: s.model };
     if (out.status !== 'completed') return { reply: fallbackText(), fallback: true, reason: 'error', ...meta };
     /* capped at the history item limit, so the widget can always send it back as history */
-    const reply = lang === 'mn_latin' ? toLatin(out.text) : out.text;
-    return { reply: reply.slice(0, HISTORY_ITEM_MAX_CHARS), fallback: false, language: lang, ...meta };
+    return { reply: out.text.slice(0, HISTORY_ITEM_MAX_CHARS), fallback: false, language: lang, ...meta };
   }
 
   /* ---------- abuse limits (memory only) ---------- */
@@ -797,4 +783,4 @@ function clientIp(req) {
   return ipKey(peer);
 }
 
-module.exports = { createAssistant, clientIp, ipKey, estimateInputTokens, reservationUsd, costUsd, detectLanguage, toLatin, INSTRUCTIONS, KNOWLEDGE_MAX_BYTES, NOTES_MAX_CHARS };
+module.exports = { createAssistant, clientIp, ipKey, estimateInputTokens, reservationUsd, costUsd, detectLanguage, INSTRUCTIONS, KNOWLEDGE_MAX_BYTES, NOTES_MAX_CHARS };

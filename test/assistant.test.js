@@ -635,15 +635,13 @@ describe('assistant: unit — client IP, UB month rollover', () => {
     assert.ok(db.assistantUsage.monthUsd > 0);
   });
 
-  test('reply language: Cyrillic → Mongolian, Latin letters → English or Mongolian by the words used', () => {
+  test('reply language: Mongolian (in either alphabet) → Cyrillic; English → English', () => {
     const cases = {
       mn: ['Нүүрний гуаша хэд вэ?', 'Би цус шингэлэх эм уудаг'],
       mn_latin: ['une hed ve', 'sain uu', 'eregtei hun hiilgej boloh uu', 'heden tsagt haah ve', 'botox hiideg uu', 'ovdoh uu', 'hayag chin haana ve', 'nuuriin guasha hed ve', 'tsagaa tsutsalj boloh uu'],
       en: ['Do you treat men?', 'Where are you located?', 'Is there parking?', 'hi', 'Can I pay by card?', 'Are you open on Tsagaan Sar?', 'I am pregnant, can I come?']
     };
     for (const [lang, qs] of Object.entries(cases)) for (const q of qs) assert.equal(A.detectLanguage(q), lang, q);
-    assert.equal(A.toLatin('Мэдээж, эрэгтэй хүн хийлгэж болно. Үнэ: 90,000₮. Өвдөхгүй. Цагаа Ялангуяа'), 'Medeej, eregtei hun hiilgej bolno. Une: 90,000₮. Ovdohgui. Tsagaa Yalanguyaa');
-    assert.equal(A.toLatin('Signature 60 min'), 'Signature 60 min');
   });
 
   test('customer text is estimated at one token per byte, salon text at bytes ÷ 2', () => {

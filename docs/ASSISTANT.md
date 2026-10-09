@@ -81,9 +81,11 @@ Other settings in the block: `maxOutputTokens` (reply length, 400), `maxMessageC
 
 After editing `.env`, recreate the container (a plain restart does not reload `.env`): `docker compose up -d --build`.
 
-## Latin-letter Mongolian
+## Reply language
 
-The instructions in `assistant.js` (`INSTRUCTIONS`) contain five example spellings ("une hed ve", "heden tsagt haah ve"…). **They are made up.** Replace them with real spellings copied from the salon's Facebook messages, then run the eval again.
+The server decides the reply language from the customer's message: Mongolian, whether typed in Cyrillic or in Latin letters ("une hed ve", "heden tsagt haah ve"), is answered in **Cyrillic Mongolian**; English is answered in English. The detection uses word lists in `assistant.js` (`detectLanguage`); a Latin-letter message with no clear English or Mongolian words counts as Mongolian when it has double vowels (uu, ii, aa, oo).
+
+The instructions in `assistant.js` (`INSTRUCTIONS`) also contain five example spellings so the model understands Latin-letter questions. **They are made up.** Replace them with real spellings copied from the salon's Facebook messages, then run the eval again.
 
 ## The eval
 

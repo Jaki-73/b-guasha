@@ -18,7 +18,6 @@ const {
 } = require('./helpers');
 
 const TOKEN_RE = /^[a-f0-9]{64}$/;
-const { toLatin } = require(path.join(ROOT, 'assistant.js'));
 
 describe('website chat: saved conversations, staff replies, AI hand-off', () => {
   let tmp, srv, call, fake, su, staffTok, ownerTok;
@@ -56,14 +55,14 @@ describe('website chat: saved conversations, staff replies, AI hand-off', () => 
     assert.match(r.data.token, TOKEN_RE);
     assert.deepEqual(r.data.messages.map((m) => m.from), ['visitor', 'ai']);
     assert.equal(r.data.messages[0].text, 'sain uu');
-    /* typed in Latin letters: the model's Cyrillic reply is converted for the visitor */
-    assert.equal(r.data.messages[1].text, toLatin(fake.state.reply));
-    assert.match(r.data.messages[1].text, /^Signatur nuurnii guasha 90,000₮/);
+    /* typed in Latin letters, answered in Cyrillic */
+    assert.equal(r.data.messages[1].text, fake.state.reply);
+    assert.equal(fake.state.requests[fake.state.requests.length - 1].body.input.slice(-1)[0].content, 'Reply language: Mongolian, written in Cyrillic (the customer typed Mongolian in Latin letters, but the salon answers in Cyrillic).');
     A.token = r.data.token;
 
     const g = await poll(A.token);
     assert.equal(g.status, 200);
-    assert.deepEqual(g.data.messages.map((m) => m.text), ['sain uu', toLatin(fake.state.reply)]);
+    assert.deepEqual(g.data.messages.map((m) => m.text), ['sain uu', fake.state.reply]);
     assert.equal(g.data.aiPaused, false);
     const after = await poll(A.token, g.data.messages[0].id);
     assert.deepEqual(after.data.messages.map((m) => m.from), ['ai']);
