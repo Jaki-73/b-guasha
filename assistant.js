@@ -59,6 +59,56 @@ function reservationUsd(inputTokens, maxOutputTokens, price) {
   return (inputTokens * price.input + maxOutputTokens * price.output) / 1e6;
 }
 
+/* ---------- reply language ----------
+   gpt-5.4-nano answers well in Cyrillic Mongolian and in English, but drifts between
+   scripts when asked to match the customer and garbles Mongolian in Latin letters. So the
+   server decides: Cyrillic message → Mongolian; Latin letters → English or Mongolian by
+   the words used; and for Mongolian typed in Latin letters the model still writes
+   Cyrillic and the server converts the reply, the way customers spell it (ү→u, ө→o, х→h). */
+const EN_WORDS = new Set(('the a an is are am was were be do does did you your yours i my me we our us what where when how why which who whom ' +
+  'can could would should will shall have has had there here this that these those it its of for to in on at by from with and or not no yes ' +
+  'please price prices cost costs much many open opening hours hour located location address book booking appointment men man women woman ' +
+  'treat treatment treatments pregnant hi hello hey thanks thank ok okay any some about after before if then than also just only get need want ' +
+  'free time today tomorrow week parking card cash pay sell gift skin face body massage facial back neck').split(' '));
+const MN_WORDS = new Set(('uu vv ve be bn bna bnu bnuu baina bainaa baina uu bga bgaa baigaa bh hed hedee heden hedeer yaj yu yuu ymr yamar ' +
+  'boloh bolox bolno bolhoo bol hiih hiilgeh hiilgej hiideg hiilgehed haana haah haadag ehleh ehlene tsag tsagt tsagaa tsagiin une unee ' +
+  'zahialga zahialah zahialj sain sn ni chin mini bi ta tand tanai manai eregtei emegtei hun hen tolbor tolboroo tolboh toloh ovdoh ovdog jirems ' +
+  'hayag minut odor margaash unuudur ochih ochij avah awah tegvel tiim ugui uguu bayarlalaa bayrlalaa uuchlaarai tsutslah tsutsalj kart belen ' +
+  'nuur nuuriin bie biyiin nuruu huzuu mor eruu arisni aris arisand gar hool emchilgee emchilgeenii massaj ymar yamarhan medeh medmeer asuuya').split(' '));
+function detectLanguage(message) {
+  const s = String(message || '');
+  const cyr = (s.match(/[\u0400-\u04FF]/g) || []).length;
+  const lat = (s.match(/[A-Za-z]/g) || []).length;
+  if (cyr > lat) return 'mn';
+  if (!lat) return 'mn';
+  let en = 0, mn = 0;
+  for (const w of s.toLowerCase().match(/[a-z]+/g) || []) {
+    if (EN_WORDS.has(w)) en++;
+    if (MN_WORDS.has(w)) mn++;
+    else if (w.length > 4 && /(iin|uud|aas|ees|oos|uus|iig|aar|eer|oor|tai|tei|toi|uulah|uulj|lgah|lgaj)$/.test(w)) mn++; /* Mongolian suffixes */
+  }
+  if (mn > en) return 'mn_latin';
+  if (en > mn) return 'en';
+  return /(uu|ii|aa|oo)/.test(s.toLowerCase()) ? 'mn_latin' : 'en';
+}
+const CYR_TO_LAT = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'j', з: 'z', и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', ө: 'o',
+  п: 'p', р: 'r', с: 's', т: 't', у: 'u', ү: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'ii', ь: 'i', э: 'e', ю: 'yu', я: 'ya'
+};
+function toLatin(text) {
+  return String(text || '').replace(/[\u0400-\u04FF]/g, (ch) => {
+    const low = ch.toLowerCase();
+    const out = CYR_TO_LAT[low];
+    if (out === undefined) return ch;
+    return ch === low || !out ? out : out[0].toUpperCase() + out.slice(1);
+  });
+}
+const LANGUAGE_NOTE = {
+  mn: 'Reply language: Mongolian, written in Cyrillic.',
+  mn_latin: 'Reply language: Mongolian, written in Cyrillic (the customer typed Mongolian in Latin letters; the website converts your reply for them).',
+  en: 'Reply language: English. The customer wrote in English, so reply only in English, even though much of the salon information is in Mongolian.'
+};
+
 /* Ulaanbaatar wall clock (+08:00, no daylight saving) — the ledger's month and day keys */
 const UB_OFFSET_MS = 8 * 3600000;
 function ubParts(ms) {
@@ -85,7 +135,7 @@ RULES
 
 LANGUAGE
 - Customers write Mongolian in Cyrillic or in Latin letters with loose spelling: ө and ү are often written o, u or v; х as h or kh; ж as j; ц as ts; ч as ch; ш as sh; я as ya; ё as yo; й as i or y. Treat Latin-letter Mongolian as Mongolian, never as English.
-- Reply in the language and script of the customer's latest message: Cyrillic Mongolian gets Cyrillic Mongolian; Latin-letter Mongolian gets Latin-letter Mongolian, spelled simply the way customers write; English gets English.
+- Reply in the language named by the "Reply language" note after the customer's message: Mongolian (always written in Cyrillic, even when the customer used Latin letters; the website converts it for them) or English.
 - Examples of Latin-letter Mongolian (illustrative only; real customers may spell differently):
   "sain uu" = "Сайн байна уу" (hello)
   "une hed ve" = "Үнэ хэд вэ?" (how much is it?)
@@ -242,15 +292,6 @@ function createAssistant(deps) {
     const p = ubParts(now());
     return 'Current date and time in Ulaanbaatar: ' + WEEKDAYS[p.weekday] + ' ' + p.day + ' ' + p.time + '.';
   }
-  /* The small model drifts to Cyrillic Mongolian (most of the salon information is), so
-     the script of the customer's latest message is restated right before it. */
-  function languageLine(message) {
-    const cyr = (String(message).match(/[\u0400-\u04FF]/g) || []).length;
-    const lat = (String(message).match(/[A-Za-z]/g) || []).length;
-    if (cyr > lat) return 'Reply language: the customer wrote in Cyrillic, so reply in Mongolian in Cyrillic.';
-    if (lat > 0) return 'Reply language: the customer wrote in Latin letters. If the message is English, reply in English. If it is Mongolian written in Latin letters, reply in Mongolian written in Latin letters, the simple way customers spell it, and do not use Cyrillic.';
-    return 'Reply language: the same language as the customer.';
-  }
 
   /* ---------- the model call: the only place that talks to OpenAI ---------- */
   function baseUrl() { return String(env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, ''); }
@@ -285,12 +326,13 @@ function createAssistant(deps) {
     if (mockMode()) {
       /* canned reply with realistic usage numbers; no network */
       await new Promise((r) => setTimeout(r, 150));
-      const last = input.length ? String(input[input.length - 1].content || '') : '';
+      /* canned reply in the language the server asked for (the note after the message) */
+      const note = input.length ? String(input[input.length - 1].content || '') : '';
       const est = estimateInputTokens([instructions], input.map((m) => m.content));
       const inputTokens = Math.ceil(est * 0.6);
       const cachedTokens = mockCalls++ > 0 ? Math.floor(inputTokens * 0.85) : 0;
       const c = cfg();
-      const text = /[Ѐ-ӿ]/.test(last)
+      const text = !/^Reply language: English/.test(note)
         ? 'Туршилтын горим: AI холбогдоогүй тул энэ бол жинхэнэ хариулт биш. Дэлгэрэнгүйг ' + (c.phoneDisplay || '') + ' дугаараас лавлаарай.'
         : 'Test mode: the AI is not connected, so this is not a real answer. Please call ' + (c.phoneDisplay || '') + ' for details.';
       return { text, usage: { inputTokens, cachedTokens, outputTokens: 48 }, status: 'completed' };
@@ -512,10 +554,12 @@ function createAssistant(deps) {
     if (why) return { reply: fallbackText(), fallback: true, reason: 'unavailable', detail: why };
     const sp = systemPrompt();
     const past = historyInput(history || []);
-    const date = dateLine() + ' ' + languageLine(message);
-    const input = past.concat([{ role: 'developer', content: date }, { role: 'user', content: message }]);
+    const date = dateLine();
+    const lang = detectLanguage(message);
+    /* the language note goes last, after the message: the small model follows the latest instruction best */
+    const input = past.concat([{ role: 'developer', content: date }, { role: 'user', content: message }, { role: 'developer', content: LANGUAGE_NOTE[lang] }]);
     /* everything from the conversation counts as customer-controlled text (one token per byte) */
-    const estTokens = estimateInputTokens([sp.instructions, date], past.map((m) => m.content).concat([message]));
+    const estTokens = estimateInputTokens([sp.instructions, date, LANGUAGE_NOTE[lang]], past.map((m) => m.content).concat([message]));
     const resUsd = reservationUsd(estTokens, s.maxOutputTokens, s.price);
     const res = reserve(resUsd, s);
     if (res.refused) {
@@ -541,7 +585,8 @@ function createAssistant(deps) {
     const meta = { usage: out.usage, costUsd: round6(actual), reservedUsd: round6(res.usd), estimatedInputTokens: estTokens, status: out.status, model: s.model };
     if (out.status !== 'completed') return { reply: fallbackText(), fallback: true, reason: 'error', ...meta };
     /* capped at the history item limit, so the widget can always send it back as history */
-    return { reply: out.text.slice(0, HISTORY_ITEM_MAX_CHARS), fallback: false, ...meta };
+    const reply = lang === 'mn_latin' ? toLatin(out.text) : out.text;
+    return { reply: reply.slice(0, HISTORY_ITEM_MAX_CHARS), fallback: false, language: lang, ...meta };
   }
 
   /* ---------- abuse limits (memory only) ---------- */
@@ -752,4 +797,4 @@ function clientIp(req) {
   return ipKey(peer);
 }
 
-module.exports = { createAssistant, clientIp, ipKey, estimateInputTokens, reservationUsd, costUsd, INSTRUCTIONS, KNOWLEDGE_MAX_BYTES, NOTES_MAX_CHARS };
+module.exports = { createAssistant, clientIp, ipKey, estimateInputTokens, reservationUsd, costUsd, detectLanguage, toLatin, INSTRUCTIONS, KNOWLEDGE_MAX_BYTES, NOTES_MAX_CHARS };

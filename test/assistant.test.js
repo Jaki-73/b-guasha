@@ -153,9 +153,10 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
     assert.deepEqual(b.reasoning, { effort: 'none' });
     assert.equal(b.temperature, undefined);
     assert.equal(req.headers.authorization, 'Bearer ' + KEY);
-    assert.deepEqual(b.input.map((m) => m.role), ['user', 'assistant', 'developer', 'user']);
-    assert.match(b.input[2].content, /^Current date and time in Ulaanbaatar: \w+ \d{4}-\d{2}-\d{2} \d{2}:\d{2}\. Reply language: the customer wrote in Cyrillic, so reply in Mongolian in Cyrillic\.$/);
+    assert.deepEqual(b.input.map((m) => m.role), ['user', 'assistant', 'developer', 'user', 'developer']);
+    assert.match(b.input[2].content, /^Current date and time in Ulaanbaatar: \w+ \d{4}-\d{2}-\d{2} \d{2}:\d{2}\.$/);
     assert.equal(b.input[3].content, 'Нүүрний гуаша хэд вэ?');
+    assert.equal(b.input[4].content, 'Reply language: Mongolian, written in Cyrillic.', 'the language note comes last');
     /* identical prefix on the next call → prompt caching can work */
     await call('POST', '/api/assistant', null, { message: 'Do you treat men?' });
     const req2 = fake.state.requests[fake.state.requests.length - 1];
@@ -235,7 +236,7 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
     const ok = await call('POST', '/api/admin/assistant/ask', su, { message: 'hi', history: hist });
     assert.equal(ok.status, 200);
     const sentInput = fake.state.requests[fake.state.requests.length - 1].body.input;
-    assert.equal(sentInput.length, 6 + 2);
+    assert.equal(sentInput.length, 6 + 3);
     assert.equal(sentInput[0].content, 'turn 14');
   });
 
@@ -632,6 +633,17 @@ describe('assistant: unit — client IP, UB month rollover', () => {
     assert.notEqual(db.assistantUsage.lastAlert, first, 'alerts again after an hour');
     /* a network error may have been billed: each kept its reservation */
     assert.ok(db.assistantUsage.monthUsd > 0);
+  });
+
+  test('reply language: Cyrillic → Mongolian, Latin letters → English or Mongolian by the words used', () => {
+    const cases = {
+      mn: ['Нүүрний гуаша хэд вэ?', 'Би цус шингэлэх эм уудаг'],
+      mn_latin: ['une hed ve', 'sain uu', 'eregtei hun hiilgej boloh uu', 'heden tsagt haah ve', 'botox hiideg uu', 'ovdoh uu', 'hayag chin haana ve', 'nuuriin guasha hed ve', 'tsagaa tsutsalj boloh uu'],
+      en: ['Do you treat men?', 'Where are you located?', 'Is there parking?', 'hi', 'Can I pay by card?', 'Are you open on Tsagaan Sar?', 'I am pregnant, can I come?']
+    };
+    for (const [lang, qs] of Object.entries(cases)) for (const q of qs) assert.equal(A.detectLanguage(q), lang, q);
+    assert.equal(A.toLatin('Мэдээж, эрэгтэй хүн хийлгэж болно. Үнэ: 90,000₮. Өвдөхгүй. Цагаа Ялангуяа'), 'Medeej, eregtei hun hiilgej bolno. Une: 90,000₮. Ovdohgui. Tsagaa Yalanguyaa');
+    assert.equal(A.toLatin('Signature 60 min'), 'Signature 60 min');
   });
 
   test('customer text is estimated at one token per byte, salon text at bytes ÷ 2', () => {
