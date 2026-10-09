@@ -242,6 +242,15 @@ function createAssistant(deps) {
     const p = ubParts(now());
     return 'Current date and time in Ulaanbaatar: ' + WEEKDAYS[p.weekday] + ' ' + p.day + ' ' + p.time + '.';
   }
+  /* The small model drifts to Cyrillic Mongolian (most of the salon information is), so
+     the script of the customer's latest message is restated right before it. */
+  function languageLine(message) {
+    const cyr = (String(message).match(/[\u0400-\u04FF]/g) || []).length;
+    const lat = (String(message).match(/[A-Za-z]/g) || []).length;
+    if (cyr > lat) return 'Reply language: the customer wrote in Cyrillic, so reply in Mongolian in Cyrillic.';
+    if (lat > 0) return 'Reply language: the customer wrote in Latin letters. If the message is English, reply in English. If it is Mongolian written in Latin letters, reply in Mongolian written in Latin letters, the simple way customers spell it, and do not use Cyrillic.';
+    return 'Reply language: the same language as the customer.';
+  }
 
   /* ---------- the model call: the only place that talks to OpenAI ---------- */
   function baseUrl() { return String(env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, ''); }
@@ -503,7 +512,7 @@ function createAssistant(deps) {
     if (why) return { reply: fallbackText(), fallback: true, reason: 'unavailable', detail: why };
     const sp = systemPrompt();
     const past = historyInput(history || []);
-    const date = dateLine();
+    const date = dateLine() + ' ' + languageLine(message);
     const input = past.concat([{ role: 'developer', content: date }, { role: 'user', content: message }]);
     /* everything from the conversation counts as customer-controlled text (one token per byte) */
     const estTokens = estimateInputTokens([sp.instructions, date], past.map((m) => m.content).concat([message]));

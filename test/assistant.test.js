@@ -154,7 +154,7 @@ describe('assistant: knowledge whitelist, requests, errors, access', () => {
     assert.equal(b.temperature, undefined);
     assert.equal(req.headers.authorization, 'Bearer ' + KEY);
     assert.deepEqual(b.input.map((m) => m.role), ['user', 'assistant', 'developer', 'user']);
-    assert.match(b.input[2].content, /^Current date and time in Ulaanbaatar: \w+ \d{4}-\d{2}-\d{2} \d{2}:\d{2}\.$/);
+    assert.match(b.input[2].content, /^Current date and time in Ulaanbaatar: \w+ \d{4}-\d{2}-\d{2} \d{2}:\d{2}\. Reply language: the customer wrote in Cyrillic, so reply in Mongolian in Cyrillic\.$/);
     assert.equal(b.input[3].content, 'Нүүрний гуаша хэд вэ?');
     /* identical prefix on the next call → prompt caching can work */
     await call('POST', '/api/assistant', null, { message: 'Do you treat men?' });
